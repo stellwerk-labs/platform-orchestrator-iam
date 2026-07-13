@@ -1,0 +1,80 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: platform-orchestrator-iam
+service:
+  ports:
+    http:
+      port: 8080
+containers:
+  platform-orchestrator-iam:
+    image: .
+    command: ['/opt/server/server']
+    livenessProbe:
+      httpGet:
+        path: /alive
+        port: 8080
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+    resources:
+      limits:
+        cpu: '1'
+        memory: 256Mi
+      requests:
+        cpu: '0.025'
+        memory: 64Mi
+    variables:
+      DD_AGENT_HOST: $${pod.status.hostIP}
+      OTEL_ENABLE: ${resources.env.DATADOG_ENABLED}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${resources.env.OTEL_EXPORTER_OTLP_ENDPOINT}
+      DD_ENV: ${resources.env.DATADOG_ENV}
+      DD_SERVICE: ${metadata.name}
+      DD_TRACE_HTTP_CLIENT_ERROR_STATUSES: 500-600
+      DD_TRACE_HTTP_SERVER_ERROR_STATUSES: 500-600
+      PORT: '8080'
+      DATABASE_HOST: ${resources.postgres.host}
+      DATABASE_NAME: ${resources.postgres.name}
+      DATABASE_PASSWORD: ${resources.postgres.password}
+      DATABASE_PORT: ${resources.postgres.port}
+      DATABASE_USER: ${resources.postgres.username}
+      ALLOWED_GOOGLE_CLIENT_IDS: ${resources.env.IAM_ALLOWED_GOOGLE_CLIENT_IDS}
+      ALLOWED_MICROSOFT_CLIENT_IDS: ${resources.env.IAM_ALLOWED_MICROSOFT_CLIENT_IDS}
+      SESSION_TOKEN_COOKIE_DOMAIN: ${resources.env.SESSION_TOKEN_COOKIE_DOMAIN}
+      TEST_USER_PROVIDER_AGE_IDENTITY: ${resources.env.TEST_USER_PROVIDER_AGE_IDENTITY}
+      CONTROL_PLANE_URL: http://${resources.platform-orchestrator-cp.name}:8080
+      UI_HOST_URL: ${resources.env.UI_HOST_URL}
+      SENDGRID_API_KEY: ${resources.env.SENDGRID_API_KEY}
+      SENDGRID_SENDER_NAME: ${resources.env.INVITATION_EMAIL_SENDER_NAME}
+      SENDGRID_SENDER_ADDRESS: ${resources.env.INVITATION_EMAIL_SENDER_ADDRESS}
+      PRODUCT_NAME: ${resources.env.PRODUCT_NAME}
+      SPICEDB_URL: ${resources.spicedb.hostname}:50051
+      SPICEDB_PRE_SHARED_KEY: ${resources.spicedb.preshared_key}
+      AMQP_CONNECTION_STRING: amqp://${resources.rabbitmq.username}:${resources.rabbitmq.password}@${resources.rabbitmq.host}:${resources.rabbitmq.port}/${resources.rabbitmq.vhost}
+      WORKOS_API_KEY: ${resources.env.WORKOS_API_KEY}
+      WORKOS_CLIENT_ID: ${resources.env.WORKOS_CLIENT_ID}
+      SSO_CALLBACK_URL_PATH: ${resources.env.SSO_CALLBACK_URL_PATH}
+      SSO_STATE_SECRET: ${resources.env.SSO_STATE_SECRET}
+
+resources:
+  env:
+    type: environment
+  postgres:
+    type: postgres
+  dns:
+    type: dns
+    id: api-dns
+  platform-orchestrator-cp:
+    type: service
+  route:
+    type: route
+    params:
+      host: ${resources.dns.host}
+      port: 8080
+      path: /(auth/register|auth/logout|auth/login|auth/device|auth/sso/.+|(users/.+)|(orgs/[^/]+/members)|(orgs/[^/]+/memberships.*)|(orgs/[^/]+/users/[^/]+/memberships.*)|(orgs/[^/]+/service-users.*)|(orgs/[^/]+/invitations.*)|(orgs/[^/]+/roles.*)|(orgs/[^/]+/projects/[^/]+/users.*)|(orgs/[^/]+/projects/[^/]+/envs/[^/]+/users.*)|current-user|auth/check-permissions|(devicelogins/.+))
+  spicedb:
+    type: spicedb
+    id: spicedb
+  rabbitmq:
+    type: amqp
+    id: rabbitmq

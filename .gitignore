@@ -1,0 +1,66 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+.envrc
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+secrets.json
+.netrc
+.npmrc
+
+# Go build and test output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cover.out
+coverage.html
+coverage/
+bin/
+dist/
+vendor/
+go.work
+go.work.sum
+
+# Generated mocks
+*_mock.go
+
+# Score and integration-test output
+.score-compose/
+compose.yaml
+integration-tests/mock-emails/
+
+# JavaScript tooling
+node_modules/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating systems
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local tooling and transient files
+.claude/
+CODEX_HANDOFF.md
+*.log
+*.tmp
+tmp/

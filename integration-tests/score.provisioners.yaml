@@ -1,0 +1,31 @@
+- uri: template://env
+  type: environment
+  outputs: |
+    DATADOG_ENABLED: false
+    DATADOG_ENV: ""
+    IAM_ALLOWED_GOOGLE_CLIENT_IDS: none
+    IAM_ALLOWED_MICROSOFT_CLIENT_IDS: none
+    SESSION_TOKEN_COOKIE_DOMAIN: localhost
+    TEST_USER_PROVIDER_AGE_IDENTITY: AGE-SECRET-KEY-17WXCCNPHSLMZDSUKVZQX8JE9XVCJJ6MW77L3CYGSF6U30TG9LDFQ80VQYS
+    VAULT_URL: "http://vault:8200"
+    UI_HOST_URL: http://localhost:30080
+    SENDGRID_API_KEY: mock
+    INVITATION_EMAIL_SENDER_NAME: "Platform Orchestrator"
+    INVITATION_EMAIL_SENDER_ADDRESS: "product@platformorchestrator.io"
+    PRODUCT_NAME: "Platform Orchestrator"
+    WORKOS_CLIENT_ID: {{ env "WORKOS_CLIENT_ID" }}
+    WORKOS_API_KEY: {{ env "WORKOS_API_KEY" }}
+    SSO_CALLBACK_URL_PATH: /auth/sso/callback
+    SSO_STATE_SECRET: {{ env "SSO_STATE_SECRET" | default "test-sso-state-secret-for-integration-tests" }}
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""
+
+- uri: template://service
+  type: service
+  outputs: |
+    name: {{ .Id | trimPrefix .SourceWorkload | trimPrefix "." }}
+
+- uri: template://spicedb
+  type: spicedb
+  outputs: |
+    preshared_key: t0k3n
+    hostname: spicedb

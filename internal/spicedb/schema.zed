@@ -1,0 +1,35 @@
+definition user {}
+
+definition scoped_role {
+	relation org: org
+	relation member: user
+}
+
+definition org {
+	relation all_manager: scoped_role
+	relation all_reader: scoped_role
+	relation all_writer: scoped_role
+	permission manage = all_manager->member
+	permission write = manage + all_writer->member
+	permission read = write + all_reader->member
+}
+
+definition project {
+	relation org: org
+	relation all_manager: scoped_role
+	relation all_reader: scoped_role
+	relation all_writer: scoped_role
+	permission manage = org->manage + all_manager->member
+	permission write = manage + org->write + all_writer->member
+	permission read = write + org->read + all_reader->member
+}
+
+definition env {
+	relation project: project
+	relation all_manager: scoped_role
+	relation all_reader: scoped_role
+	relation all_writer: scoped_role
+	permission manage = project->manage + all_manager->member
+	permission write = manage + project->write + all_writer->member
+	permission read = write + project->read + all_reader->member
+}

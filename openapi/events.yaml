@@ -1,0 +1,44 @@
+openapi: 3.0.0
+info:
+  title: ""
+  version: ""
+paths: {}
+components:
+  schemas:
+
+    EventType:
+      type: string
+      enum:
+        - io.platform-orchestrator.spicedb.sync
+        - io.platform-orchestrator.scope.sync
+
+    OrgId:
+      type: string
+    
+    UserId:
+      type: string
+      format: uuid
+    
+    Scope:
+      type: string
+      description: "The scope that needs to be synchronized."
+      example: "project:0123e4567-e89b-12d3-a456-426614174000"
+
+    SpiceDBSyncData:
+      required:
+        - org_id
+      properties:
+        org_id:
+          $ref: "#/components/schemas/OrgId"
+        user_id:
+          $ref: "#/components/schemas/UserId"
+    
+    ScopeSyncData:
+      required:
+        - org_id
+        - scope
+      properties:
+        org_id:
+          $ref: "#/components/schemas/OrgId"
+        scope:
+          $ref: "#/components/schemas/Scope"
