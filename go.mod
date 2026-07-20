@@ -15,7 +15,7 @@ require (
 	github.com/karlseguin/ccache/v2 v2.0.8
 	github.com/labstack/echo/v4 v4.15.1
 	github.com/lib/pq v1.12.3
-	github.com/oapi-codegen/runtime v1.3.1
+	github.com/oapi-codegen/runtime v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rabbitmq/amqp091-go v1.10.0
