@@ -79,7 +79,7 @@ jobs:
           cache: false
 
       - name: Setup Score Compose
-        uses: score-spec/setup-score@v3
+        uses: score-spec/setup-score@v3.2.4
         with:
           file: score-compose
           version: 0.17.0
