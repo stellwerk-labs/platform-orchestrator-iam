@@ -11,12 +11,11 @@ import (
 
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/google/uuid"
-	v2 "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 
 	"github.com/pkg/errors"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
@@ -50,11 +49,11 @@ func New(spiceDB spicedb.SpiceDB, db model.Databaser, cpClient cpclient.ClientWi
 }
 
 // Handle is the entrypoint for new messages. Here we unwrap the typed data and decide which relationships to create in spiceDB.
-func (h *ProjectEnvRelationshipInserter) Handle(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
-	switch d.RoutingKey {
+func (h *ProjectEnvRelationshipInserter) Handle(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
+	switch d.Subject {
 	case string(cpevents.IoPlatformOrchestratorProjectCreated):
 		var e events.CloudEvent[cpevents.ProjectChangedData]
-		if err := json.Unmarshal(d.Body, &e); err != nil {
+		if err := json.Unmarshal(d.Data, &e); err != nil {
 			return errors.Wrap(err, "failed to unmarshal event body")
 		}
 		projectUuid := e.Data.ProjectUuid
@@ -65,7 +64,7 @@ func (h *ProjectEnvRelationshipInserter) Handle(ctx context.Context, logger *zap
 		return h.createRolesAndRelationshipsForProject(ctx, logger, orgId, projectUuid)
 	case string(cpevents.IoPlatformOrchestratorEnvironmentCreated):
 		var e events.CloudEvent[cpevents.EnvChangedData]
-		if err := json.Unmarshal(d.Body, &e); err != nil {
+		if err := json.Unmarshal(d.Data, &e); err != nil {
 			return errors.Wrap(err, "failed to unmarshal event body")
 		}
 		projectUuid := e.Data.ProjectUuid
@@ -77,7 +76,7 @@ func (h *ProjectEnvRelationshipInserter) Handle(ctx context.Context, logger *zap
 		return h.createRelationshipsForEnvironment(ctx, logger, orgId, envUuid, projectUuid)
 	case string(genevents.IoPlatformOrchestratorScopeSync):
 		var e events.CloudEvent[genevents.ScopeSyncData]
-		if err := json.Unmarshal(d.Body, &e); err != nil {
+		if err := json.Unmarshal(d.Data, &e); err != nil {
 			return errors.Wrap(err, "failed to unmarshal event body")
 		}
 		orgId := e.Data.OrgId
@@ -157,7 +156,7 @@ func (h *ProjectEnvRelationshipInserter) handleScopeSync(ctx context.Context, or
 	if err != nil {
 		// Check if it's a graceful retry error from org roles not being seeded
 		if errors.Is(err, api.ErrBuiltinRolesNotSeeded) {
-			return v2.NewGracefulRetryError(err)
+			return hmessaging.NewRetryError(err)
 		}
 		return err
 	}
@@ -175,7 +174,7 @@ func (h *ProjectEnvRelationshipInserter) createRolesAndRelationshipsForProject(c
 	relationships := []*v1.Relationship{spicedb.BuildRelation(spicedb.RelationOrg, spicedb.ObjectTypeProject, projectUuid.String(), spicedb.ObjectTypeOrg, orgId)}
 	scopedRoles, err := h.createScopedRoles(ctx, logger, orgId, "project:"+projectUuid.String())
 	if err != nil {
-		var gracefulErr v2.GracefulRetryError
+		var gracefulErr hmessaging.RetryError
 		if errors.As(err, &gracefulErr) {
 			return gracefulErr
 		}
@@ -190,7 +189,7 @@ func (h *ProjectEnvRelationshipInserter) createRelationshipsForEnvironment(ctx c
 	relationships := []*v1.Relationship{spicedb.BuildRelation(spicedb.RelationProject, spicedb.ObjectTypeEnv, envUuid.String(), spicedb.ObjectTypeProject, projectUuid.String())}
 	scopedRoleToRelationMap, err := h.createScopedRoles(ctx, logger, orgId, "env:"+envUuid.String())
 	if err != nil {
-		var gracefulErr v2.GracefulRetryError
+		var gracefulErr hmessaging.RetryError
 		if errors.As(err, &gracefulErr) {
 			return gracefulErr
 		}
@@ -215,8 +214,13 @@ func (h *ProjectEnvRelationshipInserter) createScopedRoles(ctx context.Context, 
 	orgRoles, err := h.db.ListRoles(ctx, tx, orgId)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list organization roles")
+	} else if len(orgRoles) == 0 {
+		orgRoles, err = api.SeedBuiltinOrgRoles(ctx, logger, h.db, tx, orgId)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to seed organization roles")
+		}
 	} else if len(orgRoles) < api.BuiltinRolesNumber {
-		return nil, v2.NewGracefulRetryError(errors.Wrap(err, "organization roles not seeded yet"))
+		return nil, hmessaging.NewRetryError(api.ErrBuiltinRolesNotSeeded)
 	}
 
 	scopedRoles := make(map[uuid.UUID]string)

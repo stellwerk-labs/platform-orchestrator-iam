@@ -103,19 +103,23 @@ func (s *Server) ListRoles(ctx context.Context, request ListRolesRequestObject) 
 	}, nil
 }
 
-// seedBuiltinOrgRoles creates the default roles for an organization.
-func (s *Server) seedBuiltinOrgRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, orgId string) ([]model.Role, error) {
+// SeedBuiltinOrgRoles creates the default roles for an organization.
+func SeedBuiltinOrgRoles(ctx context.Context, logger *zap.Logger, database model.Databaser, tx model.TxWithCommit, orgId string) ([]model.Role, error) {
 	var roles = []model.Role{
 		{DisplayName: RoleAdmin, Permissions: []string{PermissionsManageAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
 		{DisplayName: RoleDeployer, Permissions: []string{PermissionsWriteAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
 		{DisplayName: RoleViewer, Permissions: []string{PermissionsReadAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
 	}
-	if err := s.Database.SeedRoles(ctx, tx, orgId, roles); err != nil {
+	if err := database.SeedRoles(ctx, tx, orgId, roles); err != nil {
 		return nil, errors.Wrap(err, "failed to seed roles")
 	} else {
 		logger.Info("seeded default roles", zap.String("org_id", orgId))
 		return roles, nil
 	}
+}
+
+func (s *Server) seedBuiltinOrgRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, orgId string) ([]model.Role, error) {
+	return SeedBuiltinOrgRoles(ctx, logger, s.Database, tx, orgId)
 }
 
 func (s *Server) listOrSeedRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, orgId string) (roles []model.Role, err error) {

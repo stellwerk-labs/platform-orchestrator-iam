@@ -12,20 +12,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hconfig"
 	"github.com/stellwerk-labs/golib/hecho"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq"
-	delayqueues "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardreliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hnats"
+	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	htelemetry "github.com/stellwerk-labs/golib/htelemetry"
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
-	"github.com/wagslane/go-rabbitmq"
 	"github.com/workos/workos-go/v6/pkg/sso"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/zap"
@@ -34,7 +34,6 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/config"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
@@ -43,8 +42,6 @@ import (
 )
 
 const (
-	rabbitmqCacheSize      = 10000
-	rabbitmqCacheTtl       = 30 * time.Minute
 	runtimeMetricsInterval = 5 * time.Second
 	samplingRatio          = 1
 )
@@ -67,13 +64,14 @@ func init() {
 
 // sharedDependencies holds all shared resources across tasks
 type sharedDependencies struct {
-	Config       *config.Configuration
-	DB           model.Databaser
-	SpiceDB      spicedb.SpiceDB
-	RabbitMQConn *rabbitmq.Conn
-	RabbitMQPub  *rabbitmq.Publisher
-	CpClient     cpclient.ClientWithResponsesInterface
-	QueueCache   *expirable.LRU[string, int32]
+	Config              *config.Configuration
+	DB                  model.Databaser
+	SpiceDB             spicedb.SpiceDB
+	NATSConn            *nats.Conn
+	JetStream           jetstream.JetStream
+	Publisher           hmessaging.Publisher
+	DeadLetterPublisher hmessaging.Publisher
+	CpClient            cpclient.ClientWithResponsesInterface
 }
 
 func main() {
@@ -125,7 +123,6 @@ func main() {
 	err = runner.RunAndHandleShutdown(ctx,
 		runEchoServer(cfg, deps),
 		runScheduledFlush(deps),
-		runDeadLetterConsumer(deps),
 		runWorkerConsumer(deps),
 		runExpiredDataCleanup(cfg, deps),
 	)
@@ -153,42 +150,41 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 		zap.L().Fatal("failed to write spicedb schema", zap.Error(err))
 	}
 
-	// Initialize RabbitMQ
-	amqpConnectionString, err := cfg.GetAmqpConnectionString()
+	// Initialize the durable NATS transport before accepting API traffic.
+	conn, err := hnats.Connect(hnats.ConnectionConfig{
+		URLs:            []string{cfg.NatsURL},
+		Name:            "platform-orchestrator-iam",
+		Token:           cfg.NatsToken,
+		CredentialsFile: cfg.NatsCredentialsFile,
+		NKeySeedFile:    cfg.NatsNKeySeedFile,
+		CAFile:          cfg.NatsCAFile,
+		ClientCertFile:  cfg.NatsClientCertFile,
+		ClientKeyFile:   cfg.NatsClientKeyFile,
+		TLSServerName:   cfg.NatsTLSServerName,
+		ConnectTimeout:  10 * time.Second,
+		ReconnectWait:   2 * time.Second,
+		MaxReconnects:   -1,
+	}, zap.L())
 	if err != nil {
-		zap.L().Fatal("Failed to get AMQP connection string", zap.Error(err))
+		zap.L().Fatal("failed to connect to NATS", zap.Error(err))
 	}
-	conn, err := rabbitmq.NewConn(amqpConnectionString, rabbitmq.WithConnectionOptionsLogger(hrabbitmq.NewLogger(zap.L())))
+	js, err := hnats.NewJetStream(conn)
 	if err != nil {
-		zap.L().Fatal("Failed to initialize rabbitmq connection", zap.Error(err))
+		conn.Close()
+		zap.L().Fatal("failed to initialize JetStream", zap.Error(err))
 	}
-
-	publisher, err := rabbitmq.NewPublisher(
-		conn,
-		rabbitmq.WithPublisherOptionsLogger(hrabbitmq.NewLogger(zap.L())),
-		rabbitmq.WithPublisherOptionsExchangeName(events.DefaultExchange),
-		rabbitmq.WithPublisherOptionsExchangeDeclare,
-		rabbitmq.WithPublisherOptionsExchangeDurable,
-		rabbitmq.WithPublisherOptionsExchangeKind("topic"),
-	)
-	if err != nil {
-		if closeErr := conn.Close(); closeErr != nil {
-			zap.L().Error("Failed to close rabbitmq connection", zap.Error(closeErr))
+	if cfg.NatsBootstrapStreams {
+		if err := hnats.EnsureStandardStreams(ctx, js, cfg.NatsStreamReplicas); err != nil {
+			conn.Close()
+			zap.L().Fatal("failed to initialize JetStream topology", zap.Error(err))
 		}
-		zap.L().Fatal("Failed to initialize rabbitmq publisher", zap.Error(err))
 	}
+	publisher := hnats.NewPublisher(js, hmessaging.EventsStreamName, zap.L())
+	deadLetterPublisher := hnats.NewPublisher(js, hmessaging.DeadLettersStreamName, zap.L())
 
-	publisher.NotifyPublish(func(p rabbitmq.Confirmation) {
-		zap.L().Debug("message publish confirmation received", zap.Bool("ack", p.Ack))
-	})
-
-	delayqueues.DefaultExchange = events.DefaultExchange
 	// We need to distinguish our outbox messages from those produced by the CP or DP so
 	// that components can deduplicate messages using the message id. So we tack on a prefix.
-	hstandardreliableoutbox.MessageIdPrefix = "platform-orchestrator-iam-"
-
-	// Initialize queue cache
-	queueCache := expirable.NewLRU[string, int32](rabbitmqCacheSize, nil, rabbitmqCacheTtl)
+	hstandardoutbox.MessageIDPrefix = "platform-orchestrator-iam-"
 
 	// Initialize control plane client
 	cpClient, err := cpclient.NewClientWithResponses(
@@ -204,23 +200,21 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 	}
 
 	return &sharedDependencies{
-		Config:       cfg,
-		DB:           db,
-		SpiceDB:      spicedbClient,
-		RabbitMQConn: conn,
-		RabbitMQPub:  publisher,
-		QueueCache:   queueCache,
-		CpClient:     cpClient,
+		Config:              cfg,
+		DB:                  db,
+		SpiceDB:             spicedbClient,
+		NATSConn:            conn,
+		JetStream:           js,
+		Publisher:           publisher,
+		DeadLetterPublisher: deadLetterPublisher,
+		CpClient:            cpClient,
 	}
 }
 
 func closeSharedDependencies(deps *sharedDependencies) {
-	if deps.RabbitMQPub != nil {
-		deps.RabbitMQPub.Close()
-	}
-	if deps.RabbitMQConn != nil {
-		if err := deps.RabbitMQConn.Close(); err != nil {
-			zap.L().Error("Failed to close rabbitmq connection", zap.Error(err))
+	if deps.NATSConn != nil {
+		if err := deps.NATSConn.Drain(); err != nil {
+			zap.L().Error("failed to drain NATS connection", zap.Error(err))
 		}
 	}
 }
@@ -278,7 +272,7 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 
 	// Create API server
 	server := api.Server{
-		RabbitMqPublisher:        deps.RabbitMQPub,
+		Publisher:                deps.Publisher,
 		Database:                 deps.DB,
 		Logger:                   zap.L(),
 		SessionTokenCookieDomain: cfg.SessionTokenCookieDomain,
@@ -344,7 +338,7 @@ func runScheduledFlush(deps *sharedDependencies) RunnableTask {
 		Run: func(ctx context.Context) error {
 			zap.L().Info("Starting scheduled flush of pending messages")
 			store := deps.DB.AsReliableOutboxStore()
-			reliableoutbox.ScheduledFlushPendingMessages(ctx, store, deps.RabbitMQPub, reliableoutbox.DefaultScheduledFlushPeriodFunc)
+			reliableoutbox.ScheduledFlushPendingMessages(ctx, store, deps.Publisher, reliableoutbox.DefaultScheduledFlushPeriodFunc)
 			zap.L().Info("Stopped scheduled flush of pending messages")
 			return nil
 		},
@@ -352,67 +346,39 @@ func runScheduledFlush(deps *sharedDependencies) RunnableTask {
 	}
 }
 
-func runDeadLetterConsumer(deps *sharedDependencies) RunnableTask {
-	var consumer *hrabbitmq.ConsumerWithHandlerWaiter
-
-	return RunnableTask{
-		Run: func(ctx context.Context) error {
-			var err error
-			consumer, err = delayqueues.SetupStandardDeadLetterConsumer(
-				deps.RabbitMQConn,
-				zap.L().With(zap.String("consumer", "dead-letters")),
-				deps.RabbitMQPub,
-				deps.QueueCache,
-			)
-			if err != nil {
-				zap.L().Fatal("Failed to setup dead letter queue", zap.Error(err))
-			}
-
-			zap.L().Info("Starting dead letter queue consumer")
-			if err := consumer.Run(); err != nil && !errors.Is(err, context.Canceled) {
-				return errors.Wrap(err, "failed to run dead letter queue consumer")
-			}
-			return nil
-		},
-		Shutdown: func(ctx context.Context) {
-			zap.L().Info("Shutting down dead letter queue consumer")
-			consumer.CloseWithContext(ctx)
-			zap.L().Info("dead letter queue consumer shutdown")
-		},
-	}
-}
-
 func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
-	var consumer *hrabbitmq.ConsumerWithHandlerWaiter
+	var consumer *hnats.Consumer
 
 	return RunnableTask{
 		Run: func(ctx context.Context) error {
 			wrk := &worker.Worker{
-				RabbitConn:      deps.RabbitMQConn,
-				RabbitPublisher: deps.RabbitMQPub,
-				DB:              deps.DB,
-				RetryTimeout:    time.Minute,
-				Logger:          zap.L().Named("worker"),
-				Cache:           deps.QueueCache,
-				SpiceDB:         deps.SpiceDB,
-				CpClient:        deps.CpClient,
+				JetStream:           deps.JetStream,
+				Publisher:           deps.Publisher,
+				DeadLetterPublisher: deps.DeadLetterPublisher,
+				DB:                  deps.DB,
+				RetryTimeout:        time.Minute,
+				Logger:              zap.L().Named("worker"),
+				SpiceDB:             deps.SpiceDB,
+				CpClient:            deps.CpClient,
 			}
 
 			var err error
-			consumer, err = wrk.BuildMainConsumer()
+			consumer, err = wrk.BuildMainConsumer(ctx)
 			if err != nil {
 				zap.L().Fatal("failed to setup main consumer", zap.Error(err))
 			}
 
 			zap.L().Info("Starting main consumer")
-			if err := consumer.Run(); err != nil && !errors.Is(err, context.Canceled) {
+			if err := consumer.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				return errors.Wrap(err, "failed to run main consumer")
 			}
 			return nil
 		},
 		Shutdown: func(ctx context.Context) {
 			zap.L().Info("Shutting down main consumer")
-			consumer.CloseWithContext(ctx)
+			if err := consumer.Close(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				zap.L().Warn("failed to close main consumer cleanly", zap.Error(err))
+			}
 			zap.L().Info("main consumer shutdown")
 		},
 	}

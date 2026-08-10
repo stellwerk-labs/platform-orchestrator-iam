@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hrabbitmq"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 
@@ -38,7 +38,7 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 		SessionTokenCookieDomain: "cookie.domain",
 		CpClient:                 mockplatformorchestratorcp.NewMockClientWithResponsesInterface(ctrl),
 		SpiceDB:                  mockspicedb.NewMockSpiceDB(ctrl),
-		RabbitMqPublisher:        new(hrabbitmq.NoOpPublisher),
+		Publisher:                new(hmessaging.RecordingPublisher),
 		SsoProvider:              mocksso.NewMockProvider(ctrl),
 		SsoStateSecret:           "test-secret-key-for-hmac-signing",
 	}

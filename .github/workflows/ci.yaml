@@ -62,6 +62,8 @@ jobs:
   test-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CP_IMAGE: ghcr.io/stellwerk-labs/platform-orchestrator-cp:nats-candidate
     steps:
       - name: Checkout
         uses: actions/checkout@v6

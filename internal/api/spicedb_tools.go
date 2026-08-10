@@ -18,8 +18,8 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 
 	"github.com/pkg/errors"
-	v2 "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
-	"github.com/stellwerk-labs/golib/hstandardreliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging"
+	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ type SyncSpiceDBParams struct {
 	UserId opt.Opt[uuid.UUID]
 }
 
-func insertSpiceDBSyncEventMessages(ctx context.Context, orgId string, userId *uuid.UUID, db model.Databaser, tx model.TxWithCommit) ([]*hstandardreliableoutbox.PendingEventMessage, error) {
+func insertSpiceDBSyncEventMessages(ctx context.Context, orgId string, userId *uuid.UUID, db model.Databaser, tx model.TxWithCommit) ([]*hstandardoutbox.PendingEventMessage, error) {
 	payload, _ := json.Marshal(events.CloudEvent[genevents.SpiceDBSyncData]{
 		Type: genevents.IoPlatformOrchestratorSpicedbSync,
 		Time: time.Now().UTC(),
@@ -38,13 +38,11 @@ func insertSpiceDBSyncEventMessages(ctx context.Context, orgId string, userId *u
 		},
 	})
 
-	msg := &hstandardreliableoutbox.PendingEventMessage{
-		Exchange:   events.DefaultExchange,
-		RoutingKey: string(genevents.IoPlatformOrchestratorSpicedbSync),
-		Payload:    payload,
+	msg := &hstandardoutbox.PendingEventMessage{Subject: string(genevents.IoPlatformOrchestratorSpicedbSync),
+		Payload: payload,
 	}
 
-	if messages, err := db.InsertPendingEventMessages(ctx, tx, []*hstandardreliableoutbox.PendingEventMessage{msg}); err != nil {
+	if messages, err := db.InsertPendingEventMessages(ctx, tx, []*hstandardoutbox.PendingEventMessage{msg}); err != nil {
 		return nil, err
 	} else {
 		return messages, nil
@@ -55,7 +53,7 @@ func insertSpiceDBSyncEventMessages(ctx context.Context, orgId string, userId *u
 // If only the orgId is provided, it syncs all relationships for the organization, i.e. it will add/remove all relationships for that org.
 // If both orgId and userId are provided, it syncs only the relationships related to that specific user within the organization, i.e. it will only add/remove relationships for that user.
 // Returns: zedToken, removed count, added count, pending event messages to publish, error
-func SyncSpiceDBWithDB(ctx context.Context, logger *zap.Logger, syncParams SyncSpiceDBParams, db model.Databaser, spiceDB spicedb.SpiceDB) (string, int, int, []*hstandardreliableoutbox.PendingEventMessage, error) {
+func SyncSpiceDBWithDB(ctx context.Context, logger *zap.Logger, syncParams SyncSpiceDBParams, db model.Databaser, spiceDB spicedb.SpiceDB) (string, int, int, []*hstandardoutbox.PendingEventMessage, error) {
 	// Start a database transaction
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -153,7 +151,7 @@ func SyncSpiceDBWithDB(ctx context.Context, logger *zap.Logger, syncParams SyncS
 				if messages, err := createScopeSyncEventMessages(ctx, orgId, m.Scope, db); err != nil {
 					return "", 0, 0, nil, errors.Wrap(err, "failed to insert scope sync event message")
 				} else {
-					return "", 0, 0, messages, v2.NewGracefulRetryError(errors.Errorf("scoped role not found for org role id %s and scope %s", m.Role.Must().String(), m.Scope))
+					return "", 0, 0, messages, hmessaging.NewRetryError(errors.Errorf("scoped role not found for org role id %s and scope %s", m.Role.Must().String(), m.Scope))
 				}
 			} else {
 				relationships = append(relationships, &v1.Relationship{
@@ -179,7 +177,7 @@ func SyncSpiceDBWithDB(ctx context.Context, logger *zap.Logger, syncParams SyncS
 			if messages, err := createScopeSyncEventMessages(ctx, orgId, sur.Scope, db); err != nil {
 				return "", 0, 0, nil, errors.Wrap(err, "failed to insert scope sync event message")
 			} else {
-				return "", 0, 0, messages, v2.NewGracefulRetryError(errors.Errorf("scoped role not found for org role id %s and scope %s", sur.RoleId.String(), sur.Scope))
+				return "", 0, 0, messages, hmessaging.NewRetryError(errors.Errorf("scoped role not found for org role id %s and scope %s", sur.RoleId.String(), sur.Scope))
 			}
 		} else {
 			relationships = append(relationships, &v1.Relationship{
@@ -270,7 +268,7 @@ func getSubjectFilterForUserId(userId *uuid.UUID) *v1.SubjectFilter {
 	}
 }
 
-func createScopeSyncEventMessages(ctx context.Context, orgId, scope string, db model.Databaser) ([]*hstandardreliableoutbox.PendingEventMessage, error) {
+func createScopeSyncEventMessages(ctx context.Context, orgId, scope string, db model.Databaser) ([]*hstandardoutbox.PendingEventMessage, error) {
 	payload, _ := json.Marshal(events.CloudEvent[genevents.ScopeSyncData]{
 		Type: genevents.IoPlatformOrchestratorScopeSync,
 		Time: time.Now().UTC(),
@@ -280,13 +278,11 @@ func createScopeSyncEventMessages(ctx context.Context, orgId, scope string, db m
 		},
 	})
 
-	msg := &hstandardreliableoutbox.PendingEventMessage{
-		Exchange:   events.DefaultExchange,
-		RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-		Payload:    payload,
+	msg := &hstandardoutbox.PendingEventMessage{Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+		Payload: payload,
 	}
 
-	if messages, err := db.InsertPendingEventMessages(ctx, nil, []*hstandardreliableoutbox.PendingEventMessage{msg}); err != nil {
+	if messages, err := db.InsertPendingEventMessages(ctx, nil, []*hstandardoutbox.PendingEventMessage{msg}); err != nil {
 		return nil, err
 	} else {
 		return messages, nil

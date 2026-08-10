@@ -18,12 +18,10 @@ import (
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	v2 "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
-	"github.com/stellwerk-labs/golib/hstandardreliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging"
+	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
-	"github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/require"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 )
@@ -40,9 +38,9 @@ func TestHandle_InvalidJSON(t *testing.T) {
 	handler := New(spiceDB, db, nil)
 	logger := zap.NewNop()
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: []byte("invalid json"),
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: []byte("invalid json"),
 		},
 	}
 
@@ -71,9 +69,9 @@ func TestHandle_MissingOrgId(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -103,9 +101,9 @@ func TestHandle_ListRolesError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -139,9 +137,9 @@ func TestHandle_ListMembershipsError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -181,9 +179,9 @@ func TestHandle_ListServiceUserRolesError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -225,9 +223,9 @@ func TestHandle_TransactionCommitError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -270,9 +268,9 @@ func TestHandle_SpiceDBSyncError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -317,9 +315,9 @@ func TestHandle_Success_EmptyOrg(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -377,9 +375,9 @@ func TestHandle_Success_WithRolesAndMemberships(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -512,9 +510,9 @@ func TestHandle_Success_WithServiceUserRoles(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -610,9 +608,9 @@ func TestHandle_GracefulRetryError_ScopedRoleNotFound(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -658,13 +656,13 @@ func TestHandle_GracefulRetryError_ScopedRoleNotFound(t *testing.T) {
 		Return([]model.ServiceUserRole{}, nil)
 	tx.EXPECT().Commit().Return(nil)
 	// Expect InsertPendingEventMessages to be called with nil transaction to trigger a scope sync
-	db.EXPECT().InsertPendingEventMessages(gomock.Any(), nil, gomock.Any()).Return([]*hstandardreliableoutbox.PendingEventMessage{}, nil)
+	db.EXPECT().InsertPendingEventMessages(gomock.Any(), nil, gomock.Any()).Return([]*hstandardoutbox.PendingEventMessage{}, nil)
 
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.Error(t, err)
 
 	// Verify that the error is a GracefulRetryError
-	var gracefulErr v2.GracefulRetryError
+	var gracefulErr hmessaging.RetryError
 	require.True(t, errors.As(err, &gracefulErr), "expected error to be a GracefulRetryError")
 }
 
@@ -693,9 +691,9 @@ func TestHandle_GracefulRetryError_WithPendingMessagesCreated(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -728,14 +726,12 @@ func TestHandle_GracefulRetryError_WithPendingMessagesCreated(t *testing.T) {
 	}
 
 	// Create sample pending messages that will be returned
-	pendingMessage := &hstandardreliableoutbox.PendingEventMessage{
-		Id:         1,
-		CreatedAt:  time.Now(),
-		Exchange:   events.DefaultExchange,
-		RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-		Payload:    []byte(`{"org_id":"test-org-123","scope":"project/test-project"}`),
+	pendingMessage := &hstandardoutbox.PendingEventMessage{
+		Id:        1,
+		CreatedAt: time.Now(), Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+		Payload: []byte(`{"org_id":"test-org-123","scope":"project/test-project"}`),
 	}
-	pendingMessages := []*hstandardreliableoutbox.PendingEventMessage{pendingMessage}
+	pendingMessages := []*hstandardoutbox.PendingEventMessage{pendingMessage}
 
 	db.EXPECT().BeginTx(gomock.Any(), &sql.TxOptions{ReadOnly: true}).Return(tx, nil)
 	tx.EXPECT().Rollback().Return(nil)
@@ -758,7 +754,7 @@ func TestHandle_GracefulRetryError_WithPendingMessagesCreated(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify that the error is a GracefulRetryError
-	var gracefulErr v2.GracefulRetryError
+	var gracefulErr hmessaging.RetryError
 	require.True(t, errors.As(err, &gracefulErr), "expected error to be a GracefulRetryError")
 }
 
@@ -786,9 +782,9 @@ func TestHandle_GracefulRetryError_NoPendingMessages(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			Body: jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Data: jsonBody,
 		},
 	}
 
@@ -834,7 +830,7 @@ func TestHandle_GracefulRetryError_NoPendingMessages(t *testing.T) {
 		Return([]model.ServiceUserRole{}, nil)
 	tx.EXPECT().Commit().Return(nil)
 	// Return empty pending messages - no scope sync events created
-	db.EXPECT().InsertPendingEventMessages(gomock.Any(), nil, gomock.Any()).Return([]*hstandardreliableoutbox.PendingEventMessage{}, nil)
+	db.EXPECT().InsertPendingEventMessages(gomock.Any(), nil, gomock.Any()).Return([]*hstandardoutbox.PendingEventMessage{}, nil)
 
 	// Verify that publisher is NOT called when there are no pending messages
 	// (no expectations set on mockPublisher or reliableOutboxStore)
@@ -843,6 +839,6 @@ func TestHandle_GracefulRetryError_NoPendingMessages(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify that the error is a GracefulRetryError
-	var gracefulErr v2.GracefulRetryError
+	var gracefulErr hmessaging.RetryError
 	require.True(t, errors.As(err, &gracefulErr), "expected error to be a GracefulRetryError")
 }

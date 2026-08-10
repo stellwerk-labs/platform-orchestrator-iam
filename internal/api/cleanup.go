@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"github.com/stellwerk-labs/golib/htelemetry"
 	"go.uber.org/zap"
 
@@ -96,6 +96,6 @@ func (s *Server) InternalRemoveAccessFromOrg(ctx context.Context, request Intern
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 	return InternalRemoveAccessFromOrg204Response{}, nil
 }

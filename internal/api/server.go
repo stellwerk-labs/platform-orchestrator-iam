@@ -12,7 +12,7 @@ import (
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
 
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hrabbitmq"
+	"github.com/stellwerk-labs/golib/hmessaging"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
@@ -39,8 +39,8 @@ type Server struct {
 	SsoCallbackUrlPath string
 	SsoStateSecret     string
 
-	SpiceDB           spicedb.SpiceDB
-	RabbitMqPublisher hrabbitmq.Publisher
+	SpiceDB   spicedb.SpiceDB
+	Publisher hmessaging.Publisher
 
 	SuperUserTokenHash []byte
 }

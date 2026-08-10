@@ -6,8 +6,6 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 )
 
-const DefaultExchange = "platform-orchestrator-default"
-
 type CloudEvent[e any] struct {
 	SpecVersion CloudEventSpecVersion1 `json:"specversion"`
 	Type        genevents.EventType    `json:"type"`

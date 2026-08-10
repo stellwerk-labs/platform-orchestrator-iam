@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
 var egSessionToken string
@@ -37,6 +37,12 @@ func TestInternalAuth_no_token(t *testing.T) {
 	e.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusUnauthorized, resp.Code)
 	assert.Equal(t, "Cookie, Bearer", resp.Header().Get("WWW-Authenticate"))
+}
+
+func TestSkipAuthenticationRegexDoesNotIncludeRetiredRunnerPolling(t *testing.T) {
+	assert.False(t, skipAuthenticationRegex.MatchString(
+		"/orgs/test-org/remote-runners/test-runner/actions/poll-requests",
+	))
 }
 
 func TestInternalAuth_session_token_no_match(t *testing.T) {

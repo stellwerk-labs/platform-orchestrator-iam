@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
-	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
+	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 )
 
 // TestProjectScopedRoleDeletion tests that scoped roles at the project level are properly deleted
@@ -81,8 +81,8 @@ func TestProjectScopedRoleDeletion(t *testing.T) {
 		}, 30*time.Second, 1*time.Second, "user should have write permissions on project scope")
 	})
 
-	t.Run("emit ProjectDeleted event to RabbitMQ", func(t *testing.T) {
-		// Emit the ProjectDeleted event to RabbitMQ
+	t.Run("emit ProjectDeleted event to NATS", func(t *testing.T) {
+		// Emit the ProjectDeleted event to JetStream.
 		// This will be consumed by the projectdeletedhandler which will delete the scoped roles
 		MustPublishProjectDeletedEvent(t, org.Id, project.Id, project.Uuid)
 
@@ -243,8 +243,8 @@ func TestEnvScopedRoleDeletion(t *testing.T) {
 		}, 30*time.Second, 1*time.Second, "user should have write permissions on environment scope")
 	})
 
-	t.Run("emit EnvironmentDeleted event to RabbitMQ", func(t *testing.T) {
-		// Emit the EnvironmentDeleted event to RabbitMQ
+	t.Run("emit EnvironmentDeleted event to NATS", func(t *testing.T) {
+		// Emit the EnvironmentDeleted event to JetStream.
 		// This will be consumed by the envdeletedhandler which will delete the scoped roles
 		MustPublishEnvironmentDeletedEvent(t, org.Id, project.Id, env.Id, project.Uuid, env.Uuid)
 

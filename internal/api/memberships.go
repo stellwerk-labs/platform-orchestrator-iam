@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/herrors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"go.uber.org/zap"
 
 	usererrors "github.com/stellwerk-labs/platform-orchestrator-iam/internal/errors"
@@ -113,7 +113,7 @@ func (s *Server) InternalCreateOrgMembership(ctx context.Context, request Intern
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
 		zap.String("po-membership-id", membership.Id.String()), zap.String("po-subject-type", string(membership.SubjectType)),
@@ -254,7 +254,7 @@ func (s *Server) DeleteOrgMembership(ctx context.Context, request DeleteOrgMembe
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	logger.Info("deleted membership", zap.String("user_id", membership.UserId.String()), zap.String("membership_id", request.MembershipId.String()), zap.String("subject_type", string(membership.SubjectType)), zap.String("subject", membership.Subject))
 	return DeleteOrgMembership204Response{}, nil
@@ -419,7 +419,7 @@ func (s *Server) ReplaceOrgUserMemberships(ctx context.Context, request ReplaceO
 	}
 
 	// Publish messages for SpiceDB sync
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	// Convert to response format
 	userMemberships := make([]UserMembership, 0, len(createdMemberships))

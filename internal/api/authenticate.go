@@ -48,7 +48,6 @@ var skipAuthenticationRegex = regexp.MustCompile(
 		// TODO: remove these once we have a different domain for the runners to hit
 		`|(/orgs/[^/]+/deployments/[^/]+/results)` +
 		`|(/orgs/[^/]+/deployments/[^/]+/bundle)` +
-		`|(/orgs/[^/]+/remote-runners/[^/]+/actions/poll-requests)` +
 		`)$`,
 )
 

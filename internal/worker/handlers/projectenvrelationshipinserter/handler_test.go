@@ -21,12 +21,10 @@ import (
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	v2 "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
-	"github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/require"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 )
@@ -48,10 +46,10 @@ func TestHandle_InvalidJSON(t *testing.T) {
 	handler := New(spiceDB, db, cpClient)
 	logger := zap.NewNop()
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorProjectCreated),
-			Body:       []byte("invalid json"),
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorProjectCreated),
+			Data:    []byte("invalid json"),
 		},
 	}
 
@@ -71,15 +69,42 @@ func TestHandle_UnknownRoutingKey(t *testing.T) {
 	handler := New(spiceDB, db, cpClient)
 	logger := zap.NewNop()
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: "unknown.event.type",
-			Body:       []byte("{}"),
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: "unknown.event.type",
+			Data:    []byte("{}"),
 		},
 	}
 
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.NoError(t, err)
+}
+
+func TestCreateScopedRolesSeedsMissingOrganizationRoles(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	db := mockmodel.NewMockDatabaser(ctrl)
+	tx := mockmodel.NewMockTxWithCommit(ctrl)
+	handler := New(nil, db, nil)
+
+	db.EXPECT().BeginTx(gomock.Any(), nil).Return(tx, nil)
+	tx.EXPECT().Rollback().Return(sql.ErrTxDone)
+	db.EXPECT().ListRoles(gomock.Any(), tx, orgId).Return(nil, nil)
+	db.EXPECT().SeedRoles(gomock.Any(), tx, orgId, gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ model.Tx, _ string, roles []model.Role) error {
+			require.Len(t, roles, api.BuiltinRolesNumber)
+			return nil
+		},
+	)
+	db.EXPECT().UpsertScopedRole(gomock.Any(), tx, gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ model.Tx, role *model.ScopedRole) (*model.ScopedRole, error) {
+			return role, nil
+		},
+	).Times(api.BuiltinRolesNumber)
+	tx.EXPECT().Commit().Return(nil)
+
+	roles, err := handler.createScopedRoles(t.Context(), zap.NewNop(), orgId, "project:"+uuid.NewString())
+	require.NoError(t, err)
+	require.Len(t, roles, api.BuiltinRolesNumber)
 }
 
 // ProjectCreated event tests
@@ -112,10 +137,10 @@ func TestHandle_ProjectCreated_Success(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorProjectCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorProjectCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -237,10 +262,10 @@ func TestHandle_ProjectCreated_ListRolesError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorProjectCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorProjectCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -278,10 +303,10 @@ func TestHandle_ProjectCreated_OrgRolesNotSeededYet(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorProjectCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorProjectCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -296,7 +321,7 @@ func TestHandle_ProjectCreated_OrgRolesNotSeededYet(t *testing.T) {
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.Error(t, err)
 	// Should be a graceful retry error
-	var gracefulRetryErr v2.GracefulRetryError
+	var gracefulRetryErr hmessaging.RetryError
 	require.ErrorAs(t, err, &gracefulRetryErr, "Expected GracefulRetryError")
 }
 
@@ -328,10 +353,10 @@ func TestHandle_ProjectCreated_UpsertScopedRoleError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorProjectCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorProjectCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -386,10 +411,10 @@ func TestHandle_EnvironmentCreated_Success(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -514,10 +539,10 @@ func TestHandle_EnvironmentCreated_OrgRolesNotSeededYet(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -532,7 +557,7 @@ func TestHandle_EnvironmentCreated_OrgRolesNotSeededYet(t *testing.T) {
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.Error(t, err)
 	// Should be a graceful retry error
-	var gracefulRetryErr v2.GracefulRetryError
+	var gracefulRetryErr hmessaging.RetryError
 	require.ErrorAs(t, err, &gracefulRetryErr, "Expected GracefulRetryError")
 }
 
@@ -567,10 +592,10 @@ func TestHandle_EnvironmentCreated_UpsertScopedRoleError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -622,10 +647,10 @@ func TestHandle_EnvironmentCreated_SpiceDBSyncError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentCreated),
+			Data:    jsonBody,
 		},
 	}
 
@@ -679,10 +704,10 @@ func TestHandle_ScopeSync_ProjectScope_Success(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+			Data:    jsonBody,
 		},
 	}
 
@@ -787,10 +812,10 @@ func TestHandle_ScopeSync_EnvScope_Success(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+			Data:    jsonBody,
 		},
 	}
 
@@ -884,10 +909,10 @@ func TestHandle_ScopeSync_ProjectScope_GracefulRetryError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+			Data:    jsonBody,
 		},
 	}
 
@@ -913,7 +938,7 @@ func TestHandle_ScopeSync_ProjectScope_GracefulRetryError(t *testing.T) {
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.Error(t, err)
 	// Should be a graceful retry error
-	var gracefulRetryErr v2.GracefulRetryError
+	var gracefulRetryErr hmessaging.RetryError
 	require.ErrorAs(t, err, &gracefulRetryErr, "Expected GracefulRetryError")
 }
 
@@ -942,10 +967,10 @@ func TestHandle_ScopeSync_EnvScope_GracefulRetryError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(genevents.IoPlatformOrchestratorScopeSync),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(genevents.IoPlatformOrchestratorScopeSync),
+			Data:    jsonBody,
 		},
 	}
 
@@ -968,6 +993,6 @@ func TestHandle_ScopeSync_EnvScope_GracefulRetryError(t *testing.T) {
 	err := handler.Handle(context.Background(), logger, delivery)
 	require.Error(t, err)
 	// Should be a graceful retry error
-	var gracefulRetryErr v2.GracefulRetryError
+	var gracefulRetryErr hmessaging.RetryError
 	require.ErrorAs(t, err, &gracefulRetryErr, "Expected GracefulRetryError")
 }

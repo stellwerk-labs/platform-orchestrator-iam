@@ -1,12 +1,16 @@
 
+CP_IMAGE ?= ghcr.io/stellwerk-labs/platform-orchestrator-cp:v2.0.0
+
 compose.yaml: BUILD_ARGS := {"context":"../"}
-compose.yaml: ../score.yaml Makefile compose-mixins.yaml score.provisioners.yaml
+compose.yaml: ../score.yaml Makefile compose-mixins.yaml score.provisioners.yaml score.cp.yaml
 	score-compose check-version '>=0.16.0'
 	score-compose init --no-sample
 	cp score.provisioners.yaml .score-compose/
+	cp score.cp.yaml .score-compose/
+	yq -i '.containers.platform-orchestrator-cp.image = "$(CP_IMAGE)"' .score-compose/score.cp.yaml
 	score-compose generate ../score.yaml --build 'platform-orchestrator-iam=$(BUILD_ARGS)'
-	score-compose generate ./score.cp.yaml
-	score-compose generate --publish 5432:postgres.default#platform-orchestrator-iam.postgres.host:5432 --publish 8081:platform-orchestrator-iam:8080 --publish 8082:platform-orchestrator-cp:8080 --publish 5672:amqp.default#rabbitmq.host:5672
+	score-compose generate .score-compose/score.cp.yaml
+	score-compose generate --publish 5432:postgres.default#platform-orchestrator-iam.postgres.host:5432 --publish 8081:platform-orchestrator-iam:8080 --publish 8082:platform-orchestrator-cp:8080
 	yq eval-all '. as $$item ireduce ({}; . * $$item)' --inplace compose.yaml compose-mixins.yaml
 	# Copy original iam instance as a second "self-hosted" iam instance
 	yq -i '.services.platform-orchestrator-iam-self-hosted = .services.platform-orchestrator-iam-platform-orchestrator-iam' compose.yaml && \
@@ -39,7 +43,7 @@ test: compose.yaml
 	SPICEDB_TOKEN=t0k3n \
 	DATABASE_URL="host=localhost port=5432 user=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .username) password=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .password) dbname=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .name) sslmode=disable" \
 	DB_CONNECTION_STRING="$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' -f 'host=localhost port=5432 dbname={{ .name }} user={{ .username }} password={{ .password }} connect_timeout=5 sslmode=disable')" \
-	RABBITMQ_URL="$(shell score-compose resources get-outputs 'amqp.default#rabbitmq' -f 'amqp://{{ .username }}:{{ .password }}@localhost:5672/{{ .vhost }}')" \
+	NATS_URL=nats://localhost:4222 \
 	SELF_HOSTED_IAM_URL=http://localhost:8083 \
 	go tool gotestsum --format testname ./ -test.timeout 10m -test.parallel=2 -test.v $(TESTARGS)
 

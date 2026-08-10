@@ -13,7 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"go.uber.org/zap"
 
 	usererrors "github.com/stellwerk-labs/platform-orchestrator-iam/internal/errors"
@@ -181,7 +181,7 @@ func (s *Server) CreateServiceUser(ctx context.Context, request CreateServiceUse
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	apiRoles := make([]ServiceUserRole, 0, len(serviceUserRoles))
 	for _, r := range serviceUserRoles {
@@ -289,7 +289,7 @@ func (s *Server) DeleteServiceUser(ctx context.Context, request DeleteServiceUse
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	logger.Info("deleted service user", zap.String("service_user_id", request.ServiceUserId.String()))
 	return DeleteServiceUser204Response{}, nil
@@ -390,7 +390,7 @@ func (s *Server) ReplaceServiceUserRoles(ctx context.Context, request ReplaceSer
 	}
 
 	// Publish messages for SpiceDB sync
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 
 	// Convert to response format
 	apiRoles := make([]ServiceUserRole, 0, len(newServiceUserRoles))
