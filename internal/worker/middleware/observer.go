@@ -4,14 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2/expirable"
-
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq"
-	delayqueues "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	"github.com/stellwerk-labs/golib/htelemetry"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -19,7 +15,7 @@ import (
 )
 
 func wrapWithPanicRecovery(next handlers.Handler) handlers.Handler {
-	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
+	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
 		var err error
 		defer func() {
 			if r := recover(); r != nil {
@@ -32,17 +28,11 @@ func wrapWithPanicRecovery(next handlers.Handler) handlers.Handler {
 }
 
 func wrapWithTimeout(next handlers.Handler, timeout time.Duration) handlers.Handler {
-	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
+	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return next.Handle(ctx, logger, d)
 	})
-}
-
-func wrapWithGracefulRetry(next handlers.Handler, retryPublisher hrabbitmq.Publisher, cache *expirable.LRU[string, int32]) handlers.Handler {
-	return handlers.HandlerFunc(delayqueues.WrapRepublishGracefulRetriesWithDelay(retryPublisher, cache, func(ctx context.Context, logger *zap.Logger, delivery *rabbitmq.Delivery) error {
-		return next.Handle(ctx, logger, delivery)
-	}))
 }
 
 type contextKey string
@@ -58,23 +48,21 @@ func SetObserverAnnotation(ctx context.Context, key string, value string) {
 func WrapWithObserver(
 	next handlers.Handler,
 	operationName string,
-	retryPublisher hrabbitmq.Publisher,
-	cache *expirable.LRU[string, int32],
 	retryTimeOut time.Duration,
 ) handlers.HandlerFunc {
-
-	next = wrapWithGracefulRetry(next, retryPublisher, cache)
 	next = wrapWithTimeout(next, retryTimeOut)
 	next = wrapWithPanicRecovery(next)
 
-	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
+	return handlers.HandlerFunc(func(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
 		span := htelemetry.StartSpan(
 			operationName,
 			append(
-				hrabbitmq.ExtractSpanOptionsFromMessage(logger, d.Headers),
-				htelemetry.ResourceName(d.RoutingKey),
-				htelemetry.Tag("rabbitmq.routing-key", d.RoutingKey),
-				htelemetry.Tag("rabbitmq.message-id", d.MessageId),
+				hmessaging.ExtractSpanOptions(logger, d.Header),
+				htelemetry.ResourceName(d.Subject),
+				htelemetry.Tag("messaging.system", "nats"),
+				htelemetry.Tag("messaging.destination.name", d.Subject),
+				htelemetry.Tag("messaging.message.id", d.ID),
+				htelemetry.Tag("messaging.message.delivery_count", d.Attempt),
 			)...,
 		)
 		defer span.Finish()
@@ -85,9 +73,10 @@ func WrapWithObserver(
 		ctx = context.WithValue(ctx, annotateSet, annotateMap)
 
 		logger = hlogger.TraceScopedLoggerFromSpan(logger, span).With(
-			zap.Object("rabbitmq", zapcore.ObjectMarshalerFunc(func(encoder zapcore.ObjectEncoder) error {
-				encoder.AddString("routing-key", d.RoutingKey)
-				encoder.AddString("message-id", d.MessageId)
+			zap.Object("nats", zapcore.ObjectMarshalerFunc(func(encoder zapcore.ObjectEncoder) error {
+				encoder.AddString("subject", d.Subject)
+				encoder.AddString("message-id", d.ID)
+				encoder.AddUint64("delivery-attempt", d.Attempt)
 				return nil
 			})),
 		)

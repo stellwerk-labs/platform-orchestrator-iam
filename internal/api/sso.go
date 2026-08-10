@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardreliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"go.uber.org/zap"
 
@@ -273,7 +273,7 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	}
 
 	var membership *model.Membership
-	var messages []*hstandardreliableoutbox.PendingEventMessage
+	var messages []*hstandardoutbox.PendingEventMessage
 	if createMembership {
 		roles, err := s.listOrSeedRoles(ctx, logger, tx, orgId)
 		if err != nil {
@@ -331,7 +331,7 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	}
 
 	if membership != nil && len(messages) > 0 {
-		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 		logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
 			zap.String("po-membership-id", membership.Id.String()), zap.String("po-subject-type", string(membership.SubjectType)),
 			zap.String("po-subject", membership.Subject), zap.String("po-scope", membership.Scope))

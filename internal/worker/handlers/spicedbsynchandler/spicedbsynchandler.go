@@ -15,22 +15,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq"
-	v2 "github.com/stellwerk-labs/golib/hrabbitmq/delayqueues/v2"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/zap"
 )
 
 type SyncSpiceDBHandler struct {
 	spiceDB   spicedb.SpiceDB
 	db        model.Databaser
-	publisher hrabbitmq.Publisher
+	publisher hmessaging.Publisher
 }
 
 // New is the constructor so that we don't miss new arguments.
-func New(spiceDB spicedb.SpiceDB, db model.Databaser, publisher hrabbitmq.Publisher) *SyncSpiceDBHandler {
+func New(spiceDB spicedb.SpiceDB, db model.Databaser, publisher hmessaging.Publisher) *SyncSpiceDBHandler {
 	return &SyncSpiceDBHandler{
 		spiceDB:   spiceDB,
 		db:        db,
@@ -38,10 +36,10 @@ func New(spiceDB spicedb.SpiceDB, db model.Databaser, publisher hrabbitmq.Publis
 	}
 }
 
-func (h *SyncSpiceDBHandler) Handle(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
+func (h *SyncSpiceDBHandler) Handle(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
 	// Parse event and sync SpiceDB
 	var body events.CloudEvent[genevents.SpiceDBSyncData]
-	if err := json.Unmarshal(d.Body, &body); err != nil {
+	if err := json.Unmarshal(d.Data, &body); err != nil {
 		return errors.Wrap(err, "failed to unmarshal runner status check event")
 	}
 	orgId := body.Data.OrgId
@@ -59,7 +57,7 @@ func (h *SyncSpiceDBHandler) Handle(ctx context.Context, logger *zap.Logger, d *
 	}
 
 	if zedToken, removed, added, pendingMessages, err := api.SyncSpiceDBWithDB(ctx, logger, api.SyncSpiceDBParams{OrgId: orgId, UserId: opt.OfRef(userId)}, h.db, h.spiceDB); err != nil {
-		var gracefulErr v2.GracefulRetryError
+		var gracefulErr hmessaging.RetryError
 		if errors.As(err, &gracefulErr) {
 			// Publish the specific scope.sync messages that were created immediately so they can be processed before the retry
 			if h.publisher != nil && len(pendingMessages) > 0 {

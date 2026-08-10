@@ -6,8 +6,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
@@ -33,11 +33,11 @@ func New(db model.Databaser, spiceDB spicedb.SpiceDB) *EnvDeletedHandler {
 }
 
 // Handle is the entrypoint for new messages. It unmarshals the event data and executes the cleanup logic.
-func (h *EnvDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, d *rabbitmq.Delivery) error {
-	switch d.RoutingKey {
+func (h *EnvDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
+	switch d.Subject {
 	case string(cpevents.IoPlatformOrchestratorEnvironmentDeleted):
 		var e events.CloudEvent[cpevents.EnvChangedData]
-		if err := json.Unmarshal(d.Body, &e); err != nil {
+		if err := json.Unmarshal(d.Data, &e); err != nil {
 			return errors.Wrap(err, "failed to unmarshal event body")
 		}
 

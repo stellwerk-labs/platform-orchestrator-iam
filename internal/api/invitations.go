@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hrabbitmq/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardreliableoutbox"
+	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
+	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
@@ -350,7 +350,7 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 		return nil, errors.Wrap(err, "failed to delete invitation")
 	}
 
-	var messages []*hstandardreliableoutbox.PendingEventMessage
+	var messages []*hstandardoutbox.PendingEventMessage
 	if notAMember {
 		messages, err = insertSpiceDBSyncEventMessages(ctx, invite.OrgId, ref.Ref(uid), s.Database, tx)
 		if err != nil {
@@ -363,7 +363,7 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 	}
 
 	if len(messages) > 0 {
-		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.RabbitMqPublisher, messages)
+		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 	}
 
 	logger.Info("redeemed org membership invitation")

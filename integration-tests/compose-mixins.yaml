@@ -10,6 +10,8 @@ services:
     depends_on:
       spicedb:
         condition: service_healthy
+      nats:
+        condition: service_healthy
 
   platform-orchestrator-cp-platform-orchestrator-cp:
     environment:
@@ -21,6 +23,22 @@ services:
     depends_on:
       vault-init:
         condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+
+  nats:
+    image: nats:2.12.0-alpine
+    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   vault:
     image: hashicorp/vault:1.14
     environment:
@@ -73,3 +91,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+
+volumes:
+  nats-data:

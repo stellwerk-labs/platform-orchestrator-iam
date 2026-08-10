@@ -8,11 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/stellwerk-labs/golib/hmessaging"
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
-	"github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/require"
-	"github.com/wagslane/go-rabbitmq"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
@@ -51,10 +50,10 @@ func TestHandle_Success(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 
@@ -91,10 +90,10 @@ func TestHandle_InvalidJSON(t *testing.T) {
 	handler := New(db, spiceDB)
 	logger := zap.NewNop()
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       []byte("invalid json"),
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    []byte("invalid json"),
 		},
 	}
 
@@ -113,10 +112,10 @@ func TestHandle_UnknownRoutingKey(t *testing.T) {
 	handler := New(db, spiceDB)
 	logger := zap.NewNop()
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: "unknown.event.type",
-			Body:       []byte("{}"),
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: "unknown.event.type",
+			Data:    []byte("{}"),
 		},
 	}
 
@@ -146,10 +145,10 @@ func TestHandle_DeleteMembershipsError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 
@@ -185,10 +184,10 @@ func TestHandle_DeleteServiceUserRolesError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 
@@ -227,10 +226,10 @@ func TestHandle_DeleteScopedRolesError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 
@@ -272,10 +271,10 @@ func TestHandle_SpiceDBError(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 
@@ -322,10 +321,10 @@ func TestHandle_NoRowsDeleted(t *testing.T) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	delivery := &rabbitmq.Delivery{
-		Delivery: amqp091.Delivery{
-			RoutingKey: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
-			Body:       jsonBody,
+	delivery := &hmessaging.Delivery{
+		Message: hmessaging.Message{
+			Subject: string(cpevents.IoPlatformOrchestratorEnvironmentDeleted),
+			Data:    jsonBody,
 		},
 	}
 

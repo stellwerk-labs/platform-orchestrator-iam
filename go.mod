@@ -11,27 +11,26 @@ require (
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/karlseguin/ccache/v2 v2.0.8
 	github.com/labstack/echo/v4 v4.15.1
 	github.com/lib/pq v1.12.3
+	github.com/nats-io/nats.go v1.52.0
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose/v3 v3.27.1
-	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/stellwerk-labs/golib/hconfig v1.0.0
 	github.com/stellwerk-labs/golib/hecho v1.0.0
 	github.com/stellwerk-labs/golib/herrors v1.0.0
 	github.com/stellwerk-labs/golib/hlogger v1.0.0
+	github.com/stellwerk-labs/golib/hmessaging v1.1.1
+	github.com/stellwerk-labs/golib/hnats v1.1.1
 	github.com/stellwerk-labs/golib/hpostgresconnect v1.0.0
-	github.com/stellwerk-labs/golib/hrabbitmq v1.0.0
-	github.com/stellwerk-labs/golib/hstandardreliableoutbox v1.0.0
+	github.com/stellwerk-labs/golib/hstandardoutbox v1.1.1
 	github.com/stellwerk-labs/golib/htelemetry v1.0.0
 	github.com/stellwerk-labs/platform-orchestrator-cp/shared v1.0.0
 	github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.0.0
 	github.com/stretchr/testify v1.11.1
-	github.com/wagslane/go-rabbitmq v0.15.0
 	github.com/workos/workos-go/v6 v6.5.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.uber.org/mock v0.6.0
@@ -119,6 +118,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/oapi-codegen/echo-middleware v1.0.2 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
