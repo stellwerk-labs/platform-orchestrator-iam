@@ -62,6 +62,15 @@ func TestExpectedFingerprintRejectsMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "does not match")
 }
 
+func TestOptionalFingerprintAllowsStructuralVerification(t *testing.T) {
+	actual, err := optionalFingerprint(commonOptions{})
+	require.NoError(t, err)
+	require.Empty(t, actual)
+
+	_, err = expectedFingerprint(commonOptions{})
+	require.ErrorContains(t, err, "is required")
+}
+
 func TestResolveDatabaseURLFromIAMEnvironment(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("DATABASE_NAME", "iam database")

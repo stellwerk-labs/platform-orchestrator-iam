@@ -23,7 +23,7 @@ import (
 const usage = `Usage:
   authorization-migrate preflight [options]
   authorization-migrate apply --control-plane-url URL (--preflight-report FILE | --policy-sha256 SHA256) [options]
-  authorization-migrate verify (--preflight-report FILE | --policy-sha256 SHA256) [options]
+  authorization-migrate verify [(--preflight-report FILE | --policy-sha256 SHA256)] [options]
   authorization-migrate rollback --confirm-no-rbac-writes (--preflight-report FILE | --policy-sha256 SHA256) [options]
 
 Database options default to DATABASE_URL or the IAM DATABASE_* environment variables.
@@ -132,12 +132,14 @@ func run(ctx context.Context, logger *zap.Logger, command string, arguments []st
 		}
 		return err
 	case "verify":
-		expected, err := expectedFingerprint(options)
+		expected, err := optionalFingerprint(options)
 		if err != nil {
 			return err
 		}
 		report, inspectErr := authorizationmigration.Inspect(ctx, db, authorizationmigration.PhaseVerify)
-		if inspectErr == nil {
+		if inspectErr == nil && !report.Ready {
+			inspectErr = errors.New("verify checks failed")
+		} else if inspectErr == nil && expected != "" {
 			inspectErr = validateReport(report, expected)
 		}
 		if err := writeReport(options.output, report); err != nil {
@@ -163,39 +165,6 @@ func run(ctx context.Context, logger *zap.Logger, command string, arguments []st
 }
 
 func apply(ctx context.Context, logger *zap.Logger, db *sql.DB, connectionString, controlPlaneURL, expected string) (authorizationmigration.Report, error) {
-	version, err := currentVersion(ctx, db)
-	if err != nil {
-		return authorizationmigration.Report{}, err
-	}
-	switch version {
-	case authorizationmigration.LegacySchemaVersion:
-		preflight, err := authorizationmigration.Inspect(ctx, db, authorizationmigration.PhasePreflight)
-		if err != nil {
-			return preflight, err
-		}
-		if err := validateReport(preflight, expected); err != nil {
-			return preflight, err
-		}
-		if err := model.MigrateUp(ctx, logger, db); err != nil {
-			return preflight, errors.Wrap(err, "failed to apply Casbin database migration")
-		}
-	case authorizationmigration.CasbinSchemaVersion:
-		current, err := authorizationmigration.Inspect(ctx, db, authorizationmigration.PhaseVerify)
-		if err != nil {
-			return current, err
-		}
-		if current.PolicySHA256 != expected {
-			return current, errors.Errorf("authorization data changed: expected policy SHA-256 %s, found %s", expected, current.PolicySHA256)
-		}
-	default:
-		return authorizationmigration.Report{}, errors.Errorf("apply supports schema version %d or %d, found %d", authorizationmigration.LegacySchemaVersion, authorizationmigration.CasbinSchemaVersion, version)
-	}
-
-	database, err := model.NewDatabaser(ctx, logger, connectionString)
-	if err != nil {
-		return authorizationmigration.Report{}, errors.Wrap(err, "failed to open migrated IAM database")
-	}
-	defer func() { _ = database.Close() }()
 	cp, err := cpclient.NewClientWithResponses(controlPlaneURL,
 		cpclient.WithHTTPClient(http.DefaultClient),
 		cpclient.WithRequestEditorFn(func(_ context.Context, request *http.Request) error {
@@ -206,21 +175,16 @@ func apply(ctx context.Context, logger *zap.Logger, db *sql.DB, connectionString
 	if err != nil {
 		return authorizationmigration.Report{}, errors.Wrap(err, "failed to create control-plane client")
 	}
-	reconciled, err := authorizationmigration.Reconcile(ctx, logger, db, database, cp)
+	database, report, err := authorizationmigration.Upgrade(ctx, logger, db, connectionString, cp, expected)
 	if err != nil {
-		report, _ := authorizationmigration.Inspect(ctx, db, authorizationmigration.PhaseVerify)
 		return report, err
 	}
-	report, err := authorizationmigration.Inspect(ctx, db, authorizationmigration.PhaseVerify)
-	report.Reconciled = &reconciled
-	if err == nil {
-		err = validateReport(report, expected)
-	}
-	return report, err
+	defer func() { _ = database.Close() }()
+	return report, validateReport(report, expected)
 }
 
 func rollback(ctx context.Context, logger *zap.Logger, db *sql.DB, expected string) (authorizationmigration.Report, error) {
-	version, err := currentVersion(ctx, db)
+	version, err := authorizationmigration.CurrentVersion(ctx, db)
 	if err != nil {
 		return authorizationmigration.Report{}, err
 	}
@@ -255,6 +219,17 @@ func validateReport(report authorizationmigration.Report, expected string) error
 }
 
 func expectedFingerprint(options commonOptions) (string, error) {
+	expected, err := optionalFingerprint(options)
+	if err != nil {
+		return "", err
+	}
+	if expected == "" {
+		return "", errors.New("a valid --preflight-report or --policy-sha256 is required")
+	}
+	return expected, nil
+}
+
+func optionalFingerprint(options commonOptions) (string, error) {
 	expected := options.policySHA256
 	if options.preflightReport != "" {
 		contents, err := os.ReadFile(options.preflightReport)
@@ -273,21 +248,16 @@ func expectedFingerprint(options commonOptions) (string, error) {
 		}
 		expected = report.PolicySHA256
 	}
+	if expected == "" {
+		return "", nil
+	}
 	if len(expected) != sha256HexLength || strings.Trim(expected, "0123456789abcdefABCDEF") != "" {
-		return "", errors.New("a valid --preflight-report or --policy-sha256 is required")
+		return "", errors.New("invalid --preflight-report or --policy-sha256")
 	}
 	return strings.ToLower(expected), nil
 }
 
 const sha256HexLength = 64
-
-func currentVersion(ctx context.Context, db *sql.DB) (int64, error) {
-	var version int64
-	if err := db.QueryRowContext(ctx, `SELECT version_id FROM goose_db_version WHERE is_applied ORDER BY id DESC LIMIT 1`).Scan(&version); err != nil {
-		return 0, errors.Wrap(err, "failed to read current database migration version")
-	}
-	return version, nil
-}
 
 func resolveDatabaseURL(explicit string) (string, error) {
 	if explicit != "" {

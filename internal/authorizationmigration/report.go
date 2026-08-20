@@ -17,7 +17,7 @@ import (
 
 const (
 	LegacySchemaVersion = int64(29)
-	CasbinSchemaVersion = int64(30)
+	CasbinSchemaVersion = int64(31)
 )
 
 type Phase string

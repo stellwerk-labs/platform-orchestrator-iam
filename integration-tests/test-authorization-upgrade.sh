@@ -11,12 +11,13 @@ spicedb_name="$run_id-spicedb"
 cp_name="$run_id-cp"
 legacy_iam_name="$run_id-legacy-iam"
 casbin_iam_name="$run_id-casbin-iam"
+casbin_iam_second_name="$run_id-casbin-iam-second"
 legacy_image="$run_id-legacy"
 casbin_image="$run_id-casbin"
 temp_dir=$(mktemp -d)
 
 cleanup() {
-  docker rm -f "$legacy_iam_name" "$casbin_iam_name" "$cp_name" "$spicedb_name" "$nats_name" "$postgres_name" >/dev/null 2>&1 || true
+  docker rm -f "$legacy_iam_name" "$casbin_iam_name" "$casbin_iam_second_name" "$cp_name" "$spicedb_name" "$nats_name" "$postgres_name" >/dev/null 2>&1 || true
   docker network rm "$network_name" >/dev/null 2>&1 || true
   docker image rm "$legacy_image" "$casbin_image" >/dev/null 2>&1 || true
   rm -rf "$temp_dir"
@@ -57,6 +58,19 @@ run_migration_tool() {
     --entrypoint /opt/server/authorization-migrate \
     -e DATABASE_URL="postgres://iam:secret@$postgres_name:5432/iam?sslmode=disable" \
     "$casbin_image" "$@"
+}
+
+start_casbin_iam() {
+  container_name=$1
+  docker run -d --name "$container_name" --network "$network_name" \
+    -e PORT=8080 \
+    -e DATABASE_NAME=iam -e DATABASE_USER=iam -e DATABASE_PASSWORD=secret \
+    -e DATABASE_HOST="$postgres_name" -e DATABASE_PORT=5432 \
+    -e CONTROL_PLANE_URL="http://$cp_name" \
+    -e SESSION_TOKEN_COOKIE_DOMAIN=localhost -e UI_HOST_URL=http://localhost \
+    -e NATS_URL="nats://$nats_name:4222" -e NATS_BOOTSTRAP_STREAMS=true \
+    -e SHUTDOWN_DELAY=0s \
+    "$casbin_image" >/dev/null
 }
 
 authorize_on() {
@@ -149,21 +163,28 @@ policy_sha256=$(sed -n 's/.*"policy_sha256": "\([0-9a-f]*\)".*/\1/p' "$temp_dir/
 test "${#policy_sha256}" -eq 64
 
 docker stop "$legacy_iam_name" >/dev/null
-run_migration_tool apply --control-plane-url "http://$cp_name" --policy-sha256 "$policy_sha256" >"$temp_dir/verify.json"
+docker stop "$spicedb_name" >/dev/null
+docker stop "$cp_name" >/dev/null
+
+# The first automatic attempt migrates the schema but cannot reconcile while
+# the control plane is unavailable. It must fail closed and leave retry state.
+start_casbin_iam "$casbin_iam_name"
+failed_status=$(docker wait "$casbin_iam_name")
+test "$failed_status" != "0"
+
+# A restarted replica and a second replica may start concurrently. The advisory
+# lock serializes reconciliation and both must become healthy without SpiceDB.
+docker start "$cp_name" >/dev/null
+docker start "$casbin_iam_name" >/dev/null
+start_casbin_iam "$casbin_iam_second_name"
+wait_for_http "$casbin_iam_name"
+wait_for_http "$casbin_iam_second_name"
+
+run_migration_tool verify --policy-sha256 "$policy_sha256" >"$temp_dir/verify.json"
 grep -q '"ready": true' "$temp_dir/verify.json"
 grep -q '"environments": 1' "$temp_dir/verify.json"
-
-docker stop "$spicedb_name" >/dev/null
-docker run -d --name "$casbin_iam_name" --network "$network_name" \
-  -e PORT=8080 \
-  -e DATABASE_NAME=iam -e DATABASE_USER=iam -e DATABASE_PASSWORD=secret \
-  -e DATABASE_HOST="$postgres_name" -e DATABASE_PORT=5432 \
-  -e CONTROL_PLANE_URL="http://$cp_name" \
-  -e SESSION_TOKEN_COOKIE_DOMAIN=localhost -e UI_HOST_URL=http://localhost \
-  -e NATS_URL="nats://$nats_name:4222" -e NATS_BOOTSTRAP_STREAMS=true \
-  -e SHUTDOWN_DELAY=0s \
-  "$casbin_image" >/dev/null
-wait_for_http "$casbin_iam_name"
+docker exec "$postgres_name" psql -U iam -d iam -Atc \
+  "SELECT reconciled FROM authorization_migration_state WHERE singleton" | grep -qx t
 
 authorize_on "$casbin_iam_name" 204 10000000-0000-4000-8000-000000000001 env:40000000-0000-4000-8000-000000000001 manage
 authorize_on "$casbin_iam_name" 204 10000000-0000-4000-8000-000000000002 env:40000000-0000-4000-8000-000000000001 read
@@ -172,8 +193,8 @@ authorize_on "$casbin_iam_name" 403 10000000-0000-4000-8000-000000000003 project
 authorize_on "$casbin_iam_name" 204 60000000-0000-4000-8000-000000000001 env:40000000-0000-4000-8000-000000000001 write
 authorize_on "$casbin_iam_name" 403 60000000-0000-4000-8000-000000000001 project:30000000-0000-4000-8000-000000000001 write
 
-run_migration_tool verify --policy-sha256 "$policy_sha256" >/dev/null
 docker stop "$casbin_iam_name" >/dev/null
+docker stop "$casbin_iam_second_name" >/dev/null
 
 docker exec "$postgres_name" psql -v ON_ERROR_STOP=1 -U iam -d iam -c \
   "UPDATE roles SET permissions = ARRAY['audit_logs', 'temporary_change'] WHERE id = '20000000-0000-4000-8000-000000000004'" >/dev/null
