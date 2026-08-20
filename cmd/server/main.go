@@ -190,7 +190,7 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 		zap.L().Fatal("failed to setup control plane client", zap.Error(err))
 	}
 
-	authorizer, err := authorization.New(ctx, db)
+	authorizer, err := authorization.New(ctx, db, authorization.NewNATSPolicyInvalidationBus(conn))
 	if err != nil {
 		conn.Close()
 		zap.L().Fatal("failed to initialize authorization policy", zap.Error(err))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/casbin/casbin/v2"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/karlseguin/ccache/v2"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 )
@@ -71,15 +73,23 @@ type Store interface {
 }
 
 type CasbinAuthorizer struct {
-	store    Store
-	enforcer *casbin.SyncedCachedEnforcer
-	cache    *boundedCache
+	store                    Store
+	enforcer                 *casbin.SyncedCachedEnforcer
+	cache                    *boundedCache
+	invalidationBus          PolicyInvalidationBus
+	invalidationSubscription PolicyInvalidationSubscription
+	instanceId               string
+	invalidationRequests     chan struct{}
+	stopInvalidations        chan struct{}
+	invalidationsStopped     chan struct{}
+	closeOnce                sync.Once
+	policyMutex              sync.RWMutex
 }
 
 // New creates one process-wide Casbin engine. Its policy snapshot and bounded
 // decision cache are refreshed together, so authorization does not load policy
 // or hierarchy data on the request hot path.
-func New(ctx context.Context, store Store) (*CasbinAuthorizer, error) {
+func New(ctx context.Context, store Store, invalidationBuses ...PolicyInvalidationBus) (*CasbinAuthorizer, error) {
 	m, err := casbinmodel.NewModelFromString(casbinModel)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build Casbin model")
@@ -95,21 +105,94 @@ func New(ctx context.Context, store Store) (*CasbinAuthorizer, error) {
 	cache := newBoundedCache(authorizationCacheSize)
 	enforcer.SetCache(cache)
 	enforcer.SetExpireTime(authorizationCacheTTL)
-	enforcer.StartAutoLoadPolicy(authorizationCacheTTL)
 
-	return &CasbinAuthorizer{store: store, enforcer: enforcer, cache: cache}, nil
+	authorizer := &CasbinAuthorizer{
+		store:                store,
+		enforcer:             enforcer,
+		cache:                cache,
+		instanceId:           uuid.NewString(),
+		invalidationRequests: make(chan struct{}, 1),
+		stopInvalidations:    make(chan struct{}),
+		invalidationsStopped: make(chan struct{}),
+	}
+	if len(invalidationBuses) == 0 || invalidationBuses[0] == nil {
+		go authorizer.processInvalidations()
+		return authorizer, nil
+	}
+
+	authorizer.invalidationBus = invalidationBuses[0]
+	subscription, err := authorizer.invalidationBus.Subscribe(policyInvalidationSubject, authorizer.handleInvalidation)
+	if err != nil {
+		cache.Stop()
+		return nil, err
+	}
+	authorizer.invalidationSubscription = subscription
+	go authorizer.processInvalidations()
+	return authorizer, nil
 }
 
 // Close releases cache and policy-refresh workers during graceful shutdown.
 func (a *CasbinAuthorizer) Close() {
-	a.enforcer.StopAutoLoadPolicy()
-	a.cache.Stop()
+	a.closeOnce.Do(func() {
+		if a.invalidationSubscription != nil {
+			if err := a.invalidationSubscription.Unsubscribe(); err != nil {
+				zap.L().Error("failed to unsubscribe from authorization policy invalidations", zap.Error(err))
+			}
+		}
+		close(a.stopInvalidations)
+		<-a.invalidationsStopped
+		a.cache.Stop()
+	})
 }
 
 // ReloadPolicy immediately refreshes the in-memory policy and clears cached
 // decisions. The periodic reload remains a cross-instance safety net.
 func (a *CasbinAuthorizer) ReloadPolicy() error {
+	if err := a.reloadPolicy(); err != nil {
+		return err
+	}
+	if a.invalidationBus != nil {
+		if err := a.invalidationBus.Publish(policyInvalidationSubject, []byte(a.instanceId)); err != nil {
+			return errors.Wrap(err, "failed to publish authorization policy invalidation")
+		}
+	}
+	return nil
+}
+
+func (a *CasbinAuthorizer) reloadPolicy() error {
+	a.policyMutex.Lock()
+	defer a.policyMutex.Unlock()
 	return a.enforcer.LoadPolicy()
+}
+
+func (a *CasbinAuthorizer) handleInvalidation(origin []byte) {
+	if string(origin) == a.instanceId {
+		return
+	}
+	select {
+	case a.invalidationRequests <- struct{}{}:
+	default:
+	}
+}
+
+func (a *CasbinAuthorizer) processInvalidations() {
+	defer close(a.invalidationsStopped)
+	ticker := time.NewTicker(authorizationCacheTTL)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-a.stopInvalidations:
+			return
+		case <-ticker.C:
+			if err := a.reloadPolicy(); err != nil {
+				zap.L().Error("failed to periodically reload authorization policy", zap.Error(err))
+			}
+		case <-a.invalidationRequests:
+			if err := a.reloadPolicy(); err != nil {
+				zap.L().Error("failed to reload invalidated authorization policy", zap.Error(err))
+			}
+		}
+	}
 }
 
 func ParseResource(resource string) (resourceType, resourceId string, err error) {
@@ -162,6 +245,9 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 }
 
 func (a *CasbinAuthorizer) Authorize(ctx context.Context, subjectId uuid.UUID, checks []Check) ([]Result, error) {
+	a.policyMutex.RLock()
+	defer a.policyMutex.RUnlock()
+
 	if len(checks) == 0 {
 		return []Result{}, nil
 	}
