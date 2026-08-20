@@ -6,6 +6,10 @@ export const options = {
   vus: Number(__ENV.VUS || 1),
   duration: __ENV.DURATION || "10s",
   summaryTrendStats: ["avg", "p(95)", "p(99)", "max"],
+  thresholds: {
+    checks: ["rate==1"],
+    http_req_failed: ["rate==0"],
+  },
 };
 
 const target = __ENV.TARGET || "http://platform-orchestrator-iam-platform-orchestrator-iam:8080";

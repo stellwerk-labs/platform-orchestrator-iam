@@ -15,6 +15,7 @@ developers_per_org="${DEVELOPERS_PER_ORG:-50}"
 projects_per_developer="${PROJECTS_PER_DEVELOPER:-5}"
 invalidation_interval="${INVALIDATION_INTERVAL:-}"
 results_dir="${RESULTS_DIR:-$(mktemp -d)}"
+k6_image="${K6_IMAGE:-grafana/k6:2.2.0}"
 
 if [[ ! -f compose.yaml ]]; then
   echo "compose.yaml is missing; run 'make build' first" >&2
@@ -40,9 +41,18 @@ docker compose exec -T "$postgres_service" psql -U postgres -d "$database_name" 
   < authorization-benchmark-seed.sql
 
 docker compose restart "$iam_service" >/dev/null
-until curl -fsS http://localhost:8081/health >/dev/null; do
+healthy=false
+for _ in $(seq 1 120); do
+  if curl -fsS http://localhost:8081/health >/dev/null 2>&1; then
+    healthy=true
+    break
+  fi
   sleep 1
 done
+if [[ "$healthy" != true ]]; then
+  echo "IAM did not become healthy within 120 seconds" >&2
+  exit 1
+fi
 
 hot_user="10000000-0000-4000-8000-000000000001"
 hot_resource="organization:authorization-benchmark-org-0001"
@@ -85,7 +95,7 @@ for dataset in $datasets; do
           -e DEVELOPER_COUNT="$developer_count" \
           -e DEVELOPERS_PER_ORG="$developers_per_org" \
           -e PROJECTS_PER_DEVELOPER="$projects_per_developer" \
-          grafana/k6:latest run --quiet --summary-export "/results/${name}.json" /script.js >/dev/null
+          "$k6_image" run --quiet --summary-export "/results/${name}.json" /script.js >/dev/null
 
         jq -r --arg dataset "$dataset" --arg permission "$permission" --arg checks "$checks_per_request" --arg vus "$vus" '
           [$dataset, $permission, $checks, $vus,
