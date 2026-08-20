@@ -105,6 +105,7 @@ func (s *testInvalidationSubscription) Unsubscribe() error {
 
 func TestPolicyReloadInvalidatesOtherInstances(t *testing.T) {
 	subjectId := uuid.New()
+	roleId := uuid.New()
 	store := &mutableTestStore{}
 	bus := newTestInvalidationBus()
 
@@ -122,7 +123,7 @@ func TestPolicyReloadInvalidatesOtherInstances(t *testing.T) {
 	assert.False(t, results[0].Allowed)
 
 	store.setPolicies([]model.AuthorizationPolicy{{
-		SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionReadAll,
+		SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionReadAll, RoleId: roleId,
 	}})
 	require.NoError(t, first.ReloadPolicy())
 

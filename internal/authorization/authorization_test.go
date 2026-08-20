@@ -37,9 +37,10 @@ func (s *testStore) ListKnownAuthorizationPermissions(context.Context, model.Tx,
 
 func TestCasbinAuthorizer(t *testing.T) {
 	subjectId := uuid.New()
+	roleId := uuid.New()
 	store := &testStore{
 		policies: []model.AuthorizationPolicy{
-			{SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionWriteAll},
+			{SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionWriteAll, RoleId: roleId},
 		},
 		relations: []model.AuthorizationResourceRelation{
 			{Resource: "env:test", ParentResource: "project:test"},
@@ -65,9 +66,10 @@ func TestCasbinAuthorizer(t *testing.T) {
 
 func TestCasbinAuthorizerCustomPermission(t *testing.T) {
 	subjectId := uuid.New()
+	roleId := uuid.New()
 	store := &testStore{
 		policies: []model.AuthorizationPolicy{
-			{SubjectId: subjectId, Resource: "project:test", Permission: "deployment_cancel"},
+			{SubjectId: subjectId, Resource: "project:test", Permission: "deployment_cancel", RoleId: roleId},
 		},
 		known: []model.AuthorizationPermissionCheck{{Resource: "project:test", Permission: "deployment_cancel"}},
 	}
@@ -86,8 +88,9 @@ func TestCasbinAuthorizerCustomPermission(t *testing.T) {
 
 func TestCasbinAuthorizerRejectsUnknownPermission(t *testing.T) {
 	subjectId := uuid.New()
+	roleId := uuid.New()
 	store := &testStore{policies: []model.AuthorizationPolicy{
-		{SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionManageAll},
+		{SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionManageAll, RoleId: roleId},
 	}}
 
 	authorizer, err := New(t.Context(), store)
@@ -102,6 +105,7 @@ func TestCasbinAuthorizerRejectsUnknownPermission(t *testing.T) {
 
 func TestCasbinAuthorizerReusesPolicyAndInvalidatesDecisionsOnReload(t *testing.T) {
 	subjectId := uuid.New()
+	roleId := uuid.New()
 	store := &testStore{}
 	authorizer, err := New(t.Context(), store)
 	require.NoError(t, err)
@@ -118,7 +122,7 @@ func TestCasbinAuthorizerReusesPolicyAndInvalidatesDecisionsOnReload(t *testing.
 	assert.Equal(t, 1, store.relationLoads)
 
 	store.policies = []model.AuthorizationPolicy{{
-		SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionReadAll,
+		SubjectId: subjectId, Resource: "organization:acme", Permission: PermissionReadAll, RoleId: roleId,
 	}}
 	require.NoError(t, authorizer.ReloadPolicy())
 
@@ -128,6 +132,40 @@ func TestCasbinAuthorizerReusesPolicyAndInvalidatesDecisionsOnReload(t *testing.
 	assert.True(t, results[0].Allowed)
 	assert.Equal(t, 2, store.policyLoads)
 	assert.Equal(t, 2, store.relationLoads)
+}
+
+func TestCasbinAuthorizerSharesRolePoliciesWithoutSharingAssignments(t *testing.T) {
+	firstSubject := uuid.New()
+	secondSubject := uuid.New()
+	roleId := uuid.New()
+	store := &testStore{policies: []model.AuthorizationPolicy{
+		{SubjectId: firstSubject, Resource: "organization:acme", Permission: PermissionReadAll, RoleId: roleId},
+		{SubjectId: firstSubject, Resource: "organization:acme", Permission: "deployment_cancel", RoleId: roleId},
+		{SubjectId: secondSubject, Resource: "organization:acme", Permission: PermissionReadAll, RoleId: roleId},
+		{SubjectId: secondSubject, Resource: "organization:acme", Permission: "deployment_cancel", RoleId: roleId},
+	}}
+
+	authorizer, err := New(t.Context(), store)
+	require.NoError(t, err)
+	t.Cleanup(authorizer.Close)
+
+	policies, err := authorizer.enforcer.GetPolicy()
+	require.NoError(t, err)
+	assert.Len(t, policies, 2, "permissions on a shared role binding should only be loaded once")
+	bindings, err := authorizer.enforcer.GetGroupingPolicy()
+	require.NoError(t, err)
+	assert.Len(t, bindings, 2, "each subject should retain an independent role assignment")
+
+	for _, subjectId := range []uuid.UUID{firstSubject, secondSubject} {
+		results, err := authorizer.Authorize(t.Context(), subjectId, []Check{{Resource: "organization:acme", Permission: "read"}})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		assert.True(t, results[0].Allowed)
+	}
+	unknownResults, err := authorizer.Authorize(t.Context(), uuid.New(), []Check{{Resource: "organization:acme", Permission: "read"}})
+	require.NoError(t, err)
+	require.Len(t, unknownResults, 1)
+	assert.False(t, unknownResults[0].Allowed)
 }
 
 func TestParseResource(t *testing.T) {

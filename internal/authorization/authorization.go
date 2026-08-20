@@ -30,12 +30,13 @@ p = sub, obj, act
 
 [role_definition]
 g = _, _
+g2 = _, _
 
 [policy_effect]
 e = some(where (p.eft == allow))
 
 [matchers]
-m = r.sub == p.sub && (r.obj == p.obj || g(r.obj, p.obj)) && permissionMatch(r.act, p.act)
+m = g(r.sub, p.sub) && (r.obj == p.obj || g2(r.obj, p.obj)) && permissionMatch(r.act, p.act)
 `
 
 const (
@@ -335,10 +336,26 @@ func (a *storeAdapter) LoadPolicy(m casbinmodel.Model) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to load authorization policies")
 	}
+	loadedBindings := make(map[string]struct{}, len(policies))
+	loadedPolicies := make(map[string]struct{}, len(policies))
 	for _, policy := range policies {
-		if err := persist.LoadPolicyArray([]string{"p", policy.SubjectId.String(), policy.Resource, policy.Permission}, m); err != nil {
+		binding := roleBindingKey(policy.RoleId, policy.Resource)
+		membershipKey := policy.SubjectId.String() + "$$" + binding
+		if _, found := loadedBindings[membershipKey]; !found {
+			if err := persist.LoadPolicyArray([]string{"g", policy.SubjectId.String(), binding}, m); err != nil {
+				return errors.Wrap(err, "failed to load Casbin role binding")
+			}
+			loadedBindings[membershipKey] = struct{}{}
+		}
+
+		policyKey := binding + "$$" + policy.Permission
+		if _, found := loadedPolicies[policyKey]; found {
+			continue
+		}
+		if err := persist.LoadPolicyArray([]string{"p", binding, policy.Resource, policy.Permission}, m); err != nil {
 			return errors.Wrap(err, "failed to load Casbin policy")
 		}
+		loadedPolicies[policyKey] = struct{}{}
 	}
 
 	relations, err := a.store.ListAuthorizationResourceRelations(a.ctx, nil)
@@ -346,11 +363,15 @@ func (a *storeAdapter) LoadPolicy(m casbinmodel.Model) error {
 		return errors.Wrap(err, "failed to load authorization resource hierarchy")
 	}
 	for _, relation := range relations {
-		if err := persist.LoadPolicyArray([]string{"g", relation.Resource, relation.ParentResource}, m); err != nil {
+		if err := persist.LoadPolicyArray([]string{"g2", relation.Resource, relation.ParentResource}, m); err != nil {
 			return errors.Wrap(err, "failed to load Casbin resource relation")
 		}
 	}
 	return nil
+}
+
+func roleBindingKey(roleId uuid.UUID, resource string) string {
+	return "role:" + roleId.String() + "@" + resource
 }
 
 func (a *storeAdapter) SavePolicy(casbinmodel.Model) error {

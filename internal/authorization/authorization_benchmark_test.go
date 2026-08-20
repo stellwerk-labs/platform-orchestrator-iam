@@ -95,9 +95,10 @@ func newAuthorizationBenchmarkStore(tb testing.TB) *authorizationBenchmarkStore 
 	for developer := 1; developer <= benchmarkDeveloperCount; developer++ {
 		subject := benchmarkSubject(tb, developer)
 		organization := benchmarkOrganization(developer)
+		roleId := benchmarkRole(tb, developer)
 		store.policies = append(store.policies,
-			model.AuthorizationPolicy{SubjectId: subject, Resource: organization, Permission: PermissionReadAll},
-			model.AuthorizationPolicy{SubjectId: subject, Resource: organization, Permission: "deployment_cancel"},
+			model.AuthorizationPolicy{SubjectId: subject, Resource: organization, Permission: PermissionReadAll, RoleId: roleId},
+			model.AuthorizationPolicy{SubjectId: subject, Resource: organization, Permission: "deployment_cancel", RoleId: roleId},
 		)
 		for project := 1; project <= benchmarkProjectsPerUser; project++ {
 			store.relations = append(store.relations, model.AuthorizationResourceRelation{
@@ -107,6 +108,15 @@ func newAuthorizationBenchmarkStore(tb testing.TB) *authorizationBenchmarkStore 
 		}
 	}
 	return store
+}
+
+func benchmarkRole(tb testing.TB, developer int) uuid.UUID {
+	organization := ((developer - 1) / benchmarkDevelopersPerOrg) + 1
+	roleId, err := uuid.Parse(fmt.Sprintf("20000000-0000-4000-8000-%012d", organization))
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return roleId
 }
 
 func benchmarkAllowedChecks(count int, denied bool) func(int) (uuid.UUID, []Check) {
