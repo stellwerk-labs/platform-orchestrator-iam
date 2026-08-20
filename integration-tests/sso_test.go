@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 )

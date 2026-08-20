@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 )
 
 func TestUserRegister(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
@@ -95,8 +95,7 @@ func TestServiceUserTokens(t *testing.T) {
 		}
 	})
 
-	t.Run("service user should now have all permissions on the org due to the spicedb snapshot", func(t *testing.T) {
-		// prove user has proper permissions via SpiceDB
+	t.Run("service user should now have all permissions on the org", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{authz.CanReadOrgCheck(org.Id), authz.CanManageOrgCheck(org.Id), authz.CanWriteOrgCheck(org.Id)}, WithAuthenticatedUserId(su.Id))
 			require.NoError(t, err)
@@ -234,8 +233,7 @@ func TestServiceUserTokens(t *testing.T) {
 		assert.Equal(t, http.StatusNoContent, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
 	})
 
-	t.Run("service user should not have permissions on the org anymore due to the spicedb snapshot", func(t *testing.T) {
-		// prove user has proper permissions via SpiceDB
+	t.Run("service user should not have permissions on the org anymore", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{authz.CanReadOrgCheck(org.Id), authz.CanManageOrgCheck(org.Id), authz.CanWriteOrgCheck(org.Id)}, WithAuthenticatedUserId(su.Id))
 			require.NoError(t, err)

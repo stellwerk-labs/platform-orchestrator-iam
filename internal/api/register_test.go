@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
 func TestRegister_unknown_provider(t *testing.T) {

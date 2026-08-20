@@ -18,16 +18,10 @@ import (
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
 
 	"filippo.io/age"
-	"github.com/authzed/authzed-go/v1"
-	"github.com/authzed/grpcutil"
 	"github.com/google/uuid"
-	"github.com/stellwerk-labs/golib/hpostgresconnect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 
@@ -197,7 +191,7 @@ func MustAddUserToOrgWithRoleAndEnsurePermissions(client serverclient.ClientWith
 	require.NoError(t, err)
 	require.Equal(t, http.StatusCreated, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
 
-	// wait a bit to ensure that the user addition to the org is fully propagated to SpiceDB
+	// The policy is read directly from PostgreSQL, so this should be visible immediately.
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{authz.CanReadOrgCheck(orgId)}, WithAuthenticatedUserId(userId))
 		require.NoError(t, err)
@@ -233,23 +227,4 @@ func MustDatabase(t *testing.T) model.Databaser {
 	return db
 }
 
-// MustDatabaseConn provides access to a raw database connection for the integration test.
-func MustDatabaseConn(t *testing.T) *hpostgresconnect.Database {
-	inner, err := hpostgresconnect.InitDatabase(t.Context(), &hpostgresconnect.Config{
-		Logger:  zaptest.NewLogger(t),
-		ConnStr: os.Getenv("DB_CONNECTION_STRING"),
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		assert.NoError(t, inner.Close())
-	})
-	return inner
-}
-
 func ptr(s string) *string { return &s }
-
-func MustSpiceDBClient(t *testing.T) *authzed.Client {
-	client, err := authzed.NewClient(os.Getenv("SPICEDB_URL"), grpc.WithTransportCredentials(insecure.NewCredentials()), grpcutil.WithInsecureBearerToken(os.Getenv("SPICEDB_TOKEN")))
-	require.NoError(t, err)
-	return client
-}

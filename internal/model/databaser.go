@@ -110,19 +110,21 @@ type Databaser interface {
 
 	GetRole(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*Role, error)
 	ListRoles(ctx context.Context, optionalTx Tx, orgId string) ([]Role, error)
+	CreateRole(ctx context.Context, optionalTx Tx, role *Role) (*Role, error)
+	UpdateRole(ctx context.Context, optionalTx Tx, role *Role) (*Role, error)
+	DeleteRole(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	SeedRoles(ctx context.Context, optionalTx Tx, orgId string, roles []Role) error
 
-	UpsertScopedRole(ctx context.Context, optionalTx Tx, request *ScopedRole) (*ScopedRole, error)
-	BatchUpsertScopedRoles(ctx context.Context, optionalTx Tx, requests []ScopedRole) ([]ScopedRole, error)
-	ListScopedRoles(ctx context.Context, optionalTx Tx, params ScopedRoleListParams) ([]ScopedRole, error)
-	BulkDeleteScopedRoles(ctx context.Context, optionalTx Tx, params BulkDeleteScopedRolesParams) (int64, error)
+	ListAuthorizationPolicies(ctx context.Context, optionalTx Tx, subjectId uuid.UUID) ([]AuthorizationPolicy, error)
+	ListAuthorizationResourceRelations(ctx context.Context, optionalTx Tx, resources []string) ([]AuthorizationResourceRelation, error)
+	ListKnownAuthorizationPermissions(ctx context.Context, optionalTx Tx, checks []AuthorizationPermissionCheck) ([]AuthorizationPermissionCheck, error)
+	UpsertAuthorizationResource(ctx context.Context, optionalTx Tx, resource *AuthorizationResource) error
+	DeleteAuthorizationResource(ctx context.Context, optionalTx Tx, resource string) error
+	ListEffectiveRoleBindings(ctx context.Context, optionalTx Tx, resource string) ([]EffectiveRoleBinding, error)
 
 	CreateServiceUserRoles(ctx context.Context, optionalTx Tx, request []ServiceUserRole) error
 	ListServiceUserRoles(ctx context.Context, optionalTx Tx, params ListServiceUserRolesParams) ([]ServiceUserRole, error)
 	BulkDeleteServiceUserRoles(ctx context.Context, optionalTx Tx, params BulkDeleteServiceUserRolesParams) (int64, error)
-
-	UpsertOrgZedToken(ctx context.Context, optionalTx Tx, orgId string, request *OrgZedTokens) (*OrgZedTokens, error)
-	GetOrgZedToken(ctx context.Context, optionalTx Tx, orgId string) (*OrgZedTokens, error)
 
 	GetSsoConfiguration(ctx context.Context, optionalTx Tx, orgId string) (*SsoConfiguration, error)
 	UpsertSsoConfiguration(ctx context.Context, optionalTx Tx, orgId string, request *SsoConfiguration) (*SsoConfiguration, error)

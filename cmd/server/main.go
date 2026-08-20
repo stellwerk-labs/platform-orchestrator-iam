@@ -32,11 +32,11 @@ import (
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/config"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker"
 )
@@ -66,7 +66,7 @@ func init() {
 type sharedDependencies struct {
 	Config              *config.Configuration
 	DB                  model.Databaser
-	SpiceDB             spicedb.SpiceDB
+	Authorizer          authorization.Authorizer
 	NATSConn            *nats.Conn
 	JetStream           jetstream.JetStream
 	Publisher           hmessaging.Publisher
@@ -141,15 +141,6 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 		zap.S().Fatalw("Failed to initialize database", "err", err)
 	}
 
-	// Initialize SpiceDB
-	spicedbClient, err := spicedb.NewClient(cfg.SpiceDBUrl, cfg.SpiceDBPreSharedKey, zap.L())
-	if err != nil {
-		zap.L().Fatal("failed to setup spicedb client", zap.Error(err))
-	}
-	if err := spicedbClient.WriteSchema(ctx); err != nil {
-		zap.L().Fatal("failed to write spicedb schema", zap.Error(err))
-	}
-
 	// Initialize the durable NATS transport before accepting API traffic.
 	conn, err := hnats.Connect(hnats.ConnectionConfig{
 		URLs:            []string{cfg.NatsURL},
@@ -202,7 +193,7 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 	return &sharedDependencies{
 		Config:              cfg,
 		DB:                  db,
-		SpiceDB:             spicedbClient,
+		Authorizer:          authorization.New(db),
 		NATSConn:            conn,
 		JetStream:           js,
 		Publisher:           publisher,
@@ -284,7 +275,7 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 		SsoCallbackUrlPath:       cfg.SsoCallbackUrlPath,
 		SsoStateSecret:           cfg.SsoStateSecret,
 		CpClient:                 deps.CpClient,
-		SpiceDB:                  deps.SpiceDB,
+		Authorizer:               deps.Authorizer,
 	}
 	if cfg.SuperUserToken != "" {
 		h := sha256.Sum256([]byte(cfg.SuperUserToken))
@@ -358,7 +349,6 @@ func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
 				DB:                  deps.DB,
 				RetryTimeout:        time.Minute,
 				Logger:              zap.L().Named("worker"),
-				SpiceDB:             deps.SpiceDB,
 				CpClient:            deps.CpClient,
 			}
 

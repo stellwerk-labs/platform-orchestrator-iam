@@ -58,7 +58,6 @@ TEST_PACKAGES = $$(go list ./internal/... | grep -v -E "(mocks|generated)")
 ## Run golang tests
 .PHONY: test-unit
 test-unit:
-	go run github.com/authzed/zed/cmd/zed@v0.32.0 validate ./internal/spicedb/schema_test.yaml
 	go tool gotestsum --format testname -- -coverprofile=cover.out $(TEST_PACKAGES)
 
 ## Generate coverage badge

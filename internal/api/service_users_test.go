@@ -2,14 +2,12 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
 	mockplatformorchestratorcp "github.com/stellwerk-labs/platform-orchestrator-iam/internal/clients/platformorchestratorcp/mocks"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
@@ -18,9 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -109,19 +104,6 @@ func TestCreateServiceUser_Success_WithDefaultAdminRole(t *testing.T) {
 			return nil
 		})
 
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		}).Times(1)
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store).Times(1)
-
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
 		OrgId: orgId,
@@ -174,19 +156,6 @@ func TestCreateServiceUser_Success_WithSeededRoles(t *testing.T) {
 			return nil
 		})
 
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		}).Times(1)
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store).Times(1)
-
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
 		OrgId: orgId,
@@ -224,19 +193,6 @@ func TestCreateServiceUser_Success_WithCustomRoles(t *testing.T) {
 			require.Equal(t, customRoleId, roles[0].RoleId)
 			return nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		}).Times(1)
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store).Times(1)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
@@ -397,33 +353,6 @@ func TestDeleteServiceUser_DeleteError(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to delete service user token")
 }
 
-func TestDeleteServiceUser_InsertEventMessagesError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	_, s, fin := MockServer(t)
-	defer fin()
-
-	userId := userid.NewHumanUserId()
-	serviceUserId := userid.NewServiceUserTokenId()
-
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
-
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteServiceUserToken(gomock.Any(), gomock.Any(), orgId, serviceUserId).
-		Return(nil)
-
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, fmt.Errorf("insert error"))
-
-	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
-	_, err := s.DeleteServiceUser(ctx, DeleteServiceUserRequestObject{
-		OrgId:         orgId,
-		ServiceUserId: serviceUserId,
-	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to insert spiceDB sync event messages")
-}
-
 func TestDeleteServiceUser_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -438,20 +367,6 @@ func TestDeleteServiceUser_Success(t *testing.T) {
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteServiceUserToken(gomock.Any(), gomock.Any(), orgId, serviceUserId).
 		Return(nil)
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		})
-
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.DeleteServiceUser(ctx, DeleteServiceUserRequestObject{
@@ -488,14 +403,6 @@ func TestCreateServiceUser_NilScope(t *testing.T) {
 			require.Empty(t, roles[0].Scope, "scope should not be set for nil scope")
 			return nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
@@ -587,14 +494,6 @@ func TestCreateServiceUser_ValidProjectScope(t *testing.T) {
 			return nil
 		})
 
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
-
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
 		OrgId: orgId,
@@ -649,14 +548,6 @@ func TestCreateServiceUser_ValidEnvironmentScope(t *testing.T) {
 			require.Equal(t, validScope, roles[0].Scope)
 			return nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
@@ -843,19 +734,6 @@ func TestReplaceServiceUserRoles_Success_SingleRole(t *testing.T) {
 			return nil
 		})
 
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
-
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.ReplaceServiceUserRoles(ctx, ReplaceServiceUserRolesRequestObject{
 		OrgId:         orgId,
@@ -931,14 +809,6 @@ func TestReplaceServiceUserRoles_Success_MultipleRoles(t *testing.T) {
 			require.Equal(t, projectScope, roles[1].Scope)
 			return nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.ReplaceServiceUserRoles(ctx, ReplaceServiceUserRolesRequestObject{
@@ -1159,14 +1029,6 @@ func TestReplaceServiceUserRoles_ValidEnvironmentScope(t *testing.T) {
 			require.Equal(t, envScope, roles[0].Scope)
 			return nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	r, err := s.ReplaceServiceUserRoles(ctx, ReplaceServiceUserRolesRequestObject{

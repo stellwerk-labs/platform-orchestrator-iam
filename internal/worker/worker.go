@@ -14,13 +14,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/branchhandler"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/envdeletedhandler"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/projectdeletedhandler"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/projectenvrelationshipinserter"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/spicedbsynchandler"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/middleware"
 )
 
@@ -43,20 +41,17 @@ type Worker struct {
 	RetryTimeout        time.Duration
 	Logger              *zap.Logger
 	DB                  model.Databaser
-	SpiceDB             spicedb.SpiceDB
 	CpClient            cpclient.ClientWithResponsesInterface
 }
 
 func (w *Worker) BuildMainConsumer(ctx context.Context) (*hnats.Consumer, error) {
-	syncSpiceDBHandler := spicedbsynchandler.New(w.SpiceDB, w.DB, w.Publisher)
-	projectEnvRelationshipInserter := projectenvrelationshipinserter.New(w.SpiceDB, w.DB, w.CpClient)
-	projectDeletedHandler := projectdeletedhandler.New(w.DB, w.SpiceDB)
-	envDeletedHandler := envdeletedhandler.New(w.DB, w.SpiceDB)
+	projectEnvRelationshipInserter := projectenvrelationshipinserter.New(w.DB, w.CpClient)
+	projectDeletedHandler := projectdeletedhandler.New(w.DB)
+	envDeletedHandler := envdeletedhandler.New(w.DB)
 
 	// The first matching branch handles the event. The final branch protects
 	// against a future filter/handler mismatch by acknowledging unknown input.
 	var inner handlers.Handler = &branchhandler.Handler{
-		{PrefixPattern: regexp.MustCompile(string(genevents.IoPlatformOrchestratorSpicedbSync)), Handler: syncSpiceDBHandler},
 		{PrefixPattern: regexp.MustCompile(string(cpevents.IoPlatformOrchestratorProjectCreated)), Handler: projectEnvRelationshipInserter},
 		{PrefixPattern: regexp.MustCompile(string(cpevents.IoPlatformOrchestratorProjectDeleted)), Handler: projectDeletedHandler},
 		{PrefixPattern: regexp.MustCompile(string(cpevents.IoPlatformOrchestratorEnvironmentCreated)), Handler: projectEnvRelationshipInserter},
@@ -70,7 +65,6 @@ func (w *Worker) BuildMainConsumer(ctx context.Context) (*hnats.Consumer, error)
 	inner = middleware.WrapWithObserver(inner, MainConsumerName, w.RetryTimeout)
 
 	filters := []string{
-		string(genevents.IoPlatformOrchestratorSpicedbSync),
 		string(cpevents.IoPlatformOrchestratorProjectCreated),
 		string(cpevents.IoPlatformOrchestratorProjectDeleted),
 		string(cpevents.IoPlatformOrchestratorEnvironmentCreated),

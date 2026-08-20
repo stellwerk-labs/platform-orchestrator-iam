@@ -48,8 +48,6 @@ containers:
       SENDGRID_SENDER_NAME: ${resources.env.INVITATION_EMAIL_SENDER_NAME}
       SENDGRID_SENDER_ADDRESS: ${resources.env.INVITATION_EMAIL_SENDER_ADDRESS}
       PRODUCT_NAME: ${resources.env.PRODUCT_NAME}
-      SPICEDB_URL: ${resources.spicedb.hostname}:50051
-      SPICEDB_PRE_SHARED_KEY: ${resources.spicedb.preshared_key}
       NATS_URL: nats://nats:4222
       NATS_BOOTSTRAP_STREAMS: "true"
       WORKOS_API_KEY: ${resources.env.WORKOS_API_KEY}
@@ -73,6 +71,3 @@ resources:
       host: ${resources.dns.host}
       port: 8080
       path: /(auth/register|auth/logout|auth/login|auth/device|auth/sso/.+|(users/.+)|(orgs/[^/]+/members)|(orgs/[^/]+/memberships.*)|(orgs/[^/]+/users/[^/]+/memberships.*)|(orgs/[^/]+/service-users.*)|(orgs/[^/]+/invitations.*)|(orgs/[^/]+/roles.*)|(orgs/[^/]+/projects/[^/]+/users.*)|(orgs/[^/]+/projects/[^/]+/envs/[^/]+/users.*)|current-user|auth/check-permissions|(devicelogins/.+))
-  spicedb:
-    type: spicedb
-    id: spicedb

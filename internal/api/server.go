@@ -16,9 +16,9 @@ import (
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 )
 
@@ -39,8 +39,8 @@ type Server struct {
 	SsoCallbackUrlPath string
 	SsoStateSecret     string
 
-	SpiceDB   spicedb.SpiceDB
-	Publisher hmessaging.Publisher
+	Authorizer authorization.Authorizer
+	Publisher  hmessaging.Publisher
 
 	SuperUserTokenHash []byte
 }

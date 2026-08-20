@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
@@ -178,8 +178,7 @@ func TestInvitations_VirtualGroupsOwner(t *testing.T) {
 		assert.Equal(t, adminRoleId.String(), r.JSON200.Subject)
 	})
 
-	t.Run("user should now have all permissions on the org due to the spicedb snapshot", func(t *testing.T) {
-		// prove user has proper permissions via SpiceDB
+	t.Run("user should now have all permissions on the org", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{
 				authz.CanManageOrgCheck(org.Id), authz.CanReadOrgCheck(org.Id), authz.CanWriteOrgCheck(org.Id),

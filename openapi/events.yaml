@@ -9,7 +9,6 @@ components:
     EventType:
       type: string
       enum:
-        - io.platform-orchestrator.spicedb.sync
         - io.platform-orchestrator.scope.sync
 
     OrgId:
@@ -24,15 +23,6 @@ components:
       description: "The scope that needs to be synchronized."
       example: "project:0123e4567-e89b-12d3-a456-426614174000"
 
-    SpiceDBSyncData:
-      required:
-        - org_id
-      properties:
-        org_id:
-          $ref: "#/components/schemas/OrgId"
-        user_id:
-          $ref: "#/components/schemas/UserId"
-    
     ScopeSyncData:
       required:
         - org_id
