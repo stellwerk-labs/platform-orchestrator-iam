@@ -22,6 +22,16 @@ import (
 
 const defaultPermissionUsersPageSize = 100
 
+func validatePermissionUsersCursor(cursor *string) error {
+	if cursor == nil || *cursor == "" {
+		return nil
+	}
+	if _, err := uuid.Parse(*cursor); err != nil {
+		return herrors.NewWithStatus(http.StatusBadRequest, "invalid pagination cursor", nil)
+	}
+	return nil
+}
+
 func roleRank(role model.EffectiveRoleBinding) int {
 	rank := len(role.Permissions)
 	for _, permission := range role.Permissions {
@@ -93,6 +103,9 @@ func (s *Server) ListProjectUsers(ctx context.Context, request ListProjectUsersR
 		return nil, authErr
 	}
 	middleware.SetAuthAsserterChecked(ctx)
+	if err := validatePermissionUsersCursor(request.Params.Page); err != nil {
+		return nil, err
+	}
 
 	response, err := s.CpClient.GetProjectWithResponse(ctx, request.OrgId, request.ProjectId)
 	if err != nil {
@@ -141,6 +154,9 @@ func (s *Server) ListEnvironmentUsers(ctx context.Context, request ListEnvironme
 		return nil, authErr
 	}
 	middleware.SetAuthAsserterChecked(ctx)
+	if err := validatePermissionUsersCursor(request.Params.Page); err != nil {
+		return nil, err
+	}
 
 	response, err := s.CpClient.GetEnvironmentWithResponse(ctx, request.OrgId, request.ProjectId, request.EnvId)
 	if err != nil {

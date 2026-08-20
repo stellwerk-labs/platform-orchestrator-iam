@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/logging"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
@@ -25,10 +26,15 @@ var BranchPattern = regexp.MustCompile(regexp.QuoteMeta(string(cpevents.IoPlatfo
 type ProjectEnvRelationshipInserter struct {
 	db       model.Databaser
 	cpClient cpclient.ClientWithResponsesInterface
+	reloader authorization.PolicyReloader
 }
 
-func New(db model.Databaser, cpClient cpclient.ClientWithResponsesInterface) *ProjectEnvRelationshipInserter {
-	return &ProjectEnvRelationshipInserter{db: db, cpClient: cpClient}
+func New(db model.Databaser, cpClient cpclient.ClientWithResponsesInterface, reloaders ...authorization.PolicyReloader) *ProjectEnvRelationshipInserter {
+	handler := &ProjectEnvRelationshipInserter{db: db, cpClient: cpClient}
+	if len(reloaders) > 0 {
+		handler.reloader = reloaders[0]
+	}
+	return handler
 }
 
 func (h *ProjectEnvRelationshipInserter) Handle(ctx context.Context, logger *zap.Logger, delivery *hmessaging.Delivery) error {
@@ -114,6 +120,11 @@ func (h *ProjectEnvRelationshipInserter) sync(ctx context.Context, logger *zap.L
 	result, err := api.SyncAuthorizationResources(ctx, logger, h.db, orgId, resources)
 	if err != nil {
 		return err
+	}
+	if h.reloader != nil {
+		if err := h.reloader.ReloadPolicy(); err != nil {
+			return errors.Wrap(err, "failed to reload authorization policy")
+		}
 	}
 	logger.Info("synchronized authorization resources", zap.Int("resources_upserted", result.ResourcesUpserted))
 	return nil

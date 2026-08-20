@@ -106,6 +106,9 @@ func (s *Server) InternalCreateOrgMembership(ctx context.Context, request Intern
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
 		zap.String("po-membership-id", membership.Id.String()), zap.String("po-subject-type", string(membership.SubjectType)),
@@ -239,6 +242,9 @@ func (s *Server) DeleteOrgMembership(ctx context.Context, request DeleteOrgMembe
 
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
 	}
 
 	logger.Info("deleted membership", zap.String("user_id", membership.UserId.String()), zap.String("membership_id", request.MembershipId.String()), zap.String("subject_type", string(membership.SubjectType)), zap.String("subject", membership.Subject))
@@ -395,6 +401,9 @@ func (s *Server) ReplaceOrgUserMemberships(ctx context.Context, request ReplaceO
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
 	}
 
 	// Convert to response format

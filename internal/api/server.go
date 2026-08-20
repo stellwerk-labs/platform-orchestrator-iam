@@ -80,6 +80,19 @@ func OpenApiValidatorSkipper(c echo.Context) bool {
 // implementing them, consider tagging them with the "not-implemented" tag.
 var _ StrictServerInterface = (*Server)(nil)
 
+type authorizationPolicyReloader interface {
+	ReloadPolicy() error
+}
+
+func (s *Server) reloadAuthorizationPolicy() error {
+	if reloader, ok := s.Authorizer.(authorizationPolicyReloader); ok {
+		if err := reloader.ReloadPolicy(); err != nil {
+			return fmt.Errorf("failed to reload authorization policy: %w", err)
+		}
+	}
+	return nil
+}
+
 // MustDecodeOpenApiSpec returns the value from decodeSpec via the cached value in rawSpec and panics if there was an error.
 func MustDecodeOpenApiSpec() []byte {
 	if b, err := rawSpec(); err != nil {

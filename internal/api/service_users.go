@@ -174,6 +174,9 @@ func (s *Server) CreateServiceUser(ctx context.Context, request CreateServiceUse
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	apiRoles := make([]ServiceUserRole, 0, len(serviceUserRoles))
 	for _, r := range serviceUserRoles {
@@ -275,6 +278,9 @@ func (s *Server) DeleteServiceUser(ctx context.Context, request DeleteServiceUse
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	logger.Info("deleted service user", zap.String("service_user_id", request.ServiceUserId.String()))
 	return DeleteServiceUser204Response{}, nil
@@ -366,6 +372,9 @@ func (s *Server) ReplaceServiceUserRoles(ctx context.Context, request ReplaceSer
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
 	}
 
 	// Convert to response format

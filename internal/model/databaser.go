@@ -115,8 +115,8 @@ type Databaser interface {
 	DeleteRole(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	SeedRoles(ctx context.Context, optionalTx Tx, orgId string, roles []Role) error
 
-	ListAuthorizationPolicies(ctx context.Context, optionalTx Tx, subjectId uuid.UUID) ([]AuthorizationPolicy, error)
-	ListAuthorizationResourceRelations(ctx context.Context, optionalTx Tx, resources []string) ([]AuthorizationResourceRelation, error)
+	ListAuthorizationPolicies(ctx context.Context, optionalTx Tx) ([]AuthorizationPolicy, error)
+	ListAuthorizationResourceRelations(ctx context.Context, optionalTx Tx) ([]AuthorizationResourceRelation, error)
 	ListKnownAuthorizationPermissions(ctx context.Context, optionalTx Tx, checks []AuthorizationPermissionCheck) ([]AuthorizationPermissionCheck, error)
 	UpsertAuthorizationResource(ctx context.Context, optionalTx Tx, resource *AuthorizationResource) error
 	DeleteAuthorizationResource(ctx context.Context, optionalTx Tx, resource string) error

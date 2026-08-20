@@ -348,6 +348,9 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	logger.Info("redeemed org membership invitation")
 	return RedeemInvitation200JSONResponse(UserMembership{

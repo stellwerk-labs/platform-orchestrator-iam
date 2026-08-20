@@ -73,6 +73,9 @@ func (s *Server) InternalSyncOrgScopes(ctx context.Context, request InternalSync
 	if err != nil {
 		return nil, err
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 	logger.Info("synchronized authorization resource hierarchy", zap.Int("resources_upserted", result.ResourcesUpserted))
 	return InternalSyncOrgScopes200JSONResponse{
 		ProjectsSynced:     len(projects),

@@ -158,6 +158,9 @@ func (s *Server) CreateRole(ctx context.Context, request CreateRoleRequestObject
 		}
 		return nil, err
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 	return CreateRole201JSONResponse(fromModelToAPIRole(role)), nil
 }
 
@@ -192,6 +195,9 @@ func (s *Server) UpdateRole(ctx context.Context, request UpdateRoleRequestObject
 		}
 		return nil, err
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 	return UpdateRole200JSONResponse(fromModelToAPIRole(updated)), nil
 }
 
@@ -217,6 +223,9 @@ func (s *Server) DeleteRole(ctx context.Context, request DeleteRoleRequestObject
 		if _, conflict := model.IsErrConflict(err); conflict {
 			return DeleteRole409JSONResponse{N409ConflictJSONResponse: Generate409Response(err.Error())}, nil
 		}
+		return nil, err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return nil, err
 	}
 	return DeleteRole204Response{}, nil

@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -44,7 +45,7 @@ type EffectiveRoleBinding struct {
 	Scope       string
 }
 
-func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx, subjectId uuid.UUID) ([]AuthorizationPolicy, error) {
+func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx) ([]AuthorizationPolicy, error) {
 	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, `
 		SELECT m.user_id,
 		       CASE WHEN m.scope = '' THEN 'organization:' || m.org_id ELSE m.scope END,
@@ -53,7 +54,7 @@ func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx
 		FROM memberships m
 		JOIN roles r ON r.id = m.role AND r.org_id = m.org_id
 		CROSS JOIN LATERAL unnest(r.permissions) AS permission
-		WHERE m.user_id = $1 AND m.subject_type = 'role' AND m.role IS NOT NULL
+		WHERE m.subject_type = 'role' AND m.role IS NOT NULL
 		UNION ALL
 		SELECT sur.service_user_id,
 		       CASE WHEN sur.scope = '' THEN 'organization:' || sur.org_id ELSE sur.scope END,
@@ -62,8 +63,7 @@ func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx
 		FROM service_user_roles sur
 		JOIN roles r ON r.id = sur.role_id AND r.org_id = sur.org_id
 		CROSS JOIN LATERAL unnest(r.permissions) AS permission
-		WHERE sur.service_user_id = $1
-	`, subjectId)
+	`)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list authorization policies")
 	}
@@ -87,26 +87,19 @@ func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx
 	return policies, nil
 }
 
-func (d *databaser) ListAuthorizationResourceRelations(ctx context.Context, optionalTx Tx, resources []string) ([]AuthorizationResourceRelation, error) {
-	if len(resources) == 0 {
-		return []AuthorizationResourceRelation{}, nil
-	}
+func (d *databaser) ListAuthorizationResourceRelations(ctx context.Context, optionalTx Tx) ([]AuthorizationResourceRelation, error) {
 	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, `
-		WITH RECURSIVE ancestors(resource, parent_resource, depth) AS (
-			SELECT resource, parent_resource, 1
-			FROM authorization_resources
-			WHERE resource = ANY($1::text[]) AND parent_resource IS NOT NULL
-			UNION ALL
-			SELECT a.resource, parent.parent_resource, a.depth + 1
-			FROM ancestors a
-			JOIN authorization_resources parent ON parent.resource = a.parent_resource
-			WHERE parent.parent_resource IS NOT NULL AND a.depth < $2
-		)
-		SELECT DISTINCT resource, parent_resource FROM ancestors
-	`, pq.Array(resources), maxAuthorizationResourceDepth)
+		SELECT resource, parent_resource
+		FROM authorization_resources
+		WHERE parent_resource IS NOT NULL
+	`)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to list authorization resource relations")
+		return nil, errors.Wrap(err, "failed to list all authorization resource relations")
 	}
+	return d.scanAuthorizationResourceRelations(rows)
+}
+
+func (d *databaser) scanAuthorizationResourceRelations(rows *sql.Rows) ([]AuthorizationResourceRelation, error) {
 	defer func() {
 		if closeErr := rows.Close(); closeErr != nil {
 			d.logger.Error("failed to close authorization relation rows", zap.Error(closeErr))

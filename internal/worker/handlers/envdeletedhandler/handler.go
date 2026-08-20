@@ -10,6 +10,7 @@ import (
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"go.uber.org/zap"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/logging"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
@@ -17,11 +18,16 @@ import (
 )
 
 type EnvDeletedHandler struct {
-	db model.Databaser
+	db       model.Databaser
+	reloader authorization.PolicyReloader
 }
 
-func New(db model.Databaser) *EnvDeletedHandler {
-	return &EnvDeletedHandler{db: db}
+func New(db model.Databaser, reloaders ...authorization.PolicyReloader) *EnvDeletedHandler {
+	handler := &EnvDeletedHandler{db: db}
+	if len(reloaders) > 0 {
+		handler.reloader = reloaders[0]
+	}
+	return handler
 }
 
 func (h *EnvDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, delivery *hmessaging.Delivery) error {
@@ -50,5 +56,11 @@ func (h *EnvDeletedHandler) removeEnvironmentAccess(ctx context.Context, logger 
 	} else {
 		logger.Info("deleted environment service-user roles", zap.Int64("rows", rows))
 	}
-	return h.db.DeleteAuthorizationResource(ctx, nil, scope)
+	if err := h.db.DeleteAuthorizationResource(ctx, nil, scope); err != nil {
+		return err
+	}
+	if h.reloader != nil {
+		return errors.Wrap(h.reloader.ReloadPolicy(), "failed to reload authorization policy")
+	}
+	return nil
 }

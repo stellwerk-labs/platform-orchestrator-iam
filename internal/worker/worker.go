@@ -13,6 +13,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 	"go.uber.org/zap"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker/handlers/branchhandler"
@@ -42,12 +43,13 @@ type Worker struct {
 	Logger              *zap.Logger
 	DB                  model.Databaser
 	CpClient            cpclient.ClientWithResponsesInterface
+	PolicyReloader      authorization.PolicyReloader
 }
 
 func (w *Worker) BuildMainConsumer(ctx context.Context) (*hnats.Consumer, error) {
-	projectEnvRelationshipInserter := projectenvrelationshipinserter.New(w.DB, w.CpClient)
-	projectDeletedHandler := projectdeletedhandler.New(w.DB)
-	envDeletedHandler := envdeletedhandler.New(w.DB)
+	projectEnvRelationshipInserter := projectenvrelationshipinserter.New(w.DB, w.CpClient, w.PolicyReloader)
+	projectDeletedHandler := projectdeletedhandler.New(w.DB, w.PolicyReloader)
+	envDeletedHandler := envdeletedhandler.New(w.DB, w.PolicyReloader)
 
 	// The first matching branch handles the event. The final branch protects
 	// against a future filter/handler mismatch by acknowledging unknown input.

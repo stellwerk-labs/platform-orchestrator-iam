@@ -89,6 +89,9 @@ func (s *Server) InternalRemoveAccessFromOrg(ctx context.Context, request Intern
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	return InternalRemoveAccessFromOrg204Response{}, nil
 }

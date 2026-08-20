@@ -190,10 +190,16 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 		zap.L().Fatal("failed to setup control plane client", zap.Error(err))
 	}
 
+	authorizer, err := authorization.New(ctx, db)
+	if err != nil {
+		conn.Close()
+		zap.L().Fatal("failed to initialize authorization policy", zap.Error(err))
+	}
+
 	return &sharedDependencies{
 		Config:              cfg,
 		DB:                  db,
-		Authorizer:          authorization.New(db),
+		Authorizer:          authorizer,
 		NATSConn:            conn,
 		JetStream:           js,
 		Publisher:           publisher,
@@ -203,6 +209,9 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 }
 
 func closeSharedDependencies(deps *sharedDependencies) {
+	if authorizer, ok := deps.Authorizer.(*authorization.CasbinAuthorizer); ok {
+		authorizer.Close()
+	}
 	if deps.NATSConn != nil {
 		if err := deps.NATSConn.Drain(); err != nil {
 			zap.L().Error("failed to drain NATS connection", zap.Error(err))
@@ -342,6 +351,7 @@ func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
 
 	return RunnableTask{
 		Run: func(ctx context.Context) error {
+			policyReloader, _ := deps.Authorizer.(authorization.PolicyReloader)
 			wrk := &worker.Worker{
 				JetStream:           deps.JetStream,
 				Publisher:           deps.Publisher,
@@ -350,6 +360,7 @@ func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
 				RetryTimeout:        time.Minute,
 				Logger:              zap.L().Named("worker"),
 				CpClient:            deps.CpClient,
+				PolicyReloader:      policyReloader,
 			}
 
 			var err error

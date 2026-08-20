@@ -10,6 +10,7 @@ import (
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"go.uber.org/zap"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/logging"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
@@ -17,11 +18,16 @@ import (
 )
 
 type ProjectDeletedHandler struct {
-	db model.Databaser
+	db       model.Databaser
+	reloader authorization.PolicyReloader
 }
 
-func New(db model.Databaser) *ProjectDeletedHandler {
-	return &ProjectDeletedHandler{db: db}
+func New(db model.Databaser, reloaders ...authorization.PolicyReloader) *ProjectDeletedHandler {
+	handler := &ProjectDeletedHandler{db: db}
+	if len(reloaders) > 0 {
+		handler.reloader = reloaders[0]
+	}
+	return handler
 }
 
 func (h *ProjectDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, delivery *hmessaging.Delivery) error {
@@ -50,5 +56,11 @@ func (h *ProjectDeletedHandler) removeProjectAccess(ctx context.Context, logger 
 	} else {
 		logger.Info("deleted project service-user roles", zap.Int64("rows", rows))
 	}
-	return h.db.DeleteAuthorizationResource(ctx, nil, scope)
+	if err := h.db.DeleteAuthorizationResource(ctx, nil, scope); err != nil {
+		return err
+	}
+	if h.reloader != nil {
+		return errors.Wrap(h.reloader.ReloadPolicy(), "failed to reload authorization policy")
+	}
+	return nil
 }

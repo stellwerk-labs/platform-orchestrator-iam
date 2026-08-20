@@ -323,6 +323,11 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if membership != nil {
+		if err := s.reloadAuthorizationPolicy(); err != nil {
+			return nil, err
+		}
+	}
 
 	if membership != nil {
 		logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
