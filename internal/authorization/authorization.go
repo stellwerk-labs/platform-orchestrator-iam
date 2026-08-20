@@ -40,6 +40,9 @@ m = g(r.sub, p.sub) && (r.obj == p.obj || g2(r.obj, p.obj)) && permissionMatch(r
 `
 
 const (
+	PermissionRead      = "read"
+	PermissionWrite     = "write"
+	PermissionManage    = "manage"
 	PermissionManageAll = "manage_all"
 	PermissionWriteAll  = "write_all"
 	PermissionReadAll   = "read_all"
@@ -230,16 +233,16 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 		return false, fmt.Errorf("permissionMatch arguments must be strings")
 	}
 	if requested == "member" {
-		requested = "read"
+		requested = PermissionRead
 	}
 	if requested == granted || granted == PermissionManageAll {
 		return true, nil
 	}
 	switch granted {
 	case PermissionWriteAll:
-		return requested == "write" || requested == "read", nil
+		return requested == PermissionWrite || requested == PermissionRead, nil
 	case PermissionReadAll:
-		return requested == "read", nil
+		return requested == PermissionRead, nil
 	default:
 		return false, nil
 	}
@@ -253,32 +256,44 @@ func (a *CasbinAuthorizer) Authorize(ctx context.Context, subjectId uuid.UUID, c
 		return []Result{}, nil
 	}
 
-	normalizedChecks := make([]Check, len(checks))
+	type preparedCheck struct {
+		original   Check
+		normalized Check
+	}
+	preparedChecks := make([]preparedCheck, len(checks))
 	for index, check := range checks {
 		normalizedResource, err := NormalizeResource(check.Resource)
 		if err != nil {
 			return nil, err
 		}
-		normalizedChecks[index] = Check{Resource: normalizedResource, Permission: check.Permission}
+		preparedChecks[index] = preparedCheck{
+			original:   check,
+			normalized: Check{Resource: normalizedResource, Permission: check.Permission},
+		}
 	}
 
+	normalizedChecks := make([]Check, len(preparedChecks))
+	for index, prepared := range preparedChecks {
+		normalizedChecks[index] = prepared.normalized
+	}
 	known, err := a.knownCustomPermissions(ctx, normalizedChecks)
 	if err != nil {
 		return nil, err
 	}
 
-	results := make([]Result, len(normalizedChecks))
-	for index, check := range normalizedChecks {
+	results := make([]Result, len(preparedChecks))
+	for index, prepared := range preparedChecks {
+		check := prepared.normalized
 		permissionCheck := model.AuthorizationPermissionCheck{Resource: check.Resource, Permission: check.Permission}
 		if isCustomPermission(check.Permission) && !known[permissionCheck] {
-			results[index] = Result{Check: checks[index], Invalid: true}
+			results[index] = Result{Check: prepared.original, Invalid: true}
 			continue
 		}
 		allowed, err := a.enforcer.Enforce(subjectId.String(), check.Resource, check.Permission)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to evaluate Casbin policy")
 		}
-		results[index] = Result{Check: checks[index], Allowed: allowed}
+		results[index] = Result{Check: prepared.original, Allowed: allowed}
 	}
 	return results, nil
 }
@@ -319,7 +334,7 @@ func (a *CasbinAuthorizer) knownCustomPermissions(ctx context.Context, checks []
 
 func isCustomPermission(permission string) bool {
 	switch permission {
-	case "read", "write", "manage", PermissionReadAll, PermissionWriteAll, PermissionManageAll:
+	case PermissionRead, PermissionWrite, PermissionManage, PermissionReadAll, PermissionWriteAll, PermissionManageAll:
 		return false
 	default:
 		return true

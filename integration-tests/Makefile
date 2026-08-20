@@ -57,6 +57,10 @@ benchmark-authorization: build
 	docker compose up --no-build -d platform-orchestrator-iam-platform-orchestrator-iam --wait
 	./run-authorization-benchmarks.sh
 
+.PHONY: test-authorization-upgrade
+test-authorization-upgrade:
+	./test-authorization-upgrade.sh
+
 .PHONY: test-integration-logs
 test-integration-logs:
 	docker compose logs

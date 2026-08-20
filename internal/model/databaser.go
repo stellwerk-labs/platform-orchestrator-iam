@@ -38,6 +38,19 @@ var registerMigrationOnce sync.Once
 
 // NewDatabaser creates a new database provider instance
 func NewDatabaser(ctx context.Context, logger *zap.Logger, connStr string) (Databaser, error) {
+	if inner, err := hpostgresconnect.InitDatabase(ctx, &hpostgresconnect.Config{
+		Logger:  logger,
+		ConnStr: connStr,
+	}); err != nil {
+		return nil, err
+	} else if err := MigrateUp(ctx, logger, inner.DB); err != nil {
+		return nil, err
+	} else {
+		return &databaser{DB: inner.DB, logger: logger}, nil
+	}
+}
+
+func configureMigrations(logger *zap.Logger) {
 	goose.SetLogger(&gooseZapLogger{SugaredLogger: logger.Named("goose").Sugar()})
 	goose.SetBaseFS(embedMigrations)
 	goose.SetVerbose(logger.Level() <= zap.DebugLevel)
@@ -46,17 +59,21 @@ func NewDatabaser(ctx context.Context, logger *zap.Logger, connStr string) (Data
 	registerMigrationOnce.Do(func() {
 		goose.AddNamedMigrationContext("000018_pending_event_messages.go", hstandardoutbox.MigrateUp01, hstandardoutbox.MigrateDown01)
 	})
+}
 
-	if inner, err := hpostgresconnect.InitDatabase(ctx, &hpostgresconnect.Config{
-		Logger:  logger,
-		ConnStr: connStr,
-	}); err != nil {
-		return nil, err
-	} else if err := goose.Up(inner.DB, "migrations"); err != nil {
-		return nil, err
-	} else {
-		return &databaser{DB: inner.DB, logger: logger}, nil
-	}
+// MigrateUp applies all embedded database migrations. It is exported for the
+// authorization migration utility, which runs the schema cutover while the IAM
+// deployment is stopped.
+func MigrateUp(ctx context.Context, logger *zap.Logger, db *sql.DB) error {
+	configureMigrations(logger)
+	return goose.UpContext(ctx, db, "migrations")
+}
+
+// MigrateDownTo rolls the embedded migrations back to targetVersion. Operators
+// should only call this through the guarded authorization migration utility.
+func MigrateDownTo(ctx context.Context, logger *zap.Logger, db *sql.DB, targetVersion int64) error {
+	configureMigrations(logger)
+	return goose.DownToContext(ctx, db, "migrations", targetVersion)
 }
 
 // Databaser provides an interface which can be used to mock the model

@@ -118,7 +118,7 @@ func (s *Server) ListProjectUsers(ctx context.Context, request ListProjectUsersR
 		return nil, fmt.Errorf("unexpected status code %d when getting project", response.StatusCode())
 	}
 	resource := "project:" + response.JSON200.Uuid.String()
-	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: "read"}})
+	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: readPermission}})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to authorize project user listing")
 	}
@@ -169,7 +169,7 @@ func (s *Server) ListEnvironmentUsers(ctx context.Context, request ListEnvironme
 		return nil, fmt.Errorf("unexpected status code %d when getting environment", response.StatusCode())
 	}
 	resource := "env:" + response.JSON200.Uuid.String()
-	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: "read"}})
+	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: readPermission}})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to authorize environment user listing")
 	}

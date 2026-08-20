@@ -57,6 +57,9 @@ The service uses PostgreSQL through raw SQL queries. Database migrations use
 [Goose](https://github.com/pressly/goose) and are embedded from
 `internal/model/migrations/`.
 
+Operators upgrading from the SpiceDB-based release must follow the
+[SpiceDB-to-Casbin migration procedure](docs/migrate-spicedb-to-casbin.md).
+
 - Add migrations as `internal/model/migrations/00000N_description.sql`.
 - The database interface is defined in `internal/model/databaser.go`.
 - Optional transactions use the `Tx` interface.

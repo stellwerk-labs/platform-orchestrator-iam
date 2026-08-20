@@ -53,6 +53,11 @@ clean:
 test-integration: build
 	$(MAKE) -C integration-tests test
 
+## Exercise the supported SpiceDB-to-Casbin database cutover and rollback
+.PHONY: test-authorization-upgrade
+test-authorization-upgrade:
+	$(MAKE) -C integration-tests test-authorization-upgrade
+
 TEST_PACKAGES = $$(go list ./internal/... | grep -v -E "(mocks|generated)")
 
 ## Run golang tests
