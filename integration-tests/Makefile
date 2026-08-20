@@ -50,6 +50,13 @@ clean:
 	if [ -f compose.yaml ]; then docker compose down -v --remove-orphans; fi
 	rm -rfv .score-compose compose.yaml mock-emails/
 
+.PHONY: benchmark-authorization
+benchmark-authorization: build
+	mkdir -p ./mock-emails
+	chmod 0777 ./mock-emails
+	docker compose up --no-build -d platform-orchestrator-iam-platform-orchestrator-iam --wait
+	./run-authorization-benchmarks.sh
+
 .PHONY: test-integration-logs
 test-integration-logs:
 	docker compose logs
