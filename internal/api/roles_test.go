@@ -99,6 +99,7 @@ func TestListRoles_empty(t *testing.T) {
 			CreatedAt:   seededRoles[0].CreatedAt,
 			CreatedBy:   seededRoles[0].CreatedBy,
 			Permissions: seededRoles[0].Permissions,
+			IsSystem:    true,
 		},
 		{
 			Id:          seededRoles[1].Id,
@@ -106,6 +107,7 @@ func TestListRoles_empty(t *testing.T) {
 			CreatedAt:   seededRoles[1].CreatedAt,
 			CreatedBy:   seededRoles[1].CreatedBy,
 			Permissions: seededRoles[1].Permissions,
+			IsSystem:    true,
 		},
 		{
 			Id:          seededRoles[2].Id,
@@ -113,6 +115,7 @@ func TestListRoles_empty(t *testing.T) {
 			CreatedAt:   seededRoles[2].CreatedAt,
 			CreatedBy:   seededRoles[2].CreatedBy,
 			Permissions: seededRoles[2].Permissions,
+			IsSystem:    true,
 		},
 	}}, r)
 }
@@ -165,6 +168,70 @@ func TestListRoles(t *testing.T) {
 		},
 	}, r)
 
+}
+
+func TestCreateRole(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateRole(gomock.Any(), nil, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, role *model.Role) (*model.Role, error) {
+			require.Equal(t, orgId, role.OrgId)
+			require.Equal(t, "Release Operator", role.DisplayName)
+			require.Equal(t, []string{"deployment_cancel", "write_all"}, role.Permissions)
+			require.False(t, role.IsSystem)
+			return role, nil
+		})
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.CreateRole(ctx, CreateRoleRequestObject{OrgId: orgId, Body: &RoleWriteBody{
+		DisplayName: " Release Operator ",
+		Permissions: []string{"write_all", "deployment_cancel", "write_all"},
+	}})
+	require.NoError(t, err)
+	created, ok := response.(CreateRole201JSONResponse)
+	require.True(t, ok)
+	require.Equal(t, "Release Operator", created.DisplayName)
+	require.Equal(t, []string{"deployment_cancel", "write_all"}, created.Permissions)
+	require.False(t, created.IsSystem)
+}
+
+func TestUpdateSystemRoleIsRejected(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	roleId := uuid.New()
+	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetRole(gomock.Any(), nil, orgId, roleId).
+		Return(&model.Role{Id: roleId, OrgId: orgId, DisplayName: RoleAdmin, IsSystem: true}, nil)
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.UpdateRole(ctx, UpdateRoleRequestObject{OrgId: orgId, RoleId: roleId, Body: &RoleWriteBody{
+		DisplayName: "Changed Admin", Permissions: []string{"read_all"},
+	}})
+	require.NoError(t, err)
+	_, conflict := response.(UpdateRole409JSONResponse)
+	require.True(t, conflict)
+}
+
+func TestDeleteCustomRole(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	roleId := uuid.New()
+	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetRole(gomock.Any(), nil, orgId, roleId).
+		Return(&model.Role{Id: roleId, OrgId: orgId, DisplayName: "Auditor"}, nil)
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteRole(gomock.Any(), nil, orgId, roleId).Return(nil)
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.DeleteRole(ctx, DeleteRoleRequestObject{OrgId: orgId, RoleId: roleId})
+	require.NoError(t, err)
+	require.Equal(t, DeleteRole204Response{}, response)
 }
 
 func TestIsScopeValidForRole(t *testing.T) {

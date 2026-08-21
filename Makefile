@@ -53,12 +53,16 @@ clean:
 test-integration: build
 	$(MAKE) -C integration-tests test
 
+## Exercise the supported SpiceDB-to-Casbin database cutover and rollback
+.PHONY: test-authorization-upgrade
+test-authorization-upgrade:
+	$(MAKE) -C integration-tests test-authorization-upgrade
+
 TEST_PACKAGES = $$(go list ./internal/... | grep -v -E "(mocks|generated)")
 
 ## Run golang tests
 .PHONY: test-unit
 test-unit:
-	go run github.com/authzed/zed/cmd/zed@v0.32.0 validate ./internal/spicedb/schema_test.yaml
 	go tool gotestsum --format testname -- -coverprofile=cover.out $(TEST_PACKAGES)
 
 ## Generate coverage badge

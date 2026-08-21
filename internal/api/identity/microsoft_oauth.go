@@ -11,8 +11,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"go.uber.org/zap"
 )
 
 type MicrosoftOauthProvider struct {

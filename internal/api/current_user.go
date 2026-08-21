@@ -9,8 +9,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
 func (s *Server) GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error) {

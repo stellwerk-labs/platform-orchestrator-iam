@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 )
 
 func TestRoles(t *testing.T) {

@@ -12,7 +12,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/herrors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"go.uber.org/zap"
 
 	usererrors "github.com/stellwerk-labs/platform-orchestrator-iam/internal/errors"
@@ -104,16 +103,12 @@ func (s *Server) InternalCreateOrgMembership(ctx context.Context, request Intern
 		return nil, errors.Wrap(err, "failed to create membership")
 	}
 
-	messages, err := insertSpiceDBSyncEventMessages(ctx, request.OrgId, ref.Ref(user.Id), s.Database, tx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to insert spiceDB sync event messages")
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
-
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
 		zap.String("po-membership-id", membership.Id.String()), zap.String("po-subject-type", string(membership.SubjectType)),
@@ -245,16 +240,12 @@ func (s *Server) DeleteOrgMembership(ctx context.Context, request DeleteOrgMembe
 		return nil, errors.Wrap(err, "failed to delete membership")
 	}
 
-	messages, err := insertSpiceDBSyncEventMessages(ctx, request.OrgId, ref.Ref(membership.UserId), s.Database, tx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to insert spiceDB sync event messages")
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
-
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	logger.Info("deleted membership", zap.String("user_id", membership.UserId.String()), zap.String("membership_id", request.MembershipId.String()), zap.String("subject_type", string(membership.SubjectType)), zap.String("subject", membership.Subject))
 	return DeleteOrgMembership204Response{}, nil
@@ -407,19 +398,13 @@ func (s *Server) ReplaceOrgUserMemberships(ctx context.Context, request ReplaceO
 		})
 	}
 
-	// Insert SpiceDB sync event messages
-	messages, err := insertSpiceDBSyncEventMessages(ctx, request.OrgId, ref.Ref(uuid.MustParse(request.UserId.String())), s.Database, tx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to insert spiceDB sync event messages")
-	}
-
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
-
-	// Publish messages for SpiceDB sync
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
 	// Convert to response format
 	userMemberships := make([]UserMembership, 0, len(createdMemberships))

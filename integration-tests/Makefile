@@ -39,8 +39,6 @@ test: compose.yaml
 	INTERNAL_SERVER_URL=http://localhost:8081 \
 	INTERNAL_CP_URL=http://localhost:8082 \
 	TEST_USER_IDENTITY_RECIPIENT=age10hmkvsqfxr5ha05ay6pqj9zdtal7pw7x2r3t4n00rzucc3en3u9q3cycqm \
-	SPICEDB_URL=localhost:50051 \
-	SPICEDB_TOKEN=t0k3n \
 	DATABASE_URL="host=localhost port=5432 user=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .username) password=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .password) dbname=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .name) sslmode=disable" \
 	DB_CONNECTION_STRING="$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' -f 'host=localhost port=5432 dbname={{ .name }} user={{ .username }} password={{ .password }} connect_timeout=5 sslmode=disable')" \
 	NATS_URL=nats://localhost:4222 \
@@ -51,6 +49,17 @@ test: compose.yaml
 clean:
 	if [ -f compose.yaml ]; then docker compose down -v --remove-orphans; fi
 	rm -rfv .score-compose compose.yaml mock-emails/
+
+.PHONY: benchmark-authorization
+benchmark-authorization: build
+	mkdir -p ./mock-emails
+	chmod 0777 ./mock-emails
+	docker compose up --no-build -d platform-orchestrator-iam-platform-orchestrator-iam --wait
+	./run-authorization-benchmarks.sh
+
+.PHONY: test-authorization-upgrade
+test-authorization-upgrade:
+	./test-authorization-upgrade.sh
 
 .PHONY: test-integration-logs
 test-integration-logs:

@@ -13,15 +13,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
@@ -310,7 +307,6 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 	}
 
 	var membership *model.Membership
-	var notAMember bool
 	if p, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{
 		OrgId:       &invite.OrgId,
 		UserId:      &uid,
@@ -322,7 +318,6 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 		membership = &p[0].Membership
 		logger.Info("redeemed org membership invitation, but user already has this membership")
 	} else {
-		notAMember = true
 		var membershipRole opt.Opt[uuid.UUID]
 		if invite.MembershipSubjectType == model.MembershipSubjectTypeRole {
 			membershipRole = opt.Of(uuid.MustParse(invite.MembershipSubject))
@@ -350,20 +345,11 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 		return nil, errors.Wrap(err, "failed to delete invitation")
 	}
 
-	var messages []*hstandardoutbox.PendingEventMessage
-	if notAMember {
-		messages, err = insertSpiceDBSyncEventMessages(ctx, invite.OrgId, ref.Ref(uid), s.Database, tx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to insert spiceDB sync event messages")
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
-
-	if len(messages) > 0 {
-		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
 	}
 
 	logger.Info("redeemed org membership invitation")

@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
-	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 )
 
 func randomBytes(n int) []byte {

@@ -20,7 +20,7 @@ containers:
     resources:
       limits:
         cpu: '1'
-        memory: 256Mi
+        memory: 512Mi
       requests:
         cpu: '0.025'
         memory: 64Mi
@@ -32,6 +32,9 @@ containers:
       DD_SERVICE: ${metadata.name}
       DD_TRACE_HTTP_CLIENT_ERROR_STATUSES: 500-600
       DD_TRACE_HTTP_SERVER_ERROR_STATUSES: 500-600
+      # Keep the Go heap below the container limit under sustained high-cardinality
+      # authorization traffic, leaving headroom for stacks and non-heap memory.
+      GOMEMLIMIT: 160MiB
       PORT: '8080'
       DATABASE_HOST: ${resources.postgres.host}
       DATABASE_NAME: ${resources.postgres.name}
@@ -48,8 +51,6 @@ containers:
       SENDGRID_SENDER_NAME: ${resources.env.INVITATION_EMAIL_SENDER_NAME}
       SENDGRID_SENDER_ADDRESS: ${resources.env.INVITATION_EMAIL_SENDER_ADDRESS}
       PRODUCT_NAME: ${resources.env.PRODUCT_NAME}
-      SPICEDB_URL: ${resources.spicedb.hostname}:50051
-      SPICEDB_PRE_SHARED_KEY: ${resources.spicedb.preshared_key}
       NATS_URL: nats://nats:4222
       NATS_BOOTSTRAP_STREAMS: "true"
       WORKOS_API_KEY: ${resources.env.WORKOS_API_KEY}
@@ -73,6 +74,3 @@ resources:
       host: ${resources.dns.host}
       port: 8080
       path: /(auth/register|auth/logout|auth/login|auth/device|auth/sso/.+|(users/.+)|(orgs/[^/]+/members)|(orgs/[^/]+/memberships.*)|(orgs/[^/]+/users/[^/]+/memberships.*)|(orgs/[^/]+/service-users.*)|(orgs/[^/]+/invitations.*)|(orgs/[^/]+/roles.*)|(orgs/[^/]+/projects/[^/]+/users.*)|(orgs/[^/]+/projects/[^/]+/envs/[^/]+/users.*)|current-user|auth/check-permissions|(devicelogins/.+))
-  spicedb:
-    type: spicedb
-    id: spicedb

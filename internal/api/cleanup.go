@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
 	"github.com/stellwerk-labs/golib/htelemetry"
 	"go.uber.org/zap"
 
@@ -87,15 +86,12 @@ func (s *Server) InternalRemoveAccessFromOrg(ctx context.Context, request Intern
 	}
 	logger.Info("bulk expired org service user tokens", zap.Int64("expired_count", i))
 
-	messages, err := insertSpiceDBSyncEventMessages(ctx, request.OrgId, nil, s.Database, tx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert spice db event messages: %w", err)
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
 
-	reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
 	return InternalRemoveAccessFromOrg204Response{}, nil
 }

@@ -101,11 +101,30 @@ jobs:
         if: always()
         run: make clean
 
+  test-authorization-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Disable Docker containerd snapshotter
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"features": {"containerd-snapshotter": false}}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Test SpiceDB-to-Casbin upgrade and rollback
+        run: make test-authorization-upgrade
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - test-unit
       - test-integration
+      - test-authorization-upgrade
     runs-on: ubuntu-latest
     permissions:
       contents: write

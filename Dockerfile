@@ -12,7 +12,8 @@ COPY . .
 RUN --mount=target=. \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -ldflags="-s -w" -o /opt/server/server ./cmd/server
+    go build -ldflags="-s -w" -o /opt/server/server ./cmd/server && \
+    go build -ldflags="-s -w" -o /opt/server/authorization-migrate ./cmd/authorization-migrate
 
 FROM gcr.io/distroless/static:nonroot AS final
 

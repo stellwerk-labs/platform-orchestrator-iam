@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -36,12 +37,15 @@ const (
 
 var AllowedScopesForRoles = []string{ScopeProject, ScopeEnvironment}
 
+var rolePermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}[a-z0-9]$`)
+
 func fromModelToAPIRole(r *model.Role) Role {
 	return Role{
 		CreatedAt:   r.CreatedAt,
 		CreatedBy:   r.CreatedBy,
 		DisplayName: r.DisplayName,
 		Id:          r.Id,
+		IsSystem:    r.IsSystem,
 		Permissions: r.Permissions,
 	}
 }
@@ -103,15 +107,143 @@ func (s *Server) ListRoles(ctx context.Context, request ListRolesRequestObject) 
 	}, nil
 }
 
+func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
+	if body == nil {
+		return "", nil, usererrors.NewUserError("role body is required")
+	}
+	displayName := strings.TrimSpace(body.DisplayName)
+	if len(displayName) < 2 || len(displayName) > 100 {
+		return "", nil, usererrors.NewUserError("role display name must contain between 2 and 100 characters")
+	}
+	if displayName == RoleAdmin || displayName == RoleDeployer || displayName == RoleViewer {
+		return "", nil, usererrors.NewUserError("built-in role names are reserved")
+	}
+	if len(body.Permissions) == 0 {
+		return "", nil, usererrors.NewUserError("at least one permission is required")
+	}
+	permissionSet := make(map[string]struct{}, len(body.Permissions))
+	for _, permission := range body.Permissions {
+		if !rolePermissionPattern.MatchString(permission) {
+			return "", nil, usererrors.NewUserError(fmt.Sprintf("invalid permission %q", permission))
+		}
+		permissionSet[permission] = struct{}{}
+	}
+	permissions := make([]string, 0, len(permissionSet))
+	for permission := range permissionSet {
+		permissions = append(permissions, permission)
+	}
+	slices.Sort(permissions)
+	return displayName, permissions, nil
+}
+
+func (s *Server) CreateRole(ctx context.Context, request CreateRoleRequestObject) (CreateRoleResponseObject, error) {
+	userId, authErr := GetAuthenticatedUserIdOr401(ctx)
+	if authErr != nil {
+		return nil, authErr
+	}
+	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+		return nil, err
+	}
+	displayName, permissions, validationErr := validateRoleWrite(request.Body)
+	if validationErr != nil {
+		return CreateRole400JSONResponse{N400BadRequestJSONResponse: Generate400Response(validationErr.Error())}, nil
+	}
+	role, err := s.Database.CreateRole(ctx, nil, &model.Role{
+		Id: uuid.Must(uuid.NewV7()), OrgId: request.OrgId, DisplayName: displayName,
+		Permissions: permissions, CreatedAt: time.Now().UTC(), CreatedBy: userId,
+	})
+	if err != nil {
+		if _, conflict := model.IsErrConflict(err); conflict {
+			return CreateRole409JSONResponse{N409ConflictJSONResponse: Generate409Response(err.Error())}, nil
+		}
+		return nil, err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
+	return CreateRole201JSONResponse(fromModelToAPIRole(role)), nil
+}
+
+func (s *Server) UpdateRole(ctx context.Context, request UpdateRoleRequestObject) (UpdateRoleResponseObject, error) {
+	userId, authErr := GetAuthenticatedUserIdOr401(ctx)
+	if authErr != nil {
+		return nil, authErr
+	}
+	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+		return nil, err
+	}
+	existing, err := s.Database.GetRole(ctx, nil, request.OrgId, request.RoleId)
+	if err != nil {
+		if _, notFound := model.IsErrNotFound(err); notFound {
+			return UpdateRole404JSONResponse{N404NotFoundJSONResponse: Generate404Response("role not found")}, nil
+		}
+		return nil, err
+	}
+	if existing.IsSystem {
+		return UpdateRole409JSONResponse{N409ConflictJSONResponse: Generate409Response("built-in roles cannot be modified")}, nil
+	}
+	displayName, permissions, validationErr := validateRoleWrite(request.Body)
+	if validationErr != nil {
+		return UpdateRole400JSONResponse{N400BadRequestJSONResponse: Generate400Response(validationErr.Error())}, nil
+	}
+	existing.DisplayName = displayName
+	existing.Permissions = permissions
+	updated, err := s.Database.UpdateRole(ctx, nil, existing)
+	if err != nil {
+		if _, conflict := model.IsErrConflict(err); conflict {
+			return UpdateRole409JSONResponse{N409ConflictJSONResponse: Generate409Response(err.Error())}, nil
+		}
+		return nil, err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
+	return UpdateRole200JSONResponse(fromModelToAPIRole(updated)), nil
+}
+
+func (s *Server) DeleteRole(ctx context.Context, request DeleteRoleRequestObject) (DeleteRoleResponseObject, error) {
+	userId, authErr := GetAuthenticatedUserIdOr401(ctx)
+	if authErr != nil {
+		return nil, authErr
+	}
+	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+		return nil, err
+	}
+	existing, err := s.Database.GetRole(ctx, nil, request.OrgId, request.RoleId)
+	if err != nil {
+		if _, notFound := model.IsErrNotFound(err); notFound {
+			return DeleteRole404JSONResponse{N404NotFoundJSONResponse: Generate404Response("role not found")}, nil
+		}
+		return nil, err
+	}
+	if existing.IsSystem {
+		return DeleteRole409JSONResponse{N409ConflictJSONResponse: Generate409Response("built-in roles cannot be deleted")}, nil
+	}
+	if err := s.Database.DeleteRole(ctx, nil, request.OrgId, request.RoleId); err != nil {
+		if _, conflict := model.IsErrConflict(err); conflict {
+			return DeleteRole409JSONResponse{N409ConflictJSONResponse: Generate409Response(err.Error())}, nil
+		}
+		return nil, err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
+	}
+	return DeleteRole204Response{}, nil
+}
+
 // SeedBuiltinOrgRoles creates the default roles for an organization.
 func SeedBuiltinOrgRoles(ctx context.Context, logger *zap.Logger, database model.Databaser, tx model.TxWithCommit, orgId string) ([]model.Role, error) {
 	var roles = []model.Role{
-		{DisplayName: RoleAdmin, Permissions: []string{PermissionsManageAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
-		{DisplayName: RoleDeployer, Permissions: []string{PermissionsWriteAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
-		{DisplayName: RoleViewer, Permissions: []string{PermissionsReadAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7())},
+		{DisplayName: RoleAdmin, Permissions: []string{PermissionsManageAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
+		{DisplayName: RoleDeployer, Permissions: []string{PermissionsWriteAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
+		{DisplayName: RoleViewer, Permissions: []string{PermissionsReadAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
 	}
 	if err := database.SeedRoles(ctx, tx, orgId, roles); err != nil {
 		return nil, errors.Wrap(err, "failed to seed roles")
+	} else if err := database.UpsertAuthorizationResource(ctx, tx, &model.AuthorizationResource{
+		Resource: "organization:" + orgId, ResourceType: "organization", ResourceId: orgId, OrgId: orgId,
+	}); err != nil {
+		return nil, errors.Wrap(err, "failed to seed organization authorization resource")
 	} else {
 		logger.Info("seeded default roles", zap.String("org_id", orgId))
 		return roles, nil
@@ -177,22 +309,4 @@ func isScopeValidForRole(ctx context.Context, scope *string, orgId string, cpCli
 		}
 	}
 	return true, nil
-}
-
-// CreateScopedRolesForScope creates scoped role models for a given scope (project or environment).
-// Returns a slice of ScopedRole models with generated IDs.
-// This is a shared helper used by both the API endpoint and worker handlers.
-func CreateScopedRolesForScope(orgId, scope string, orgRoles []model.Role) []model.ScopedRole {
-	scopedRoles := make([]model.ScopedRole, 0, len(orgRoles))
-
-	for _, orgRole := range orgRoles {
-		scopedRoles = append(scopedRoles, model.ScopedRole{
-			Id:        uuid.Must(uuid.NewV7()),
-			OrgId:     orgId,
-			Scope:     scope,
-			OrgRoleId: orgRole.Id,
-		})
-	}
-
-	return scopedRoles
 }

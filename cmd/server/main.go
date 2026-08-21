@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4/middleware"
+	_ "github.com/lib/pq"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/pkg/errors"
@@ -32,11 +34,12 @@ import (
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorizationmigration"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/config"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker"
 )
@@ -66,7 +69,7 @@ func init() {
 type sharedDependencies struct {
 	Config              *config.Configuration
 	DB                  model.Databaser
-	SpiceDB             spicedb.SpiceDB
+	Authorizer          authorization.Authorizer
 	NATSConn            *nats.Conn
 	JetStream           jetstream.JetStream
 	Publisher           hmessaging.Publisher
@@ -132,22 +135,45 @@ func main() {
 }
 
 func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sharedDependencies {
-	// Initialize database
+	// Initialize the control-plane client before the database. A SpiceDB-era
+	// database needs the control plane to rebuild project/environment ancestry
+	// before the server is allowed to become ready.
+	cpClient, err := cpclient.NewClientWithResponses(
+		cfg.ControlPlaneUrl,
+		cpclient.WithHTTPClient(http.DefaultClient),
+		cpclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+			req.Header.Set("From", userid.InternalSystemUuid.String())
+			return nil
+		}),
+	)
+	if err != nil {
+		zap.L().Fatal("failed to setup control plane client", zap.Error(err))
+	}
+
 	dbConnStr := fmt.Sprintf(
 		"dbname=%s user=%s password=%s host=%s port=%s connect_timeout=5 sslmode=disable",
 		cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseHost, cfg.DatabasePort)
-	db, err := model.NewDatabaser(ctx, zap.L(), dbConnStr)
+	rawDB, err := sql.Open("postgres", dbConnStr)
 	if err != nil {
-		zap.S().Fatalw("Failed to initialize database", "err", err)
+		zap.L().Fatal("failed to create database client", zap.Error(err))
 	}
-
-	// Initialize SpiceDB
-	spicedbClient, err := spicedb.NewClient(cfg.SpiceDBUrl, cfg.SpiceDBPreSharedKey, zap.L())
+	rawDB.SetMaxOpenConns(4)
+	if err := rawDB.PingContext(ctx); err != nil {
+		_ = rawDB.Close()
+		zap.L().Fatal("failed to connect to database", zap.Error(err))
+	}
+	db, migrationReport, err := authorizationmigration.Upgrade(ctx, zap.L(), rawDB, dbConnStr, cpClient, "")
+	if closeErr := rawDB.Close(); closeErr != nil {
+		zap.L().Error("failed to close authorization migration database connection", zap.Error(closeErr))
+	}
 	if err != nil {
-		zap.L().Fatal("failed to setup spicedb client", zap.Error(err))
+		zap.L().Fatal("failed to initialize authorization database", zap.Error(err))
 	}
-	if err := spicedbClient.WriteSchema(ctx); err != nil {
-		zap.L().Fatal("failed to write spicedb schema", zap.Error(err))
+	if migrationReport.Reconciled != nil {
+		zap.L().Info("automatically migrated authorization from SpiceDB to Casbin",
+			zap.Int("organizations", migrationReport.Reconciled.Organizations),
+			zap.Int("projects", migrationReport.Reconciled.Projects),
+			zap.Int("environments", migrationReport.Reconciled.Environments))
 	}
 
 	// Initialize the durable NATS transport before accepting API traffic.
@@ -186,23 +212,16 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 	// that components can deduplicate messages using the message id. So we tack on a prefix.
 	hstandardoutbox.MessageIDPrefix = "platform-orchestrator-iam-"
 
-	// Initialize control plane client
-	cpClient, err := cpclient.NewClientWithResponses(
-		cfg.ControlPlaneUrl,
-		cpclient.WithHTTPClient(http.DefaultClient),
-		cpclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
-			req.Header.Set("From", userid.InternalSystemUuid.String())
-			return nil
-		}),
-	)
+	authorizer, err := authorization.New(ctx, db, authorization.NewNATSPolicyInvalidationBus(conn))
 	if err != nil {
-		zap.L().Fatal("failed to setup control plane client", zap.Error(err))
+		conn.Close()
+		zap.L().Fatal("failed to initialize authorization policy", zap.Error(err))
 	}
 
 	return &sharedDependencies{
 		Config:              cfg,
 		DB:                  db,
-		SpiceDB:             spicedbClient,
+		Authorizer:          authorizer,
 		NATSConn:            conn,
 		JetStream:           js,
 		Publisher:           publisher,
@@ -212,6 +231,9 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 }
 
 func closeSharedDependencies(deps *sharedDependencies) {
+	if authorizer, ok := deps.Authorizer.(*authorization.CasbinAuthorizer); ok {
+		authorizer.Close()
+	}
 	if deps.NATSConn != nil {
 		if err := deps.NATSConn.Drain(); err != nil {
 			zap.L().Error("failed to drain NATS connection", zap.Error(err))
@@ -284,7 +306,7 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 		SsoCallbackUrlPath:       cfg.SsoCallbackUrlPath,
 		SsoStateSecret:           cfg.SsoStateSecret,
 		CpClient:                 deps.CpClient,
-		SpiceDB:                  deps.SpiceDB,
+		Authorizer:               deps.Authorizer,
 	}
 	if cfg.SuperUserToken != "" {
 		h := sha256.Sum256([]byte(cfg.SuperUserToken))
@@ -351,6 +373,7 @@ func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
 
 	return RunnableTask{
 		Run: func(ctx context.Context) error {
+			policyReloader, _ := deps.Authorizer.(authorization.PolicyReloader)
 			wrk := &worker.Worker{
 				JetStream:           deps.JetStream,
 				Publisher:           deps.Publisher,
@@ -358,8 +381,8 @@ func runWorkerConsumer(deps *sharedDependencies) RunnableTask {
 				DB:                  deps.DB,
 				RetryTimeout:        time.Minute,
 				Logger:              zap.L().Named("worker"),
-				SpiceDB:             deps.SpiceDB,
 				CpClient:            deps.CpClient,
+				PolicyReloader:      policyReloader,
 			}
 
 			var err error

@@ -16,8 +16,6 @@ func TestConfigurationLoadsNATSDefaults(t *testing.T) {
 		"CONTROL_PLANE_URL":           "http://control-plane:8080",
 		"SESSION_TOKEN_COOKIE_DOMAIN": "localhost",
 		"UI_HOST_URL":                 "http://localhost:8080",
-		"SPICEDB_URL":                 "http://spicedb:50051",
-		"SPICEDB_PRE_SHARED_KEY":      "test-key",
 		"NATS_URL":                    "nats://nats:4222",
 	} {
 		t.Setenv(key, value)

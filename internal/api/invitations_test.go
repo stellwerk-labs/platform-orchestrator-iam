@@ -4,24 +4,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 
-	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -437,18 +432,6 @@ func TestRedeemInvitation_nominal(t *testing.T) {
 		return &out, nil
 	})
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteInvitation(gomock.Any(), gomock.Not(nil), inviteId).Return(nil)
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			var msg events.CloudEvent[genevents.SpiceDBSyncData]
-			require.NoError(t, json.Unmarshal(m[0].Payload, &msg))
-			require.Equal(t, genevents.IoPlatformOrchestratorSpicedbSync, msg.Type)
-			require.Equal(t, orgId, msg.Data.OrgId)
-			require.Len(t, m, 1)
-			return m, nil
-		}).Times(1)
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store).Times(1)
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, humanUser.String())
 	r, err := s.RedeemInvitation(ctx, RedeemInvitationRequestObject{

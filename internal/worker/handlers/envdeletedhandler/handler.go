@@ -10,97 +10,57 @@ import (
 	cpevents "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genevents"
 	"go.uber.org/zap"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/logging"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 )
 
-// EnvDeletedHandler handles events indicating that an environment has been deleted.
-// It triggers the deletion of all scoped roles associated with the environment from both the database and SpiceDB.
 type EnvDeletedHandler struct {
-	db      model.Databaser
-	spiceDB spicedb.SpiceDB
+	db       model.Databaser
+	reloader authorization.PolicyReloader
 }
 
-// New is the constructor for EnvDeletedHandler.
-func New(db model.Databaser, spiceDB spicedb.SpiceDB) *EnvDeletedHandler {
-	return &EnvDeletedHandler{
-		db:      db,
-		spiceDB: spiceDB,
+func New(db model.Databaser, reloaders ...authorization.PolicyReloader) *EnvDeletedHandler {
+	handler := &EnvDeletedHandler{db: db}
+	if len(reloaders) > 0 {
+		handler.reloader = reloaders[0]
 	}
+	return handler
 }
 
-// Handle is the entrypoint for new messages. It unmarshals the event data and executes the cleanup logic.
-func (h *EnvDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, d *hmessaging.Delivery) error {
-	switch d.Subject {
-	case string(cpevents.IoPlatformOrchestratorEnvironmentDeleted):
-		var e events.CloudEvent[cpevents.EnvChangedData]
-		if err := json.Unmarshal(d.Data, &e); err != nil {
-			return errors.Wrap(err, "failed to unmarshal event body")
-		}
-
-		envId := e.Data.EnvId
-		orgId := e.Data.OrgId
-
-		logger = hlogger.TraceScopedLoggerFromCtx(logger, ctx).With(
-			logging.ZapOrgId(orgId),
-			logging.ZapEnvId(envId),
-			zap.String("po-env-uuid", e.Data.EnvUuid.String()),
-		)
-
-		return h.removeEnvScopedRoles(ctx, logger, orgId, e.Data.EnvUuid.String())
-	default:
+func (h *EnvDeletedHandler) Handle(ctx context.Context, logger *zap.Logger, delivery *hmessaging.Delivery) error {
+	if delivery.Subject != string(cpevents.IoPlatformOrchestratorEnvironmentDeleted) {
 		return nil
 	}
+	var event events.CloudEvent[cpevents.EnvChangedData]
+	if err := json.Unmarshal(delivery.Data, &event); err != nil {
+		return errors.Wrap(err, "failed to unmarshal environment deletion event")
+	}
+	logger = hlogger.TraceScopedLoggerFromCtx(logger, ctx).With(
+		logging.ZapOrgId(event.Data.OrgId), logging.ZapEnvId(event.Data.EnvId), zap.String("po-env-uuid", event.Data.EnvUuid.String()),
+	)
+	return h.removeEnvironmentAccess(ctx, logger, event.Data.EnvUuid.String())
 }
 
-// removeEnvScopedRoles deletes all scoped roles associated with an environment.
-// This includes deleting from database tables (memberships, service_user_roles, scoped_roles)
-// and from SpiceDB.
-func (h *EnvDeletedHandler) removeEnvScopedRoles(ctx context.Context, logger *zap.Logger, orgId, envId string) error {
-	logger.Info("starting deletion of scope roles for environment")
-
-	// Delete from database tables BEFORE deleting from SpiceDB
-	envScope := "env:" + envId
-
-	// Delete memberships with this scope
-	if rows, err := h.db.BulkDeleteMemberships(ctx, nil, model.BulkDeleteMembershipsParams{
-		Scope: opt.Of(envScope),
-	}); err != nil {
-		return errors.Wrap(err, "failed to delete memberships by scope")
+func (h *EnvDeletedHandler) removeEnvironmentAccess(ctx context.Context, logger *zap.Logger, environmentId string) error {
+	scope := "env:" + environmentId
+	if rows, err := h.db.BulkDeleteMemberships(ctx, nil, model.BulkDeleteMembershipsParams{Scope: opt.Of(scope)}); err != nil {
+		return errors.Wrap(err, "failed to delete environment memberships")
 	} else {
-		logger.Info("deleted memberships", zap.Int64("rows", rows))
+		logger.Info("deleted environment memberships", zap.Int64("rows", rows))
 	}
-
-	// Delete service user roles with this scope
-	if rows, err := h.db.BulkDeleteServiceUserRoles(ctx, nil, model.BulkDeleteServiceUserRolesParams{
-		Scope: opt.Of(envScope),
-	}); err != nil {
-		return errors.Wrap(err, "failed to delete service user roles by scope")
+	if rows, err := h.db.BulkDeleteServiceUserRoles(ctx, nil, model.BulkDeleteServiceUserRolesParams{Scope: opt.Of(scope)}); err != nil {
+		return errors.Wrap(err, "failed to delete environment service-user roles")
 	} else {
-		logger.Info("deleted service user roles", zap.Int64("rows", rows))
+		logger.Info("deleted environment service-user roles", zap.Int64("rows", rows))
 	}
-
-	// Delete scoped roles with this scope
-	if rows, err := h.db.BulkDeleteScopedRoles(ctx, nil, model.BulkDeleteScopedRolesParams{
-		Scope: opt.Of(envScope),
-	}); err != nil {
-		return errors.Wrap(err, "failed to delete scoped roles by scope")
-	} else {
-		logger.Info("deleted scoped roles", zap.Int64("rows", rows))
-	}
-
-	// Delete from SpiceDB AFTER database deletion
-	if err := h.spiceDB.BulkDeleteScopedRoles(ctx, spicedb.BulkDeleteScopedRolesParams{
-		ResourceType: spicedb.ObjectTypeEnv,
-		ResourceId:   envId,
-	}); err != nil {
-		logger.Error("failed to delete scope roles from SpiceDB", zap.Error(err))
+	if err := h.db.DeleteAuthorizationResource(ctx, nil, scope); err != nil {
 		return err
 	}
-
-	logger.Info("successfully deleted all scope roles for environment")
+	if h.reloader != nil {
+		return errors.Wrap(h.reloader.ReloadPolicy(), "failed to reload authorization policy")
+	}
 	return nil
 }

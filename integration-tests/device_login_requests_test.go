@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 )
 
 func TestDeviceLoginRequests(t *testing.T) {

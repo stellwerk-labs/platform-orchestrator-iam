@@ -16,8 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"go.uber.org/zap"
 
@@ -273,7 +271,6 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	}
 
 	var membership *model.Membership
-	var messages []*hstandardoutbox.PendingEventMessage
 	if createMembership {
 		roles, err := s.listOrSeedRoles(ctx, logger, tx, orgId)
 		if err != nil {
@@ -312,9 +309,6 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 		}); err != nil {
 			return nil, errors.Wrap(err, "failed to create membership")
 		}
-		if messages, err = insertSpiceDBSyncEventMessages(ctx, orgId, ref.Ref(user.Id), s.Database, tx); err != nil {
-			return nil, errors.Wrap(err, "failed to insert spiceDB sync event messages")
-		}
 	}
 
 	logger.Info("creating session token", zap.String("user_id", user.Id.String()))
@@ -329,9 +323,13 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit transaction")
 	}
+	if membership != nil {
+		if err := s.reloadAuthorizationPolicy(); err != nil {
+			return nil, err
+		}
+	}
 
-	if membership != nil && len(messages) > 0 {
-		reliableoutbox.OptimisticPublish(ctx, logger, s.Database.AsReliableOutboxStore(), s.Publisher, messages)
+	if membership != nil {
 		logger.Info("created membership", zap.String(hlogger.POUserId, membership.UserId.String()),
 			zap.String("po-membership-id", membership.Id.String()), zap.String("po-subject-type", string(membership.SubjectType)),
 			zap.String("po-subject", membership.Subject), zap.String("po-scope", membership.Scope))

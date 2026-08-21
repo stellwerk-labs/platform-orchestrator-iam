@@ -8,8 +8,6 @@ services:
         source: ./mock-emails
         target: /tmp/mock-emails
     depends_on:
-      spicedb:
-        condition: service_healthy
       nats:
         condition: service_healthy
 
@@ -76,21 +74,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
-
-  spicedb:
-    image: authzed/spicedb:v1.45.4
-    command: serve-testing
-    ports:
-      - "50051:50051"
-      - "8443:8443"
-      - "9090:9090"
-    environment:
-      - SPICEDB_GRPC_PRESHARED_KEY=t0k3n
-    healthcheck:
-      test: ["CMD", "grpc_health_probe", "-v", "-addr=localhost:50051"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
 
 volumes:
   nats-data:

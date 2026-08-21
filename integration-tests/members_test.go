@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 )
 
 func TestListMembers(t *testing.T) {

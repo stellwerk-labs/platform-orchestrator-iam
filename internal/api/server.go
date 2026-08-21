@@ -16,9 +16,9 @@ import (
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 )
 
@@ -39,8 +39,8 @@ type Server struct {
 	SsoCallbackUrlPath string
 	SsoStateSecret     string
 
-	SpiceDB   spicedb.SpiceDB
-	Publisher hmessaging.Publisher
+	Authorizer authorization.Authorizer
+	Publisher  hmessaging.Publisher
 
 	SuperUserTokenHash []byte
 }
@@ -79,6 +79,19 @@ func OpenApiValidatorSkipper(c echo.Context) bool {
 // This line should fail if you're missing some methods. If you want to add methods to the specification, without
 // implementing them, consider tagging them with the "not-implemented" tag.
 var _ StrictServerInterface = (*Server)(nil)
+
+type authorizationPolicyReloader interface {
+	ReloadPolicy() error
+}
+
+func (s *Server) reloadAuthorizationPolicy() error {
+	if reloader, ok := s.Authorizer.(authorizationPolicyReloader); ok {
+		if err := reloader.ReloadPolicy(); err != nil {
+			return fmt.Errorf("failed to reload authorization policy: %w", err)
+		}
+	}
+	return nil
+}
 
 // MustDecodeOpenApiSpec returns the value from decodeSpec via the cached value in rawSpec and panics if there was an error.
 func MustDecodeOpenApiSpec() []byte {

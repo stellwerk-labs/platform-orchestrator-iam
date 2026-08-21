@@ -38,9 +38,6 @@ type Configuration struct {
 
 	ExpiredDataCleanupInterval time.Duration `env:"EXPIRED_DATA_CLEANUP_INTERVAL" default:"5m"`
 
-	SpiceDBUrl          string `env:"SPICEDB_URL" validate:"required,url"`
-	SpiceDBPreSharedKey string `env:"SPICEDB_PRE_SHARED_KEY" validate:"required"`
-
 	NatsURL              string `env:"NATS_URL" validate:"required,url"`
 	NatsToken            string `env:"NATS_TOKEN"`
 	NatsCredentialsFile  string `env:"NATS_CREDENTIALS_FILE"`

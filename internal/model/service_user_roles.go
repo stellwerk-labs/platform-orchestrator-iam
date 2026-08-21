@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"go.uber.org/zap"
 )
 
 type ServiceUserRole struct {

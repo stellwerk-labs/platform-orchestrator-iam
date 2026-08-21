@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,8 +158,7 @@ func TestAdminMemberships_crud(t *testing.T) {
 		}
 	})
 
-	t.Run("user should now have all permissions on the org due to the spicedb snapshot", func(t *testing.T) {
-		// prove user has proper permissions via SpiceDB
+	t.Run("user should now have all permissions on the org", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{
 				authz.CanManageOrgCheck(org.Id), authz.CanReadOrgCheck(org.Id), authz.CanWriteOrgCheck(org.Id),
@@ -585,23 +583,6 @@ func TestAdminMemberships_crud(t *testing.T) {
 		r, err := client.DeleteOrgMembershipWithResponse(t.Context(), org.Id, scopedRoleMembershipId, WithAuthenticatedUserId(user.Id))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusNoContent, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
-	})
-
-	t.Run("delete all the relationships with project resource in SpiceDB to prove scoped roles work anyway", func(t *testing.T) {
-		// manually delete project from spicedb to prove scoped roles work anyway
-		spicedbClient := MustSpiceDBClient(t)
-		deleteRes, err := spicedbClient.DeleteRelationships(t.Context(), &v1.DeleteRelationshipsRequest{
-			RelationshipFilter: &v1.RelationshipFilter{
-				OptionalResourceId: project.Uuid.String(),
-				ResourceType:       "project",
-			},
-		})
-		require.NoError(t, err)
-		assert.Equal(t, uint64(4), deleteRes.RelationshipsDeletedCount)
-
-		dbConn := MustDatabaseConn(t)
-		_, err = dbConn.ExecContext(t.Context(), "DELETE FROM scoped_roles WHERE scope = $1", "project:"+project.Uuid.String())
-		require.NoError(t, err)
 	})
 
 	t.Run("can replace memberships as admin and set scoped role", func(t *testing.T) {

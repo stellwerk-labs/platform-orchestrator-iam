@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,11 +11,10 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
+	mockauthorization "github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization/mocks"
 	mockplatformorchestratorcp "github.com/stellwerk-labs/platform-orchestrator-iam/internal/clients/platformorchestratorcp/mocks"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb"
-	mockspicedb "github.com/stellwerk-labs/platform-orchestrator-iam/internal/spicedb/mocks"
 	mocksso "github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider/mocks"
 )
 
@@ -30,6 +30,7 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 	db := mockmodel.NewMockDatabaser(ctrl)
 	tx := mockmodel.NewMockTxWithCommit(ctrl)
 	db.EXPECT().BeginTx(gomock.Any(), gomock.Any()).Return(tx, nil).AnyTimes()
+	db.EXPECT().UpsertAuthorizationResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	tx.EXPECT().Rollback().Return(nil).AnyTimes()
 	tx.EXPECT().Commit().Return(nil).AnyTimes()
 	s := &Server{
@@ -37,7 +38,7 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 		Database:                 db,
 		SessionTokenCookieDomain: "cookie.domain",
 		CpClient:                 mockplatformorchestratorcp.NewMockClientWithResponsesInterface(ctrl),
-		SpiceDB:                  mockspicedb.NewMockSpiceDB(ctrl),
+		Authorizer:               mockauthorization.NewMockAuthorizer(ctrl),
 		Publisher:                new(hmessaging.RecordingPublisher),
 		SsoProvider:              mocksso.NewMockProvider(ctrl),
 		SsoStateSecret:           "test-secret-key-for-hmac-signing",
@@ -51,43 +52,19 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 // MockAuthorizationSuccess mocks a successful authorization check for a user in an org
 // This is a helper function to simplify tests that don't focus on authorization
 func MockAuthorizationSuccess(s *Server, userId uuid.UUID, orgId, permission string) {
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		GetOrgZedToken(gomock.Any(), gomock.Nil(), orgId).
-		Return(&model.OrgZedTokens{OrgId: orgId, ZedToken: ""}, nil).
-		Times(1)
-
-	s.SpiceDB.(*mockspicedb.MockSpiceDB).EXPECT().
-		HasSubjectPermissionOnObj(
-			gomock.Any(),
-			spicedb.SubjectTypeUser,
-			userId.String(),
-			permission,
-			spicedb.ObjectTypeOrg,
-			orgId,
-			"",
-		).
-		Return(true, nil).
+	s.Authorizer.(*mockauthorization.MockAuthorizer).EXPECT().
+		Authorize(gomock.Any(), userId, []authorization.Check{{Resource: "organization:" + orgId, Permission: permission}}).
+		Return([]authorization.Result{{Check: authorization.Check{Resource: "organization:" + orgId, Permission: permission}, Allowed: true}}, nil).
 		Times(1)
 }
 
 // MockAuthorizationFailure mocks a failed authorization check for a user in an org
 // This is a helper function to simplify tests that focus on authorization failures
 func MockAuthorizationFailure(s *Server, userId uuid.UUID, orgId string) {
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		GetOrgZedToken(gomock.Any(), gomock.Nil(), orgId).
-		Return(&model.OrgZedTokens{OrgId: orgId, ZedToken: ""}, nil).
-		Times(1)
-
-	s.SpiceDB.(*mockspicedb.MockSpiceDB).EXPECT().
-		HasSubjectPermissionOnObj(
-			gomock.Any(),
-			spicedb.SubjectTypeUser,
-			userId.String(),
-			gomock.Any(), // any permission
-			spicedb.ObjectTypeOrg,
-			orgId,
-			"",
-		).
-		Return(false, nil).
+	s.Authorizer.(*mockauthorization.MockAuthorizer).EXPECT().
+		Authorize(gomock.Any(), userId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ uuid.UUID, checks []authorization.Check) ([]authorization.Result, error) {
+			return []authorization.Result{{Check: checks[0], Allowed: false}}, nil
+		}).
 		Times(1)
 }
