@@ -65,6 +65,37 @@ func TestCasbinAuthorizer(t *testing.T) {
 	}, results)
 }
 
+func TestCasbinAuthorizerGranularPermissionIsEntitySpecific(t *testing.T) {
+	subjectId := uuid.New()
+	roleId := uuid.New()
+	store := &testStore{policies: []model.AuthorizationPolicy{
+		{
+			SubjectId:  subjectId,
+			Resource:   "organization:acme",
+			Permission: sharedauthz.PermissionModuleWrite,
+			RoleId:     roleId,
+		},
+	}}
+
+	authorizer, err := New(t.Context(), store)
+	require.NoError(t, err)
+	t.Cleanup(authorizer.Close)
+	results, err := authorizer.Authorize(t.Context(), subjectId, []Check{
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleWrite},
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleRead},
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionProjectWrite},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []Result{
+		{
+			Check:   Check{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleWrite},
+			Allowed: true,
+		},
+		{Check: Check{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleRead}},
+		{Check: Check{Resource: "organization:acme", Permission: sharedauthz.PermissionProjectWrite}},
+	}, results)
+}
+
 func TestLegacyPermissionHierarchy(t *testing.T) {
 	tests := []struct {
 		name      string
