@@ -127,6 +127,9 @@ func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
 		if !rolePermissionPattern.MatchString(permission) {
 			return "", nil, usererrors.NewUserError(fmt.Sprintf("invalid permission %q", permission))
 		}
+		if !sharedauthz.IsAssignableRolePermission(permission) {
+			return "", nil, usererrors.NewUserError(fmt.Sprintf("unknown permission %q; use the permission catalog to list valid identifiers", permission))
+		}
 		permissionSet[permission] = struct{}{}
 	}
 	permissions := make([]string, 0, len(permissionSet))

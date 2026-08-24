@@ -104,6 +104,15 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionResourceGraphRead, DisplayName: "View resource graphs", Description: "View resources produced by deployments.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
 }
 
+var legacyRolePermissions = map[string]struct{}{
+	"read":       {},
+	"write":      {},
+	"manage":     {},
+	"read_all":   {},
+	"write_all":  {},
+	"manage_all": {},
+}
+
 func PermissionCatalog() []PermissionDefinition {
 	catalog := make([]PermissionDefinition, len(permissionCatalog))
 	for index, definition := range permissionCatalog {
@@ -121,4 +130,14 @@ func FindPermission(permission string) (PermissionDefinition, bool) {
 		}
 	}
 	return PermissionDefinition{}, false
+}
+
+// IsAssignableRolePermission reports whether a permission can be stored on a configurable role.
+// Legacy permissions remain assignable so existing roles can be edited without a migration.
+func IsAssignableRolePermission(permission string) bool {
+	if _, found := FindPermission(permission); found {
+		return true
+	}
+	_, legacy := legacyRolePermissions[permission]
+	return legacy
 }

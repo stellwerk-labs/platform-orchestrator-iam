@@ -41,3 +41,17 @@ func TestPermissionCatalogReturnsCopies(t *testing.T) {
 	second := PermissionCatalog()
 	assert.Equal(t, PermissionScopeOrganization, second[0].Scopes[0])
 }
+
+func TestAssignableRolePermissions(t *testing.T) {
+	for _, permission := range PermissionCatalog() {
+		assert.True(t, IsAssignableRolePermission(permission.ID), permission.ID)
+	}
+
+	for _, permission := range []string{"read", "write", "manage", "read_all", "write_all", "manage_all"} {
+		assert.True(t, IsAssignableRolePermission(permission), permission)
+	}
+
+	for _, permission := range []string{"", "module_delete", "deployment_cancel", "read_everything"} {
+		assert.False(t, IsAssignableRolePermission(permission), permission)
+	}
+}

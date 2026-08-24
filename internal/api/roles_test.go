@@ -180,7 +180,7 @@ func TestCreateRole(t *testing.T) {
 		DoAndReturn(func(_ context.Context, _ model.Tx, role *model.Role) (*model.Role, error) {
 			require.Equal(t, orgId, role.OrgId)
 			require.Equal(t, "Release Operator", role.DisplayName)
-			require.Equal(t, []string{"deployment_cancel", "write_all"}, role.Permissions)
+			require.Equal(t, []string{"deployment_write", "write_all"}, role.Permissions)
 			require.False(t, role.IsSystem)
 			return role, nil
 		})
@@ -188,14 +188,32 @@ func TestCreateRole(t *testing.T) {
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
 	response, err := s.CreateRole(ctx, CreateRoleRequestObject{OrgId: orgId, Body: &RoleWriteBody{
 		DisplayName: " Release Operator ",
-		Permissions: []string{"write_all", "deployment_cancel", "write_all"},
+		Permissions: []string{"write_all", "deployment_write", "write_all"},
 	}})
 	require.NoError(t, err)
 	created, ok := response.(CreateRole201JSONResponse)
 	require.True(t, ok)
 	require.Equal(t, "Release Operator", created.DisplayName)
-	require.Equal(t, []string{"deployment_cancel", "write_all"}, created.Permissions)
+	require.Equal(t, []string{"deployment_write", "write_all"}, created.Permissions)
 	require.False(t, created.IsSystem)
+}
+
+func TestCreateRoleRejectsUnknownPermission(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	MockAuthorizationSuccess(s, userId, orgId, "role_write")
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.CreateRole(ctx, CreateRoleRequestObject{OrgId: orgId, Body: &RoleWriteBody{
+		DisplayName: "Release Operator",
+		Permissions: []string{"deployment_cancel"},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, CreateRole400JSONResponse{N400BadRequestJSONResponse: Generate400Response(
+		`unknown permission "deployment_cancel"; use the permission catalog to list valid identifiers`,
+	)}, response)
 }
 
 func TestUpdateSystemRoleIsRejected(t *testing.T) {
