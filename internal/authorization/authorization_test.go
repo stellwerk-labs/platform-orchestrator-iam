@@ -64,6 +64,42 @@ func TestCasbinAuthorizer(t *testing.T) {
 	}, results)
 }
 
+func TestLegacyPermissionHierarchy(t *testing.T) {
+	tests := []struct {
+		name      string
+		granted   string
+		requested string
+		allowed   bool
+	}{
+		{name: "read allows read", granted: PermissionRead, requested: PermissionRead, allowed: true},
+		{name: "read does not allow write", granted: PermissionRead, requested: PermissionWrite},
+		{name: "read does not allow manage", granted: PermissionRead, requested: PermissionManage},
+		{name: "write does not imply read", granted: PermissionWrite, requested: PermissionRead},
+		{name: "write allows write", granted: PermissionWrite, requested: PermissionWrite, allowed: true},
+		{name: "write does not allow manage", granted: PermissionWrite, requested: PermissionManage},
+		{name: "manage does not imply read", granted: PermissionManage, requested: PermissionRead},
+		{name: "manage does not imply write", granted: PermissionManage, requested: PermissionWrite},
+		{name: "manage allows manage", granted: PermissionManage, requested: PermissionManage, allowed: true},
+		{name: "read all allows read", granted: PermissionReadAll, requested: PermissionRead, allowed: true},
+		{name: "read all does not allow write", granted: PermissionReadAll, requested: PermissionWrite},
+		{name: "read all does not allow manage", granted: PermissionReadAll, requested: PermissionManage},
+		{name: "write all allows read", granted: PermissionWriteAll, requested: PermissionRead, allowed: true},
+		{name: "write all allows write", granted: PermissionWriteAll, requested: PermissionWrite, allowed: true},
+		{name: "write all does not allow manage", granted: PermissionWriteAll, requested: PermissionManage},
+		{name: "manage all allows read", granted: PermissionManageAll, requested: PermissionRead, allowed: true},
+		{name: "manage all allows write", granted: PermissionManageAll, requested: PermissionWrite, allowed: true},
+		{name: "manage all allows manage", granted: PermissionManageAll, requested: PermissionManage, allowed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, err := permissionMatch(tt.requested, tt.granted)
+			require.NoError(t, err)
+			assert.Equal(t, tt.allowed, matched)
+		})
+	}
+}
+
 func TestCasbinAuthorizerCustomPermission(t *testing.T) {
 	subjectId := uuid.New()
 	roleId := uuid.New()
