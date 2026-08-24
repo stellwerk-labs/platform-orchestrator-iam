@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 //go:generate go tool mockgen -destination mocks/authorization.go github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization Authorizer
@@ -238,13 +239,37 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 	if requested == granted || granted == PermissionManageAll {
 		return true, nil
 	}
+	level, known := permissionLevel(requested)
+	if !known {
+		return false, nil
+	}
 	switch granted {
 	case PermissionWriteAll:
-		return requested == PermissionWrite || requested == PermissionRead, nil
+		return level == sharedauthz.PermissionLevelWrite || level == sharedauthz.PermissionLevelRead, nil
 	case PermissionReadAll:
-		return requested == PermissionRead, nil
+		return level == sharedauthz.PermissionLevelRead, nil
+	case PermissionRead:
+		return level == sharedauthz.PermissionLevelRead, nil
+	case PermissionWrite:
+		return level == sharedauthz.PermissionLevelWrite, nil
+	case PermissionManage:
+		return level == sharedauthz.PermissionLevelManage, nil
 	default:
 		return false, nil
+	}
+}
+
+func permissionLevel(permission string) (sharedauthz.PermissionLevel, bool) {
+	switch permission {
+	case PermissionRead:
+		return sharedauthz.PermissionLevelRead, true
+	case PermissionWrite:
+		return sharedauthz.PermissionLevelWrite, true
+	case PermissionManage:
+		return sharedauthz.PermissionLevelManage, true
+	default:
+		definition, found := sharedauthz.FindPermission(permission)
+		return definition.Level, found
 	}
 }
 
@@ -337,7 +362,8 @@ func isCustomPermission(permission string) bool {
 	case PermissionRead, PermissionWrite, PermissionManage, PermissionReadAll, PermissionWriteAll, PermissionManageAll:
 		return false
 	default:
-		return true
+		_, platformPermission := sharedauthz.FindPermission(permission)
+		return !platformPermission
 	}
 }
 

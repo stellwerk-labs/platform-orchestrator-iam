@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 type testStore struct {
@@ -98,6 +99,29 @@ func TestLegacyPermissionHierarchy(t *testing.T) {
 			assert.Equal(t, tt.allowed, matched)
 		})
 	}
+}
+
+func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
+	for _, permission := range sharedauthz.PermissionCatalog() {
+		t.Run(permission.ID, func(t *testing.T) {
+			expectedRead := permission.Level == sharedauthz.PermissionLevelRead
+			expectedWrite := expectedRead || permission.Level == sharedauthz.PermissionLevelWrite
+
+			assertPermissionMatch(t, permission.ID, PermissionReadAll, expectedRead)
+			assertPermissionMatch(t, permission.ID, PermissionWriteAll, expectedWrite)
+			assertPermissionMatch(t, permission.ID, PermissionManageAll, true)
+			assertPermissionMatch(t, permission.ID, PermissionRead, expectedRead)
+			assertPermissionMatch(t, permission.ID, PermissionWrite, permission.Level == sharedauthz.PermissionLevelWrite)
+			assertPermissionMatch(t, permission.ID, PermissionManage, permission.Level == sharedauthz.PermissionLevelManage)
+		})
+	}
+}
+
+func assertPermissionMatch(t *testing.T, requested, granted string, expected bool) {
+	t.Helper()
+	matched, err := permissionMatch(requested, granted)
+	require.NoError(t, err)
+	assert.Equal(t, expected, matched, "%s requested with %s granted", requested, granted)
 }
 
 func TestCasbinAuthorizerCustomPermission(t *testing.T) {
