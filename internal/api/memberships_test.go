@@ -496,7 +496,7 @@ func TestListOrgMemberships_Success(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "read")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_read")
 
 	// Mock membership list
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
@@ -589,7 +589,7 @@ func TestDeleteOrgMembership_Success(t *testing.T) {
 	}, nil).AnyTimes()
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{OrgId: &orgId, SubjectType: &membership.SubjectType, Subject: &membership.Subject}).
@@ -625,7 +625,7 @@ func TestDeleteOrgMembership_MembershipNotFound(t *testing.T) {
 	membershipId := uuid.New()
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock membership not found
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
@@ -668,7 +668,7 @@ func TestDeleteOrgMembership_CannotDeleteLastAdmin(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock get membership
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
@@ -754,7 +754,7 @@ func TestReplaceOrgUserMemberships_Success(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock existing memberships check (user is member of org)
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -844,7 +844,7 @@ func TestReplaceOrgUserMemberships_UserNotFound(t *testing.T) {
 	targetUserId := uuid.New()
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock user not found (no memberships)
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -888,7 +888,7 @@ func TestReplaceOrgUserMemberships_RoleNotFound(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock existing memberships check (user is member of org)
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -941,7 +941,7 @@ func TestReplaceOrgUserMemberships_CannotModifyOwnMemberships(t *testing.T) {
 	userId := userid.NewHumanUserId()
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Prepare request
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
@@ -980,7 +980,7 @@ func TestReplaceOrgUserMemberships_NilScope(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock existing memberships check
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -1045,7 +1045,7 @@ func TestReplaceOrgUserMemberships_InvalidScope(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock existing memberships check
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -1104,7 +1104,7 @@ func TestReplaceOrgUserMemberships_ValidScope(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock CP client project validation
 	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().GetInternalProjectByUuidWithResponse(gomock.Any(), orgId, projectId).
@@ -1178,7 +1178,7 @@ func TestReplaceOrgUserMemberships_DuplicateMembershipConflict(t *testing.T) {
 	}
 
 	// Mock authorization check
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "membership_write")
 
 	// Mock existing memberships check (user is member of org)
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
@@ -1293,7 +1293,7 @@ func TestListMembers_Success(t *testing.T) {
 		},
 	}
 
-	MockAuthorizationSuccess(s, requesterId, orgId, "read")
+	MockAuthorizationSuccess(s, requesterId, orgId, "membership_read")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		ListMembersWithIdentities(gomock.Any(), nil, model.ListMembershipsParams{OrgId: &orgId}).
@@ -1337,7 +1337,7 @@ func TestListMembers_FilterByUserId(t *testing.T) {
 		},
 	}
 
-	MockAuthorizationSuccess(s, requesterId, orgId, "read")
+	MockAuthorizationSuccess(s, requesterId, orgId, "membership_read")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		ListMembersWithIdentities(gomock.Any(), nil, model.ListMembershipsParams{OrgId: &orgId, UserId: &targetUserId}).
@@ -1371,7 +1371,7 @@ func TestListMembers_NoIdentities(t *testing.T) {
 		UserIdentities: map[model.UserIdentityProvider]string{},
 	}
 
-	MockAuthorizationSuccess(s, requesterId, orgId, "read")
+	MockAuthorizationSuccess(s, requesterId, orgId, "membership_read")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		ListMembersWithIdentities(gomock.Any(), nil, model.ListMembershipsParams{OrgId: &orgId}).

@@ -70,16 +70,9 @@ func (s *Server) InternalAuthorize(ctx context.Context, request InternalAuthoriz
 
 // TODO: rename 1: use permission instead of role in the function name
 // TODO: rename 2: indicate it is not just role verification, but context is being mutated
-func (s *Server) checkOrgMemberAuthorization(ctx context.Context, userId uuid.UUID, orgId string) error {
+func (s *Server) checkOrgAuthorization(ctx context.Context, userId uuid.UUID, orgId, permission string) error {
 	return innerCheck(s, ctx, userId, orgId, ResourcePermissionCheck{
-		Permission: readPermission,
-		Resource:   "organization:" + orgId,
-	})
-}
-
-func (s *Server) checkOrgAdminAuthorization(ctx context.Context, userId uuid.UUID, orgId string) error {
-	return innerCheck(s, ctx, userId, orgId, ResourcePermissionCheck{
-		Permission: "manage",
+		Permission: permission,
 		Resource:   "organization:" + orgId,
 	})
 }

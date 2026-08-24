@@ -18,6 +18,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 const defaultPermissionUsersPageSize = 100
@@ -118,7 +119,7 @@ func (s *Server) ListProjectUsers(ctx context.Context, request ListProjectUsersR
 		return nil, fmt.Errorf("unexpected status code %d when getting project", response.StatusCode())
 	}
 	resource := "project:" + response.JSON200.Uuid.String()
-	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: readPermission}})
+	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: sharedauthz.PermissionMembershipRead}})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to authorize project user listing")
 	}
@@ -169,7 +170,7 @@ func (s *Server) ListEnvironmentUsers(ctx context.Context, request ListEnvironme
 		return nil, fmt.Errorf("unexpected status code %d when getting environment", response.StatusCode())
 	}
 	resource := "env:" + response.JSON200.Uuid.String()
-	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: readPermission}})
+	decisions, err := s.Authorizer.Authorize(ctx, uid, []authorization.Check{{Resource: resource, Permission: sharedauthz.PermissionMembershipRead}})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to authorize environment user listing")
 	}
