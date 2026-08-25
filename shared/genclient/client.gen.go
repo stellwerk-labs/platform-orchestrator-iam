@@ -22,6 +22,48 @@ const (
 	UserIdHeaderScopes = "userIdHeader.Scopes"
 )
 
+// Defines values for PermissionDefinitionLevel.
+const (
+	Manage PermissionDefinitionLevel = "manage"
+	Read   PermissionDefinitionLevel = "read"
+	Write  PermissionDefinitionLevel = "write"
+)
+
+// Valid indicates whether the value is a known member of the PermissionDefinitionLevel enum.
+func (e PermissionDefinitionLevel) Valid() bool {
+	switch e {
+	case Manage:
+		return true
+	case Read:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PermissionDefinitionScopes.
+const (
+	Environment  PermissionDefinitionScopes = "environment"
+	Organization PermissionDefinitionScopes = "organization"
+	Project      PermissionDefinitionScopes = "project"
+)
+
+// Valid indicates whether the value is a known member of the PermissionDefinitionScopes enum.
+func (e PermissionDefinitionScopes) Valid() bool {
+	switch e {
+	case Environment:
+		return true
+	case Organization:
+		return true
+	case Project:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubjectType.
 const (
 	SubjectTypeRole         SubjectType = "role"
@@ -374,6 +416,34 @@ type OrgMembershipPage struct {
 	NextPageToken *string `json:"next_page_token,omitempty"`
 }
 
+// PermissionDefinition A granular Platform Orchestrator permission.
+type PermissionDefinition struct {
+	// Category A stable human-readable group for permission selection interfaces.
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	DisplayName string `json:"display_name"`
+
+	// Id The exact identifier to include in a role permissions array.
+	Id string `json:"id"`
+
+	// Level The legacy access class used to preserve the behavior of built-in roles.
+	Level PermissionDefinitionLevel `json:"level"`
+
+	// Scopes The role assignment scopes where this permission is effective.
+	Scopes []PermissionDefinitionScopes `json:"scopes"`
+}
+
+// PermissionDefinitionLevel The legacy access class used to preserve the behavior of built-in roles.
+type PermissionDefinitionLevel string
+
+// PermissionDefinitionScopes defines model for PermissionDefinition.Scopes.
+type PermissionDefinitionScopes string
+
+// PermissionDefinitionPage The authoritative catalog of granular permissions assignable to configurable roles.
+type PermissionDefinitionPage struct {
+	Items []PermissionDefinition `json:"items"`
+}
+
 // RegisterUserBody A payload needed to register a user against an identity provider.
 type RegisterUserBody struct {
 	// Provider The login provider type.
@@ -469,9 +539,11 @@ type RolePage struct {
 	NextPageToken *string `json:"next_page_token,omitempty"`
 }
 
-// RoleWriteBody The configurable fields of an organization role.
+// RoleWriteBody The complete configurable state of an organization role. PUT replaces both the display name and the full permission list. Use GET /orgs/{orgId}/permissions to discover valid permission identifiers.
 type RoleWriteBody struct {
-	DisplayName string   `json:"display_name"`
+	DisplayName string `json:"display_name"`
+
+	// Permissions Granular permission identifiers returned by the permission catalog. Include both read and write permissions when the role needs both capabilities.
 	Permissions []string `json:"permissions"`
 }
 
@@ -1153,6 +1225,9 @@ type ClientInterface interface {
 	// DeleteOrgMembership request
 	DeleteOrgMembership(ctx context.Context, orgId OrgIdPathParam, membershipId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListPermissions request
+	ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListEnvironmentUsers request
 	ListEnvironmentUsers(ctx context.Context, orgId OrgIdPathParam, projectId ProjectIdPathParam, envId EnvIdPathParam, params *ListEnvironmentUsersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1639,6 +1714,18 @@ func (c *Client) ListOrgMemberships(ctx context.Context, orgId OrgIdPathParam, p
 
 func (c *Client) DeleteOrgMembership(ctx context.Context, orgId OrgIdPathParam, membershipId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteOrgMembershipRequest(c.Server, orgId, membershipId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPermissionsRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
 	}
@@ -3382,6 +3469,40 @@ func NewDeleteOrgMembershipRequest(server string, orgId OrgIdPathParam, membersh
 	return req, nil
 }
 
+// NewListPermissionsRequest generates requests for ListPermissions
+func NewListPermissionsRequest(server string, orgId OrgIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "orgId", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orgs/%s/permissions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListEnvironmentUsersRequest generates requests for ListEnvironmentUsers
 func NewListEnvironmentUsersRequest(server string, orgId OrgIdPathParam, projectId ProjectIdPathParam, envId EnvIdPathParam, params *ListEnvironmentUsersParams) (*http.Request, error) {
 	var err error
@@ -4551,6 +4672,9 @@ type ClientWithResponsesInterface interface {
 	// DeleteOrgMembershipWithResponse request
 	DeleteOrgMembershipWithResponse(ctx context.Context, orgId OrgIdPathParam, membershipId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteOrgMembershipResponse, error)
 
+	// ListPermissionsWithResponse request
+	ListPermissionsWithResponse(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*ListPermissionsResponse, error)
+
 	// ListEnvironmentUsersWithResponse request
 	ListEnvironmentUsersWithResponse(ctx context.Context, orgId OrgIdPathParam, projectId ProjectIdPathParam, envId EnvIdPathParam, params *ListEnvironmentUsersParams, reqEditors ...RequestEditorFn) (*ListEnvironmentUsersResponse, error)
 
@@ -5231,6 +5355,28 @@ func (r DeleteOrgMembershipResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r DeleteOrgMembershipResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListPermissionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PermissionDefinitionPage
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPermissionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPermissionsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5947,6 +6093,15 @@ func (c *ClientWithResponses) DeleteOrgMembershipWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseDeleteOrgMembershipResponse(rsp)
+}
+
+// ListPermissionsWithResponse request returning *ListPermissionsResponse
+func (c *ClientWithResponses) ListPermissionsWithResponse(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*ListPermissionsResponse, error) {
+	rsp, err := c.ListPermissions(ctx, orgId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPermissionsResponse(rsp)
 }
 
 // ListEnvironmentUsersWithResponse request returning *ListEnvironmentUsersResponse
@@ -7036,6 +7191,32 @@ func ParseDeleteOrgMembershipResponse(rsp *http.Response) (*DeleteOrgMembershipR
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPermissionsResponse parses an HTTP response from a ListPermissionsWithResponse call
+func ParseListPermissionsResponse(rsp *http.Response) (*ListPermissionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPermissionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PermissionDefinitionPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	}
 

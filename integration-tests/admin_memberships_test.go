@@ -238,7 +238,7 @@ func TestAdminMemberships_crud(t *testing.T) {
 		r, err := client.DeleteOrgMembershipWithResponse(t.Context(), "other-org", membershipId, WithAuthenticatedUserId(user.Id))
 		require.NoError(t, err)
 		if assert.Equal(t, http.StatusForbidden, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body)) {
-			assert.JSONEq(t, `{"error":"HTTP-403","message":"Forbidden","details":{"failed_checks":[{"resource":"organization:other-org","permission":"manage"}]}}`, string(r.Body))
+			assert.JSONEq(t, `{"error":"HTTP-403","message":"Forbidden","details":{"failed_checks":[{"resource":"organization:other-org","permission":"membership_write"}]}}`, string(r.Body))
 		}
 	})
 

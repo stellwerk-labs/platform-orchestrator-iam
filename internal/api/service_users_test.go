@@ -46,7 +46,7 @@ func TestCreateServiceUser_ServiceUserCannotCreateServiceUser(t *testing.T) {
 
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, serviceUserId, orgId, "manage")
+	MockAuthorizationSuccess(s, serviceUserId, orgId, "service_user_write")
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, serviceUserId.String())
 	r, err := s.CreateServiceUser(ctx, CreateServiceUserRequestObject{
@@ -86,7 +86,7 @@ func TestCreateServiceUser_Success_WithDefaultAdminRole(t *testing.T) {
 		},
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -130,7 +130,7 @@ func TestCreateServiceUser_Success_WithSeededRoles(t *testing.T) {
 
 	var seededRoles []model.Role
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -179,7 +179,7 @@ func TestCreateServiceUser_Success_WithCustomRoles(t *testing.T) {
 		{Id: customRoleId},
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -218,7 +218,7 @@ func TestCreateServiceUser_RoleNotFound(t *testing.T) {
 		{Id: nonExistentRoleId},
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -247,7 +247,7 @@ func TestCreateServiceUser_DatabaseError_CreateToken(t *testing.T) {
 
 	userId := userid.NewHumanUserId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		Return(nil, fmt.Errorf("database error"))
@@ -270,7 +270,7 @@ func TestCreateServiceUser_DatabaseError_ListRoles(t *testing.T) {
 
 	userId := userid.NewHumanUserId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -315,7 +315,7 @@ func TestDeleteServiceUser_ServiceUserNotFound(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteServiceUserToken(gomock.Any(), gomock.Any(), orgId, serviceUserId).
 		Return(model.NewErrNotFound("service user not found"))
@@ -339,7 +339,7 @@ func TestDeleteServiceUser_DeleteError(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteServiceUserToken(gomock.Any(), gomock.Any(), orgId, serviceUserId).
 		Return(fmt.Errorf("delete error"))
@@ -363,7 +363,7 @@ func TestDeleteServiceUser_Success(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().DeleteServiceUserToken(gomock.Any(), gomock.Any(), orgId, serviceUserId).
 		Return(nil)
@@ -388,7 +388,7 @@ func TestCreateServiceUser_NilScope(t *testing.T) {
 		{Id: roleId, Scope: nil}, // nil scope should be valid
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -434,7 +434,7 @@ func TestCreateServiceUser_InvalidScope(t *testing.T) {
 		{Id: roleId, Scope: &invalidScope}, // Invalid scope format
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateServiceUserToken(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, token *model.ServiceUserToken) (*model.ServiceUserToken, error) {
@@ -471,7 +471,7 @@ func TestCreateServiceUser_ValidProjectScope(t *testing.T) {
 		{Id: roleId, Scope: &validScope}, // Valid project scope
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	// Mock CP client project validation
 	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().GetInternalProjectByUuidWithResponse(gomock.Any(), orgId, projectId).
@@ -526,7 +526,7 @@ func TestCreateServiceUser_ValidEnvironmentScope(t *testing.T) {
 		{Id: roleId, Scope: &validScope}, // Valid environment scope
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	// Mock CP client environment validation
 	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().GetInternalEnvironmentByUuidWithResponse(gomock.Any(), orgId, envId).
@@ -581,7 +581,7 @@ func TestCreateServiceUser_ProjectNotFound(t *testing.T) {
 		{Id: roleId, Scope: &validScope},
 	}
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	// Mock CP client project not found
 	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().GetInternalProjectByUuidWithResponse(gomock.Any(), orgId, projectId).
@@ -641,7 +641,7 @@ func TestReplaceServiceUserRoles_ServiceUserNotFound(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetServiceUserToken(gomock.Any(), gomock.Any(), serviceUserId).
 		Return(nil, model.NewErrNotFound("service user not found"))
@@ -668,7 +668,7 @@ func TestReplaceServiceUserRoles_ServiceUserInDifferentOrg(t *testing.T) {
 	serviceUserId := userid.NewServiceUserTokenId()
 	differentOrgId := "different-org"
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetServiceUserToken(gomock.Any(), gomock.Any(), serviceUserId).
 		Return(&model.ServiceUserToken{
@@ -704,7 +704,7 @@ func TestReplaceServiceUserRoles_Success_SingleRole(t *testing.T) {
 	roleId := uuid.New()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -768,7 +768,7 @@ func TestReplaceServiceUserRoles_Success_MultipleRoles(t *testing.T) {
 	projectScope := "project:" + projectId.String()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -842,7 +842,7 @@ func TestReplaceServiceUserRoles_RoleNotFound(t *testing.T) {
 	roleId := uuid.New()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -889,7 +889,7 @@ func TestReplaceServiceUserRoles_InvalidScope(t *testing.T) {
 	invalidScope := "invalid-scope-format"
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -938,7 +938,7 @@ func TestReplaceServiceUserRoles_ProjectNotFound(t *testing.T) {
 	projectScope := "project:" + projectId.String()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -993,7 +993,7 @@ func TestReplaceServiceUserRoles_ValidEnvironmentScope(t *testing.T) {
 	envScope := "env:" + envId.String()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -1059,7 +1059,7 @@ func TestReplaceServiceUserRoles_BulkDeleteError(t *testing.T) {
 	roleId := uuid.New()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -1102,7 +1102,7 @@ func TestReplaceServiceUserRoles_CreateRolesError(t *testing.T) {
 	roleId := uuid.New()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,
@@ -1148,7 +1148,7 @@ func TestReplaceServiceUserRoles_DuplicateRoleConflict(t *testing.T) {
 	roleId := uuid.New()
 	now := time.Now().UTC()
 
-	MockAuthorizationSuccess(s, userId, orgId, "manage")
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_write")
 
 	serviceUser := &model.ServiceUserToken{
 		Id:                     serviceUserId,

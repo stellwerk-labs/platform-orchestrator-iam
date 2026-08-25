@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 type testStore struct {
@@ -62,6 +63,96 @@ func TestCasbinAuthorizer(t *testing.T) {
 		{Check: Check{Resource: "env:test", Permission: "write"}, Allowed: true},
 		{Check: Check{Resource: "env:test", Permission: "manage"}, Allowed: false},
 	}, results)
+}
+
+func TestCasbinAuthorizerGranularPermissionIsEntitySpecific(t *testing.T) {
+	subjectId := uuid.New()
+	roleId := uuid.New()
+	store := &testStore{policies: []model.AuthorizationPolicy{
+		{
+			SubjectId:  subjectId,
+			Resource:   "organization:acme",
+			Permission: sharedauthz.PermissionModuleWrite,
+			RoleId:     roleId,
+		},
+	}}
+
+	authorizer, err := New(t.Context(), store)
+	require.NoError(t, err)
+	t.Cleanup(authorizer.Close)
+	results, err := authorizer.Authorize(t.Context(), subjectId, []Check{
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleWrite},
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleRead},
+		{Resource: "organization:acme", Permission: sharedauthz.PermissionProjectWrite},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []Result{
+		{
+			Check:   Check{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleWrite},
+			Allowed: true,
+		},
+		{Check: Check{Resource: "organization:acme", Permission: sharedauthz.PermissionModuleRead}},
+		{Check: Check{Resource: "organization:acme", Permission: sharedauthz.PermissionProjectWrite}},
+	}, results)
+}
+
+func TestLegacyPermissionHierarchy(t *testing.T) {
+	tests := []struct {
+		name      string
+		granted   string
+		requested string
+		allowed   bool
+	}{
+		{name: "read allows read", granted: PermissionRead, requested: PermissionRead, allowed: true},
+		{name: "read does not allow write", granted: PermissionRead, requested: PermissionWrite},
+		{name: "read does not allow manage", granted: PermissionRead, requested: PermissionManage},
+		{name: "write does not imply read", granted: PermissionWrite, requested: PermissionRead},
+		{name: "write allows write", granted: PermissionWrite, requested: PermissionWrite, allowed: true},
+		{name: "write does not allow manage", granted: PermissionWrite, requested: PermissionManage},
+		{name: "manage does not imply read", granted: PermissionManage, requested: PermissionRead},
+		{name: "manage does not imply write", granted: PermissionManage, requested: PermissionWrite},
+		{name: "manage allows manage", granted: PermissionManage, requested: PermissionManage, allowed: true},
+		{name: "read all allows read", granted: PermissionReadAll, requested: PermissionRead, allowed: true},
+		{name: "read all does not allow write", granted: PermissionReadAll, requested: PermissionWrite},
+		{name: "read all does not allow manage", granted: PermissionReadAll, requested: PermissionManage},
+		{name: "write all allows read", granted: PermissionWriteAll, requested: PermissionRead, allowed: true},
+		{name: "write all allows write", granted: PermissionWriteAll, requested: PermissionWrite, allowed: true},
+		{name: "write all does not allow manage", granted: PermissionWriteAll, requested: PermissionManage},
+		{name: "manage all allows read", granted: PermissionManageAll, requested: PermissionRead, allowed: true},
+		{name: "manage all allows write", granted: PermissionManageAll, requested: PermissionWrite, allowed: true},
+		{name: "manage all allows manage", granted: PermissionManageAll, requested: PermissionManage, allowed: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, err := permissionMatch(tt.requested, tt.granted)
+			require.NoError(t, err)
+			assert.Equal(t, tt.allowed, matched)
+		})
+	}
+}
+
+func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
+	for _, permission := range sharedauthz.PermissionCatalog() {
+		t.Run(permission.ID, func(t *testing.T) {
+			expectedRead := permission.Level == sharedauthz.PermissionLevelRead
+			expectedWrite := expectedRead || permission.Level == sharedauthz.PermissionLevelWrite
+
+			assertPermissionMatch(t, permission.ID, PermissionReadAll, expectedRead)
+			assertPermissionMatch(t, permission.ID, PermissionWriteAll, expectedWrite)
+			assertPermissionMatch(t, permission.ID, PermissionManageAll, true)
+			assertPermissionMatch(t, permission.ID, PermissionRead, expectedRead)
+			assertPermissionMatch(t, permission.ID, PermissionWrite, permission.Level == sharedauthz.PermissionLevelWrite)
+			assertPermissionMatch(t, permission.ID, PermissionManage, permission.Level == sharedauthz.PermissionLevelManage)
+		})
+	}
+}
+
+func assertPermissionMatch(t *testing.T, requested, granted string, expected bool) {
+	t.Helper()
+	matched, err := permissionMatch(requested, granted)
+	require.NoError(t, err)
+	assert.Equal(t, expected, matched, "%s requested with %s granted", requested, granted)
 }
 
 func TestCasbinAuthorizerCustomPermission(t *testing.T) {

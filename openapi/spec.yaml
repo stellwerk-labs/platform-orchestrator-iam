@@ -886,6 +886,25 @@ paths:
         "404":
           $ref: "#/components/responses/404NotFound"
 
+  /orgs/{orgId}/permissions:
+    get:
+      tags:
+        - Role
+      operationId: listPermissions
+      summary: List permissions available for configurable roles.
+      description: Returns the authoritative granular permission catalog, including the scopes where each permission is effective.
+      security:
+        - userIdHeader: []
+      parameters:
+        - $ref: "#/components/parameters/orgIdPathParam"
+      responses:
+        "200":
+          description: Successfully listed assignable permissions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionDefinitionPage"
+
   /orgs/{orgId}/roles:
     get:
       tags:
@@ -920,6 +939,11 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RoleWriteBody"
+            example:
+              display_name: Module Maintainer
+              permissions:
+                - module_read
+                - module_write
       responses:
         "201":
           description: Successfully created the role.
@@ -980,6 +1004,11 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RoleWriteBody"
+            example:
+              display_name: Deployment Operator
+              permissions:
+                - deployment_read
+                - deployment_write
       responses:
         "200":
           description: Successfully updated the role.
@@ -2034,7 +2063,7 @@ components:
           type: boolean
 
     RoleWriteBody:
-      description: The configurable fields of an organization role.
+      description: The complete configurable state of an organization role. PUT replaces both the display name and the full permission list. Use GET /orgs/{orgId}/permissions to discover valid permission identifiers.
       required:
         - display_name
         - permissions
@@ -2046,12 +2075,66 @@ components:
           pattern: ^[^\p{Cc}\p{Cs}\p{Z}\n]( |[^\p{Cc}\p{Cs}\p{Z}\n])*[^\p{Cc}\p{Cs}\p{Z}\n]$
           x-pattern-error: display_name contains invalid characters
         permissions:
+          description: Granular permission identifiers returned by the permission catalog. Include both read and write permissions when the role needs both capabilities.
           type: array
           minItems: 1
           uniqueItems: true
           items:
             type: string
             pattern: ^[a-z][a-z0-9_]{1,62}[a-z0-9]$
+
+    PermissionDefinitionPage:
+      description: The authoritative catalog of granular permissions assignable to configurable roles.
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionDefinition"
+
+    PermissionDefinition:
+      description: A granular Platform Orchestrator permission.
+      required:
+        - id
+        - display_name
+        - description
+        - category
+        - level
+        - scopes
+      properties:
+        id:
+          description: The exact identifier to include in a role permissions array.
+          type: string
+          example: module_write
+        display_name:
+          type: string
+          example: Manage modules
+        description:
+          type: string
+          example: Create, update, and delete modules.
+        category:
+          description: A stable human-readable group for permission selection interfaces.
+          type: string
+          example: Modules
+        level:
+          description: The legacy access class used to preserve the behavior of built-in roles.
+          type: string
+          enum:
+            - read
+            - write
+            - manage
+        scopes:
+          description: The role assignment scopes where this permission is effective.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - organization
+              - project
+              - environment
 
     ServiceUserRole:
       description: A role to assign to a user or service user.

@@ -20,6 +20,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -49,7 +50,7 @@ func RegenerateServiceUserToken(subject *model.ServiceUserToken, expireDays int)
 func (s *Server) ListServiceUsers(ctx context.Context, request ListServiceUsersRequestObject) (ListServiceUsersResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionServiceUserRead); err != nil {
 		return nil, err
 	}
 
@@ -84,7 +85,7 @@ func (s *Server) CreateServiceUser(ctx context.Context, request CreateServiceUse
 	uid, herr := GetAuthenticatedUserIdOr401(ctx)
 	if herr != nil {
 		return nil, herr
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionServiceUserWrite); err != nil {
 		return nil, err
 	} else if userid.IsServiceUser(uid) {
 		// For now, prevent service users from extending their time by creating new service users. In the future, allow
@@ -202,7 +203,7 @@ func (s *Server) RegenerateServiceUser(ctx context.Context, request RegenerateSe
 	uid, herr := GetAuthenticatedUserIdOr401(ctx)
 	if herr != nil {
 		return nil, herr
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionServiceUserWrite); err != nil {
 		return nil, err
 	}
 	ids, ctx := hlogger.EnsurePlatformOrchestratorIdsOnCtx(ctx)
@@ -252,7 +253,7 @@ func (s *Server) RegenerateServiceUser(ctx context.Context, request RegenerateSe
 func (s *Server) DeleteServiceUser(ctx context.Context, request DeleteServiceUserRequestObject) (DeleteServiceUserResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionServiceUserWrite); err != nil {
 		return nil, err
 	}
 	ids, ctx := hlogger.EnsurePlatformOrchestratorIdsOnCtx(ctx)
@@ -293,7 +294,7 @@ func (s *Server) ReplaceServiceUserRoles(ctx context.Context, request ReplaceSer
 	currentUserId, herr := GetAuthenticatedUserIdOr401(ctx)
 	if herr != nil {
 		return nil, herr
-	} else if err := s.checkOrgAdminAuthorization(ctx, currentUserId, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, currentUserId, request.OrgId, sharedauthz.PermissionServiceUserWrite); err != nil {
 		return nil, err
 	}
 

@@ -20,6 +20,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -50,7 +51,7 @@ func zapInvitationId(id uuid.UUID) zap.Field {
 func (s *Server) ListInvitations(ctx context.Context, request ListInvitationsRequestObject) (ListInvitationsResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionInvitationRead); err != nil {
 		return nil, err
 	}
 
@@ -75,7 +76,7 @@ func (s *Server) CreateInvitation(ctx context.Context, request CreateInvitationR
 	uid, herr := GetAuthenticatedUserIdOr401(ctx)
 	if herr != nil {
 		return nil, herr
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionInvitationWrite); err != nil {
 		return nil, err
 	} else if userid.IsServiceUser(uid) {
 		return CreateInvitation400JSONResponse{N400BadRequestJSONResponse: Generate400Response("service users may not create invitations")}, nil
@@ -176,7 +177,7 @@ func (s *Server) CreateInvitation(ctx context.Context, request CreateInvitationR
 func (s *Server) RevokeInvitation(ctx context.Context, request RevokeInvitationRequestObject) (RevokeInvitationResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionInvitationWrite); err != nil {
 		return nil, err
 	}
 
@@ -233,7 +234,7 @@ func (s *Server) GetInvitation(ctx context.Context, request GetInvitationRequest
 	// The get method has special authorization and only needs to check authz if the token is not provided. The token
 	// bit will be checked later.
 	if request.Params.RedemptionToken == nil {
-		if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+		if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionInvitationWrite); err != nil {
 			return nil, err
 		}
 	} else {

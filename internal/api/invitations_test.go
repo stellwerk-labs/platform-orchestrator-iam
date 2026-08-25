@@ -64,7 +64,7 @@ func TestCreateInvitation_cannot_be_service_user(t *testing.T) {
 
 	serviceUserId := userid.NewServiceUserTokenId()
 
-	MockAuthorizationSuccess(s, serviceUserId, orgId, "manage")
+	MockAuthorizationSuccess(s, serviceUserId, orgId, "invitation_write")
 
 	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, serviceUserId.String())
 	r, err := s.CreateInvitation(ctx, CreateInvitationRequestObject{OrgId: orgId})

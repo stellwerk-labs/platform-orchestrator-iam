@@ -18,6 +18,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 func (s *Server) InternalCreateOrgMembership(ctx context.Context, request InternalCreateOrgMembershipRequestObject) (InternalCreateOrgMembershipResponseObject, error) {
@@ -128,7 +129,7 @@ func (s *Server) InternalCreateOrgMembership(ctx context.Context, request Intern
 func (s *Server) ListOrgMemberships(ctx context.Context, request ListOrgMembershipsRequestObject) (ListOrgMembershipsResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipRead); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +191,7 @@ func (s *Server) ListUserMemberships(ctx context.Context, request ListUserMember
 func (s *Server) DeleteOrgMembership(ctx context.Context, request DeleteOrgMembershipRequestObject) (DeleteOrgMembershipResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAdminAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipWrite); err != nil {
 		return nil, err
 	}
 
@@ -289,7 +290,7 @@ func (s *Server) ReplaceOrgUserMemberships(ctx context.Context, request ReplaceO
 	currentUserId, herr := GetAuthenticatedUserIdOr401(ctx)
 	if herr != nil {
 		return nil, herr
-	} else if err := s.checkOrgAdminAuthorization(ctx, currentUserId, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, currentUserId, request.OrgId, sharedauthz.PermissionMembershipWrite); err != nil {
 		return nil, err
 	}
 
@@ -431,7 +432,7 @@ func (s *Server) ReplaceOrgUserMemberships(ctx context.Context, request ReplaceO
 func (s *Server) ListMembers(ctx context.Context, request ListMembersRequestObject) (ListMembersResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipRead); err != nil {
 		return nil, err
 	}
 

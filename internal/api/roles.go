@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	usererrors "github.com/stellwerk-labs/platform-orchestrator-iam/internal/errors"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 const (
@@ -53,7 +54,7 @@ func fromModelToAPIRole(r *model.Role) Role {
 func (s *Server) GetRole(ctx context.Context, request GetRoleRequestObject) (GetRoleResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionRoleRead); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +72,7 @@ func (s *Server) GetRole(ctx context.Context, request GetRoleRequestObject) (Get
 func (s *Server) ListRoles(ctx context.Context, request ListRolesRequestObject) (ListRolesResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgMemberAuthorization(ctx, uid, request.OrgId); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionRoleRead); err != nil {
 		return nil, err
 	}
 
@@ -126,6 +127,9 @@ func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
 		if !rolePermissionPattern.MatchString(permission) {
 			return "", nil, usererrors.NewUserError(fmt.Sprintf("invalid permission %q", permission))
 		}
+		if !sharedauthz.IsAssignableRolePermission(permission) {
+			return "", nil, usererrors.NewUserError(fmt.Sprintf("unknown permission %q; use the permission catalog to list valid identifiers", permission))
+		}
 		permissionSet[permission] = struct{}{}
 	}
 	permissions := make([]string, 0, len(permissionSet))
@@ -141,7 +145,7 @@ func (s *Server) CreateRole(ctx context.Context, request CreateRoleRequestObject
 	if authErr != nil {
 		return nil, authErr
 	}
-	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+	if err := s.checkOrgAuthorization(ctx, userId, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
 		return nil, err
 	}
 	displayName, permissions, validationErr := validateRoleWrite(request.Body)
@@ -169,7 +173,7 @@ func (s *Server) UpdateRole(ctx context.Context, request UpdateRoleRequestObject
 	if authErr != nil {
 		return nil, authErr
 	}
-	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+	if err := s.checkOrgAuthorization(ctx, userId, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
 		return nil, err
 	}
 	existing, err := s.Database.GetRole(ctx, nil, request.OrgId, request.RoleId)
@@ -206,7 +210,7 @@ func (s *Server) DeleteRole(ctx context.Context, request DeleteRoleRequestObject
 	if authErr != nil {
 		return nil, authErr
 	}
-	if err := s.checkOrgAdminAuthorization(ctx, userId, request.OrgId); err != nil {
+	if err := s.checkOrgAuthorization(ctx, userId, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
 		return nil, err
 	}
 	existing, err := s.Database.GetRole(ctx, nil, request.OrgId, request.RoleId)
