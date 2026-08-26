@@ -100,6 +100,27 @@ func (s *Server) reloadAuthorizationPolicy() error {
 	return nil
 }
 
+type authorizationPolicyReloadScheduler interface {
+	ScheduleReloadPolicy()
+}
+
+// scheduleAuthorizationPolicyReload coalesces policy reloads for mutations that
+// only GRANT access: the user simply gains access a moment later, so a burst of
+// provisioning calls (an IDP sync) collapses into a handful of reloads instead
+// of one per user. Mutations that can REVOKE access must keep calling
+// reloadAuthorizationPolicy synchronously — a delayed reload there means the
+// revoked access keeps working out of the cached policy.
+//
+// Falls back to the synchronous reload when the authorizer does not support
+// scheduling; a reload is never silently skipped.
+func (s *Server) scheduleAuthorizationPolicyReload() error {
+	if scheduler, ok := s.Authorizer.(authorizationPolicyReloadScheduler); ok {
+		scheduler.ScheduleReloadPolicy()
+		return nil
+	}
+	return s.reloadAuthorizationPolicy()
+}
+
 // MustDecodeOpenApiSpec returns the value from decodeSpec via the cached value in rawSpec and panics if there was an error.
 func MustDecodeOpenApiSpec() []byte {
 	if b, err := rawSpec(); err != nil {

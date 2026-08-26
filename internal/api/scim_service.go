@@ -87,7 +87,10 @@ func (s *Server) scimProvisionUser(ctx context.Context, logger *zap.Logger, inpu
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit scim provision transaction")
 	}
-	if err := s.reloadAuthorizationPolicy(); err != nil {
+	// Provisioning only grants access (a fresh scim_users row has no managed
+	// memberships to lose), so the reload may be coalesced: an IDP syncing a
+	// thousand users must not trigger a thousand full policy reloads.
+	if err := s.scheduleAuthorizationPolicyReload(); err != nil {
 		return nil, err
 	}
 	return &scimUser, nil
@@ -293,30 +296,187 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 
 // reconcileScimUsersById reconciles the given SCIM users (deduplicated) after
 // a group membership change. Inactive users are skipped: they hold no
-// memberships until activation.
+// memberships until activation. Members deleted between the group read and
+// this pass simply drop out of the batched lookups; that is not an error.
+//
+// This is the bulk form of reconcileScimUserRoles — identical semantics, but a
+// bounded number of queries instead of several per user, so mapping a group
+// with hundreds of members stays a handful of statements. The decision logic
+// per user is:
+//
+//	target roles = roles mapped to the user's groups
+//	             | {Viewer}  when nothing is mapped AND no human-made role
+//	                         membership exists (fallback guarantees access)
+//	delete: managed memberships whose role fell out of the target set
+//	        (ONLY managed ones — human grants are invisible to the delete)
+//	create: target roles not already covered by a managed membership,
+//	        recorded as SCIM-managed; a conflict with an existing human grant
+//	        is swallowed and the grant stays human-owned
 func (s *Server) reconcileScimUsersById(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, orgId string, scimUserIds []uuid.UUID) error {
 	seen := make(map[uuid.UUID]struct{}, len(scimUserIds))
+	dedupedIds := make([]uuid.UUID, 0, len(scimUserIds))
 	for _, id := range scimUserIds {
 		if _, dup := seen[id]; dup {
 			continue
 		}
 		seen[id] = struct{}{}
-		scimUser, err := s.Database.GetScimUser(ctx, tx, orgId, id)
-		if err != nil {
-			// A member deleted between the group read and this pass has no
-			// memberships left to reconcile; don't fail the whole request.
-			if _, ok := model.IsErrNotFound(err); ok {
-				continue
-			}
-			return errors.Wrap(err, "failed to get scim user for reconciliation")
-		}
-		if !scimUser.Active {
+		dedupedIds = append(dedupedIds, id)
+	}
+	if len(dedupedIds) == 0 {
+		return nil
+	}
+
+	scimUsers, err := s.Database.GetScimUsersByIds(ctx, tx, orgId, dedupedIds)
+	if err != nil {
+		return errors.Wrap(err, "failed to get scim users for reconciliation")
+	}
+	activeUsers := make([]model.ScimUser, 0, len(scimUsers))
+	activeIds := make([]uuid.UUID, 0, len(scimUsers))
+	for _, u := range scimUsers {
+		if !u.Active {
 			continue
 		}
-		if err := s.reconcileScimUserRoles(ctx, logger, tx, *scimUser); err != nil {
-			return err
+		activeUsers = append(activeUsers, u)
+		activeIds = append(activeIds, u.Id)
+	}
+	if len(activeUsers) == 0 {
+		return nil
+	}
+
+	mappedRolesByScimUser, err := s.Database.ListRoleIdsForScimUsersGroups(ctx, tx, orgId, activeIds)
+	if err != nil {
+		return errors.Wrap(err, "failed to list mapped roles for scim users")
+	}
+	managedMemberships, err := s.Database.ListScimManagedMembershipsForScimUsers(ctx, tx, activeIds)
+	if err != nil {
+		return errors.Wrap(err, "failed to list scim managed memberships")
+	}
+	managedByScimUser := make(map[uuid.UUID][]model.ScimManagedMembership, len(activeIds))
+	for _, m := range managedMemberships {
+		managedByScimUser[m.ScimUserId] = append(managedByScimUser[m.ScimUserId], m)
+	}
+
+	// The Viewer fallback needs each unmapped user's existing role memberships
+	// (one query for all of them) and the org's Viewer role (resolved lazily,
+	// once, only when some user actually falls through to it).
+	unmappedUserIds := make([]uuid.UUID, 0)
+	for _, u := range activeUsers {
+		if len(mappedRolesByScimUser[u.Id]) == 0 {
+			unmappedUserIds = append(unmappedUserIds, u.UserId)
 		}
 	}
+	membershipIdsByUser := map[uuid.UUID][]uuid.UUID{}
+	if len(unmappedUserIds) > 0 {
+		membershipIdsByUser, err = s.Database.ListRoleMembershipIdsByUser(ctx, tx, orgId, unmappedUserIds)
+		if err != nil {
+			return errors.Wrap(err, "failed to check existing memberships")
+		}
+	}
+	var viewerRoleId *uuid.UUID
+	resolveViewerRoleId := func() (uuid.UUID, error) {
+		if viewerRoleId != nil {
+			return *viewerRoleId, nil
+		}
+		roles, err := s.listOrSeedRoles(ctx, logger, tx, orgId)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		viewerRole := getRoleByDisplayName(roles, RoleViewer)
+		if viewerRole == nil {
+			return uuid.Nil, fmt.Errorf("org %s is missing the Viewer system role", orgId)
+		}
+		viewerRoleId = &viewerRole.Id
+		return *viewerRoleId, nil
+	}
+
+	staleMembershipIds := make([]uuid.UUID, 0)
+	newManagedMemberships := make([]model.NewScimManagedMembership, 0)
+	now := time.Now().UTC()
+
+	for _, scimUser := range activeUsers {
+		managed := managedByScimUser[scimUser.Id]
+		managedIdSet := make(map[uuid.UUID]struct{}, len(managed))
+		for _, m := range managed {
+			managedIdSet[m.MembershipId] = struct{}{}
+		}
+
+		targetRoleIds := mappedRolesByScimUser[scimUser.Id]
+		if len(targetRoleIds) == 0 {
+			// No mapping applies. Fall back to Viewer, but only when the user
+			// has no human-made role membership in the org — the fallback's
+			// only job is to guarantee access, not to pile Viewer on top of a
+			// manual grant.
+			manualExists := false
+			for _, membershipId := range membershipIdsByUser[scimUser.UserId] {
+				if _, isManaged := managedIdSet[membershipId]; !isManaged {
+					manualExists = true
+					break
+				}
+			}
+			if !manualExists {
+				viewerId, err := resolveViewerRoleId()
+				if err != nil {
+					return err
+				}
+				targetRoleIds = []uuid.UUID{viewerId}
+			}
+		}
+		targetSet := make(map[uuid.UUID]struct{}, len(targetRoleIds))
+		for _, id := range targetRoleIds {
+			targetSet[id] = struct{}{}
+		}
+
+		// Drop managed memberships whose role fell out of the target set; keep
+		// the rest and note which target roles they already cover.
+		covered := make(map[uuid.UUID]struct{}, len(targetRoleIds))
+		for _, m := range managed {
+			if m.RoleId.IsSet() {
+				roleId := m.RoleId.Must()
+				if _, wanted := targetSet[roleId]; wanted {
+					covered[roleId] = struct{}{}
+					continue
+				}
+			}
+			// The scim_managed_memberships row cascades away with the membership.
+			staleMembershipIds = append(staleMembershipIds, m.MembershipId)
+		}
+
+		// Queue what is missing; the bulk insert records each new membership as
+		// SCIM-managed and skips (without adopting) roles a human already granted.
+		for _, roleId := range targetRoleIds {
+			if _, done := covered[roleId]; done {
+				continue
+			}
+			newManagedMemberships = append(newManagedMemberships, model.NewScimManagedMembership{
+				Membership: model.Membership{
+					Id:          uuid.Must(uuid.NewV7()),
+					CreatedAt:   now,
+					OrgId:       orgId,
+					UserId:      scimUser.UserId,
+					SubjectType: model.MembershipSubjectTypeRole,
+					Subject:     roleId.String(),
+					Role:        opt.Of(roleId),
+				},
+				ScimUserId: scimUser.Id,
+			})
+		}
+	}
+
+	if len(staleMembershipIds) > 0 {
+		if err := s.Database.DeleteMembershipsByIds(ctx, tx, staleMembershipIds); err != nil {
+			return errors.Wrap(err, "failed to delete stale scim managed memberships")
+		}
+	}
+	if len(newManagedMemberships) > 0 {
+		if err := s.Database.BulkCreateScimManagedMemberships(ctx, tx, newManagedMemberships); err != nil {
+			return errors.Wrap(err, "failed to create scim managed memberships")
+		}
+	}
+
+	logger.Debug("bulk reconciled scim user roles",
+		zap.Int("users", len(activeUsers)),
+		zap.Int("deleted_memberships", len(staleMembershipIds)),
+		zap.Int("created_memberships", len(newManagedMemberships)))
 	return nil
 }
 
@@ -351,6 +511,7 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 	if err := tx.Commit(); err != nil {
 		return errors.Wrap(err, "failed to commit delete transaction")
 	}
+	// Deletion revokes access: the reload must be synchronous, not coalesced.
 	return s.reloadAuthorizationPolicy()
 }
 
@@ -372,6 +533,13 @@ func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, tx mo
 	if len(remaining) == 0 {
 		if _, err := s.Database.DeleteSessionTokensByUserId(ctx, tx, userId); err != nil {
 			return errors.Wrap(err, "failed to revoke session tokens")
+		}
+		// An accepted-but-unpolled device-login request is a session token in
+		// waiting: PollDeviceLoginRequest mints the session at POLL time from
+		// decided_by. Killing the sessions without killing these rows would let
+		// the device redeem a login for a user who just lost all access.
+		if _, err := s.Database.DeleteDeviceLoginRequestsDecidedBy(ctx, tx, userId); err != nil {
+			return errors.Wrap(err, "failed to revoke device login requests")
 		}
 	}
 	return nil
@@ -465,7 +633,13 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit scim update transaction")
 	}
-	return &updated, s.reloadAuthorizationPolicy()
+	// Deactivation REVOKES access: reload synchronously so the stripped
+	// memberships stop working before the response goes out. Everything else
+	// (reactivation, renames) at most grants, so those reloads are coalesced.
+	if existing.Active && !updated.Active {
+		return &updated, s.reloadAuthorizationPolicy()
+	}
+	return &updated, s.scheduleAuthorizationPolicyReload()
 }
 
 // applyGlobalUserFields writes IDP-supplied display name and email onto the

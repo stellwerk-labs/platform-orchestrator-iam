@@ -94,6 +94,7 @@ type Databaser interface {
 
 	CreateUser(ctx context.Context, tx Tx, request *User) (*User, error)
 	GetUser(ctx context.Context, optionalTx Tx, id uuid.UUID) (*User, error)
+	GetUsersByIds(ctx context.Context, optionalTx Tx, ids []uuid.UUID) ([]User, error)
 	UpdateUser(ctx context.Context, optionalTx Tx, request *User) (*User, error)
 	DeleteUser(ctx context.Context, optionalTx Tx, id uuid.UUID) error
 	GetUserIdByIdentity(ctx context.Context, optionalTx Tx, identity UserIdentityProvider, identityId string) (*uuid.UUID, error)
@@ -114,7 +115,9 @@ type Databaser interface {
 	ListMemberships(ctx context.Context, optionalTx Tx, params ListMembershipsParams) ([]MembershipWithUserMetadata, error)
 	ListMembersWithIdentities(ctx context.Context, optionalTx Tx, params ListMembershipsParams) ([]MembershipWithIdentityProvider, string, error)
 	DeleteMembership(ctx context.Context, optionalTx Tx, id uuid.UUID) error
+	DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, ids []uuid.UUID) error
 	BulkDeleteMemberships(ctx context.Context, optionalTx Tx, params BulkDeleteMembershipsParams) (int64, error)
+	ListRoleMembershipIdsByUser(ctx context.Context, optionalTx Tx, orgId string, userIds []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 
 	CreateServiceUserToken(ctx context.Context, optionalTx Tx, orgId string, request *ServiceUserToken) (*ServiceUserToken, error)
 	ListServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) ([]ServiceUserToken, error)
@@ -135,6 +138,7 @@ type Databaser interface {
 	GetDeviceLoginRequestByCodeHash(ctx context.Context, optionalTx Tx, codeSha256Hash []byte) (*DeviceLoginRequest, error)
 	UpdateDeviceLoginRequest(ctx context.Context, optionalTx Tx, request *DeviceLoginRequest) (*DeviceLoginRequest, error)
 	DeleteDeviceLoginRequest(ctx context.Context, optionalTx Tx, requestId uuid.UUID) error
+	DeleteDeviceLoginRequestsDecidedBy(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int64, error)
 
 	GetRole(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*Role, error)
 	ListRoles(ctx context.Context, optionalTx Tx, orgId string) ([]Role, error)
@@ -159,6 +163,7 @@ type Databaser interface {
 
 	CreateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
 	GetScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimUser, error)
+	GetScimUsersByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) ([]ScimUser, error)
 	FindScimUserByUserName(ctx context.Context, optionalTx Tx, orgId string, userName string) (*ScimUser, error)
 	FindScimUserByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimUser, error)
 	FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error)
@@ -172,9 +177,12 @@ type Databaser interface {
 	DeleteScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) error
 	ListScimGroupRoleMappings(ctx context.Context, optionalTx Tx, orgId string) ([]ScimGroupRoleMapping, error)
 	ListRoleIdsForScimUserGroups(ctx context.Context, optionalTx Tx, orgId string, scimUserId uuid.UUID) ([]uuid.UUID, error)
+	ListRoleIdsForScimUsersGroups(ctx context.Context, optionalTx Tx, orgId string, scimUserIds []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 	ListScimUserIdsInGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) ([]uuid.UUID, error)
 	CreateScimManagedMembership(ctx context.Context, optionalTx Tx, membershipId uuid.UUID, scimUserId uuid.UUID) error
 	ListScimManagedMembershipIds(ctx context.Context, optionalTx Tx, scimUserId uuid.UUID) ([]uuid.UUID, error)
+	ListScimManagedMembershipsForScimUsers(ctx context.Context, optionalTx Tx, scimUserIds []uuid.UUID) ([]ScimManagedMembership, error)
+	BulkCreateScimManagedMemberships(ctx context.Context, optionalTx Tx, items []NewScimManagedMembership) error
 
 	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)

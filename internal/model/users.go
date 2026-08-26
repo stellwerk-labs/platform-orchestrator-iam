@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	"github.com/stellwerk-labs/golib/hlogger"
+	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 )
@@ -106,6 +108,47 @@ func (d *databaser) GetUser(ctx context.Context, optionalTx Tx, id uuid.UUID) (*
 	}
 
 	return &out, nil
+}
+
+// GetUsersByIds returns the core user records (no identities, no dismissed
+// prompts) for the given ids in one query. Missing ids are simply absent from
+// the result. Built for list endpoints that only need display name and email
+// for many users — the SCIM /Users list used to call GetUser once per row.
+func (d *databaser) GetUsersByIds(ctx context.Context, optionalTx Tx, ids []uuid.UUID) ([]User, error) {
+	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
+	optionalTx = d.txOrDb(optionalTx)
+	if len(ids) == 0 {
+		return []User{}, nil
+	}
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+	rs, err := optionalTx.QueryContext(
+		ctx,
+		`SELECT id, display_name, created_at, last_logged_in_at, primary_email_address FROM users WHERE id = ANY($1::uuid[])`,
+		pq.Array(idStrings),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get users by ids")
+	}
+	defer func() {
+		if err := rs.Close(); err != nil {
+			logger.Error("failed to close row set", zap.Error(err))
+		}
+	}()
+	out := make([]User, 0, len(ids))
+	for rs.Next() {
+		var item User
+		if err := rs.Scan(&item.Id, &item.DisplayName, &item.CreatedAt, &item.LastLoggedInAt, opt.Scan(&item.PrimaryEmailAddress)); err != nil {
+			return nil, errors.Wrap(err, "failed to scan user")
+		}
+		out = append(out, item)
+	}
+	if err := rs.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate users")
+	}
+	return out, nil
 }
 
 func (d *databaser) DeleteUser(ctx context.Context, optionalTx Tx, id uuid.UUID) error {

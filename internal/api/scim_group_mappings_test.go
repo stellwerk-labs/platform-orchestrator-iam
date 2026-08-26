@@ -18,7 +18,6 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
-	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
@@ -334,30 +333,24 @@ func TestUpsertScimGroupMapping_GrantsMappedRoleToExistingMember(t *testing.T) {
 		Return(nil)
 	db.EXPECT().ListScimUserIdsInGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
 		Return([]uuid.UUID{scimUserId}, nil)
-	db.EXPECT().GetScimUser(gomock.Any(), gomock.Not(nil), orgId, scimUserId).
-		Return(&model.ScimUser{Id: scimUserId, OrgId: orgId, UserId: globalUserId, UserName: "in-group@example.com", Active: true}, nil)
+	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
+		Return([]model.ScimUser{{Id: scimUserId, OrgId: orgId, UserId: globalUserId, UserName: "in-group@example.com", Active: true}}, nil)
 
 	// Reconciliation: the fresh mapping now applies, so the managed Viewer goes
 	// and the mapped role comes.
-	db.EXPECT().ListRoleIdsForScimUserGroups(gomock.Any(), gomock.Not(nil), orgId, scimUserId).
-		Return([]uuid.UUID{roleId}, nil)
-	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Not(nil), scimUserId).
-		Return([]uuid.UUID{viewerMembershipId}, nil)
-	db.EXPECT().GetMembership(gomock.Any(), gomock.Not(nil), viewerMembershipId).
-		Return(&model.Membership{Id: viewerMembershipId, OrgId: orgId, UserId: globalUserId,
-			SubjectType: model.MembershipSubjectTypeRole, Subject: viewerRoleId.String(), Role: opt.Of(viewerRoleId)}, nil)
-	db.EXPECT().DeleteMembership(gomock.Any(), gomock.Not(nil), viewerMembershipId).Return(nil)
-	var createdMembershipId uuid.UUID
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Not(nil), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m *model.Membership) (*model.Membership, error) {
-			assert.Equal(t, globalUserId, m.UserId)
-			assert.Equal(t, roleId, m.Role.Must(), "existing member must be granted the freshly mapped role")
-			createdMembershipId = m.Id
-			return m, nil
-		})
-	db.EXPECT().CreateScimManagedMembership(gomock.Any(), gomock.Not(nil), gomock.Any(), scimUserId).
-		DoAndReturn(func(_ context.Context, _ model.Tx, membershipId uuid.UUID, _ uuid.UUID) error {
-			assert.Equal(t, createdMembershipId, membershipId)
+	db.EXPECT().ListRoleIdsForScimUsersGroups(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
+		Return(map[uuid.UUID][]uuid.UUID{scimUserId: {roleId}}, nil)
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), []uuid.UUID{scimUserId}).
+		Return([]model.ScimManagedMembership{
+			{ScimUserId: scimUserId, MembershipId: viewerMembershipId, RoleId: opt.Of(viewerRoleId)},
+		}, nil)
+	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), []uuid.UUID{viewerMembershipId}).Return(nil)
+	db.EXPECT().BulkCreateScimManagedMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, items []model.NewScimManagedMembership) error {
+			require.Len(t, items, 1)
+			assert.Equal(t, globalUserId, items[0].Membership.UserId)
+			assert.Equal(t, roleId, items[0].Membership.Role.Must(), "existing member must be granted the freshly mapped role")
+			assert.Equal(t, scimUserId, items[0].ScimUserId, "the created membership must be recorded as SCIM-managed")
 			return nil
 		})
 
@@ -398,33 +391,29 @@ func TestDeleteScimGroupMapping_RevokesRoleAndFallsBackToViewer(t *testing.T) {
 		Return(nil)
 	db.EXPECT().ListScimUserIdsInGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
 		Return([]uuid.UUID{scimUserId}, nil)
-	db.EXPECT().GetScimUser(gomock.Any(), gomock.Not(nil), orgId, scimUserId).
-		Return(&model.ScimUser{Id: scimUserId, OrgId: orgId, UserId: globalUserId, UserName: "in-group@example.com", Active: true}, nil)
+	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
+		Return([]model.ScimUser{{Id: scimUserId, OrgId: orgId, UserId: globalUserId, UserName: "in-group@example.com", Active: true}}, nil)
 
 	// Reconciliation: no mapping applies anymore; the only membership is the
 	// managed one → it goes, and the Viewer fallback comes.
-	db.EXPECT().ListRoleIdsForScimUserGroups(gomock.Any(), gomock.Not(nil), orgId, scimUserId).
-		Return([]uuid.UUID{}, nil)
-	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Not(nil), scimUserId).
-		Return([]uuid.UUID{managedMembershipId}, nil)
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Not(nil), model.ListMembershipsParams{
-		OrgId: ref.Ref(orgId), UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{
-		{Membership: model.Membership{Id: managedMembershipId}},
-	}, nil)
+	db.EXPECT().ListRoleIdsForScimUsersGroups(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
+		Return(map[uuid.UUID][]uuid.UUID{}, nil)
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), []uuid.UUID{scimUserId}).
+		Return([]model.ScimManagedMembership{
+			{ScimUserId: scimUserId, MembershipId: managedMembershipId, RoleId: opt.Of(mappedRoleId)},
+		}, nil)
+	db.EXPECT().ListRoleMembershipIdsByUser(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{globalUserId}).
+		Return(map[uuid.UUID][]uuid.UUID{globalUserId: {managedMembershipId}}, nil)
 	db.EXPECT().ListRoles(gomock.Any(), gomock.Not(nil), orgId).
 		Return([]model.Role{{Id: viewerRoleId, OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
-	db.EXPECT().GetMembership(gomock.Any(), gomock.Not(nil), managedMembershipId).
-		Return(&model.Membership{Id: managedMembershipId, OrgId: orgId, UserId: globalUserId,
-			SubjectType: model.MembershipSubjectTypeRole, Subject: mappedRoleId.String(), Role: opt.Of(mappedRoleId)}, nil)
-	db.EXPECT().DeleteMembership(gomock.Any(), gomock.Not(nil), managedMembershipId).Return(nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Not(nil), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m *model.Membership) (*model.Membership, error) {
-			assert.Equal(t, viewerRoleId.String(), m.Subject, "member must fall back to Viewer once the mapping is gone")
-			return m, nil
+	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), []uuid.UUID{managedMembershipId}).Return(nil)
+	db.EXPECT().BulkCreateScimManagedMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, items []model.NewScimManagedMembership) error {
+			require.Len(t, items, 1)
+			assert.Equal(t, viewerRoleId.String(), items[0].Membership.Subject, "member must fall back to Viewer once the mapping is gone")
+			assert.Equal(t, scimUserId, items[0].ScimUserId)
+			return nil
 		})
-	db.EXPECT().CreateScimManagedMembership(gomock.Any(), gomock.Not(nil), gomock.Any(), scimUserId).Return(nil)
 
 	r, err := s.DeleteScimGroupMapping(ctxWithUser(t, userId), DeleteScimGroupMappingRequestObject{
 		OrgId:            orgId,

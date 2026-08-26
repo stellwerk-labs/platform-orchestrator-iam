@@ -103,6 +103,45 @@ func (s *testInvalidationSubscription) Unsubscribe() error {
 	return nil
 }
 
+// A burst of scheduled reloads (an IDP provisioning many users back to back)
+// must coalesce into far fewer policy loads than requests — while the
+// synchronous ReloadPolicy used for revocations still takes effect before it
+// returns.
+func TestScheduleReloadPolicyCoalescesBurstsWhileSyncReloadStaysImmediate(t *testing.T) {
+	store := &mutableTestStore{}
+	authorizer, err := New(t.Context(), store)
+	require.NoError(t, err)
+	t.Cleanup(authorizer.Close)
+
+	baseline, _ := store.loadCounts()
+
+	const scheduled = 50
+	for i := 0; i < scheduled; i++ {
+		authorizer.ScheduleReloadPolicy()
+	}
+
+	// Every burst must still cause at least one reload — coalescing means
+	// fewer reloads, never zero.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		loads, _ := store.loadCounts()
+		assert.Greater(collect, loads, baseline)
+	}, 2*time.Second, 10*time.Millisecond)
+
+	// Let any trailing debounce window drain, then check the burst collapsed.
+	time.Sleep(3 * deferredReloadDelay)
+	afterBurst, _ := store.loadCounts()
+	burstLoads := afterBurst - baseline
+	assert.Less(t, burstLoads, scheduled, "the burst must coalesce into fewer reloads than requests")
+	assert.LessOrEqual(t, burstLoads, 3, "a same-instant burst should land in a couple of reloads, got %d", burstLoads)
+
+	// The revocation path: ReloadPolicy is synchronous, the fresh policy is
+	// loaded by the time it returns.
+	beforeSync, _ := store.loadCounts()
+	require.NoError(t, authorizer.ReloadPolicy())
+	afterSync, _ := store.loadCounts()
+	assert.Equal(t, beforeSync+1, afterSync, "a synchronous reload must have loaded the policy before returning")
+}
+
 func TestPolicyReloadInvalidatesOtherInstances(t *testing.T) {
 	subjectId := uuid.New()
 	roleId := uuid.New()

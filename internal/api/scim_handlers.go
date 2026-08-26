@@ -221,9 +221,13 @@ func (s *Server) handleScimListUsers(c echo.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "list scim users")
 	}
+	globalUsers, err := s.globalUsersForScimUsers(c.Request().Context(), users)
+	if err != nil {
+		return errors.Wrap(err, "load global users for scim list")
+	}
 	resources := make([]ScimUserResource, 0, len(users))
 	for _, u := range users {
-		resources = append(resources, s.scimUserToResource(c, orgId, u))
+		resources = append(resources, scimUserResource(c, orgId, u, globalUsers[u.UserId]))
 	}
 	return scimJSON(c, http.StatusOK, scimListResponse{
 		Schemas:      []string{scimListResponseSchema},
@@ -882,9 +886,49 @@ func (s *Server) handleScimDeleteGroup(c echo.Context) error {
 
 // ------------------------------------------------------------------ helpers
 
-// scimUserToResource converts a model.ScimUser to the SCIM wire representation.
-// It loads the global user's email from the database to populate the emails array.
+// scimUserToResource converts a model.ScimUser to the SCIM wire representation,
+// loading the global user record for display name and email. Fine for
+// single-resource responses; list responses must prefetch the global users via
+// globalUsersForScimUsers instead of paying one query per row.
 func (s *Server) scimUserToResource(c echo.Context, orgId string, u model.ScimUser) ScimUserResource {
+	// Best-effort: fetch the global user; if it fails just omit name and email.
+	globalUser, err := s.Database.GetUser(c.Request().Context(), nil, u.UserId)
+	if err != nil {
+		globalUser = nil
+	}
+	return scimUserResource(c, orgId, u, globalUser)
+}
+
+// globalUsersForScimUsers batch-loads the global user records behind the given
+// SCIM users, keyed by user id. Best-effort like the single-row path: a user
+// missing from the map just renders without display name and email.
+func (s *Server) globalUsersForScimUsers(ctx context.Context, scimUsers []model.ScimUser) (map[uuid.UUID]*model.User, error) {
+	if len(scimUsers) == 0 {
+		return map[uuid.UUID]*model.User{}, nil
+	}
+	userIds := make([]uuid.UUID, 0, len(scimUsers))
+	seen := make(map[uuid.UUID]struct{}, len(scimUsers))
+	for _, u := range scimUsers {
+		if _, dup := seen[u.UserId]; dup {
+			continue
+		}
+		seen[u.UserId] = struct{}{}
+		userIds = append(userIds, u.UserId)
+	}
+	users, err := s.Database.GetUsersByIds(ctx, nil, userIds)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]*model.User, len(users))
+	for i := range users {
+		out[users[i].Id] = &users[i]
+	}
+	return out, nil
+}
+
+// scimUserResource renders the SCIM wire representation from already-loaded
+// records. A nil globalUser omits display name and email.
+func scimUserResource(c echo.Context, orgId string, u model.ScimUser, globalUser *model.User) ScimUserResource {
 	loc := scimResourceLocation(c, fmt.Sprintf("/scim/v2/orgs/%s/Users/%s", orgId, u.Id))
 	resource := ScimUserResource{
 		Schemas:  []string{scimSchemaUser},
@@ -901,9 +945,7 @@ func (s *Server) scimUserToResource(c echo.Context, orgId string, u model.ScimUs
 	if u.ExternalId.IsSet() {
 		resource.ExternalId = *u.ExternalId.Ref()
 	}
-
-	// Best-effort: fetch the global user's email; if it fails just omit it.
-	if globalUser, err := s.Database.GetUser(c.Request().Context(), nil, u.UserId); err == nil {
+	if globalUser != nil {
 		resource.DisplayName = globalUser.DisplayName
 		if globalUser.PrimaryEmailAddress.IsSet() {
 			resource.Emails = []scimEmail{

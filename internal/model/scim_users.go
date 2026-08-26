@@ -74,6 +74,47 @@ func (d *databaser) GetScimUser(ctx context.Context, optionalTx Tx, orgId string
 	return &out, nil
 }
 
+// GetScimUsersByIds returns the live (non-tombstoned) SCIM users among the
+// given ids in one query. Ids that are missing, tombstoned, or foreign to the
+// org are simply absent from the result — the bulk reconciler treats them the
+// same way the per-user path treats a not-found: nothing to reconcile.
+func (d *databaser) GetScimUsersByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) ([]ScimUser, error) {
+	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
+	optionalTx = d.txOrDb(optionalTx)
+	if len(ids) == 0 {
+		return []ScimUser{}, nil
+	}
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+	rs, err := optionalTx.QueryContext(
+		ctx,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		orgId, pq.Array(idStrings),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get scim users by ids")
+	}
+	defer func() {
+		if err := rs.Close(); err != nil {
+			logger.Error("failed to close row set", zap.Error(err))
+		}
+	}()
+	out := make([]ScimUser, 0, len(ids))
+	for rs.Next() {
+		var item ScimUser
+		if err := rs.Scan(&item.Id, &item.OrgId, &item.UserId, &item.UserName, opt.Scan(&item.ExternalId), &item.Active, &item.CreatedAt, &item.UpdatedAt, opt.Scan(&item.DeletedAt)); err != nil {
+			return nil, errors.Wrap(err, "failed to scan scim user")
+		}
+		out = append(out, item)
+	}
+	if err := rs.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate scim users")
+	}
+	return out, nil
+}
+
 // FindScimUserByUserName matches case-insensitively: /Schemas advertises
 // userName with caseExact=false, and migration 000035 enforces uniqueness on
 // LOWER(user_name), so at most one live row can match.

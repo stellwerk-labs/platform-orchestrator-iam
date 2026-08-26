@@ -149,6 +149,7 @@ func TestScimUserEvents_DeactivationEmitsDeprovisionedDeactivated(t *testing.T) 
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &existing.UserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), existing.UserId).Return(int64(1), nil)
+	db.EXPECT().DeleteDeviceLoginRequestsDecidedBy(gomock.Any(), gomock.Any(), existing.UserId).Return(int64(0), nil)
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	captured := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
@@ -231,6 +232,7 @@ func TestScimUserEvents_DeleteEmitsDeprovisionedDeleted(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &scimUser.UserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
+	db.EXPECT().DeleteDeviceLoginRequestsDecidedBy(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
 	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).Return(nil)
 	captured := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
@@ -253,6 +255,7 @@ func TestScimUserEvents_DeleteFailureEmitsNothing(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
+	db.EXPECT().DeleteDeviceLoginRequestsDecidedBy(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
 	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).
 		Return(assert.AnError)
 

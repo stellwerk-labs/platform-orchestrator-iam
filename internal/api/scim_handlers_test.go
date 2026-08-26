@@ -392,6 +392,8 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil) // no remaining memberships anywhere
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), globalUserId).Return(int64(1), nil)
+	// An accepted device-login request is a session in waiting; it dies with the sessions.
+	db.EXPECT().DeleteDeviceLoginRequestsDecidedBy(gomock.Any(), gomock.Any(), globalUserId).Return(int64(0), nil)
 	// Membership removal and the row update happen in ONE transaction with a
 	// single UpdateScimUser call; the stored row must be inactive.
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -495,6 +497,8 @@ func TestScimDeleteUser_Success(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), globalUserId).Return(int64(0), nil)
+	// An accepted device-login request is a session in waiting; it dies with the sessions.
+	db.EXPECT().DeleteDeviceLoginRequestsDecidedBy(gomock.Any(), gomock.Any(), globalUserId).Return(int64(0), nil)
 	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
 	deprovisioned := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
@@ -760,12 +764,17 @@ func TestScimPatchGroup_BracketMemberRemove(t *testing.T) {
 			}
 			return nil
 		})
-	// Both affected members get their roles reconciled; returning inactive
-	// users short-circuits that, keeping this test on the removal semantics.
-	db.EXPECT().GetScimUser(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, id uuid.UUID) (*model.ScimUser, error) {
-			return &model.ScimUser{Id: id, OrgId: orgId, Active: false}, nil
-		}).Times(2)
+	// Both affected members get their roles reconciled in one batch; returning
+	// inactive users short-circuits that, keeping this test on the removal
+	// semantics.
+	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Any(), orgId, gomock.Len(2)).
+		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, ids []uuid.UUID) ([]model.ScimUser, error) {
+			out := make([]model.ScimUser, 0, len(ids))
+			for _, id := range ids {
+				out = append(out, model.ScimUser{Id: id, OrgId: orgId, Active: false})
+			}
+			return out, nil
+		})
 
 	// Entra bracket remove path.
 	patchBody := scimPatchRequest{
@@ -1014,12 +1023,17 @@ func TestScimPatchGroup_RemoveAllMembers(t *testing.T) {
 			assert.Empty(t, g.MemberIds, "remove with no value must clear all members")
 			return nil
 		})
-	// The removed members get their roles reconciled; returning inactive users
-	// short-circuits that, keeping this test on the remove-all semantics.
-	db.EXPECT().GetScimUser(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, id uuid.UUID) (*model.ScimUser, error) {
-			return &model.ScimUser{Id: id, OrgId: orgId, Active: false}, nil
-		}).Times(2)
+	// The removed members get their roles reconciled in one batch; returning
+	// inactive users short-circuits that, keeping this test on the remove-all
+	// semantics.
+	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Any(), orgId, gomock.Len(2)).
+		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, ids []uuid.UUID) ([]model.ScimUser, error) {
+			out := make([]model.ScimUser, 0, len(ids))
+			for _, id := range ids {
+				out = append(out, model.ScimUser{Id: id, OrgId: orgId, Active: false})
+			}
+			return out, nil
+		})
 
 	patchBody := scimPatchRequest{
 		Schemas:    []string{scimPatchOpSchema},
@@ -1205,6 +1219,54 @@ func TestScimPageParams(t *testing.T) {
 		start, count := scimPageParams(c)
 		assert.Equal(t, tc.wantStart, start, "query %q", tc.query)
 		assert.Equal(t, tc.wantCount, count, "query %q", tc.query)
+	}
+}
+
+// The unfiltered list must resolve every row's global user through ONE batched
+// lookup — the strict mock fails this test if any per-row GetUser sneaks in.
+func TestScimListUsers_BatchesGlobalUserLookup(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	now := time.Now().UTC()
+	scimUsers := make([]model.ScimUser, 0, 3)
+	globalUsers := make([]model.User, 0, 3)
+	for i := 0; i < 3; i++ {
+		globalUserId := userid.NewHumanUserId()
+		scimUsers = append(scimUsers, model.ScimUser{
+			Id: uuid.New(), OrgId: orgId, UserId: globalUserId,
+			UserName: string(rune('a'+i)) + "@example.com", Active: true,
+			CreatedAt: now, UpdatedAt: now,
+		})
+		globalUsers = append(globalUsers, model.User{
+			Id: globalUserId, DisplayName: "User " + string(rune('A'+i)),
+			PrimaryEmailAddress: opt.Of(string(rune('a'+i)) + "@example.com"),
+		})
+	}
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().CountScimUsers(gomock.Any(), nil, orgId).Return(3, nil)
+	db.EXPECT().ListScimUsers(gomock.Any(), nil, orgId, 100, 0).Return(scimUsers, nil)
+	db.EXPECT().GetUsersByIds(gomock.Any(), nil, gomock.Len(3)).Return(globalUsers, nil).Times(1)
+
+	c, rec := scimListRequest(e, "", callerUserId)
+	require.NoError(t, s.handleScimListUsers(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var list struct {
+		TotalResults int                `json:"totalResults"`
+		Resources    []ScimUserResource `json:"Resources"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	assert.Equal(t, 3, list.TotalResults)
+	require.Len(t, list.Resources, 3)
+	for i, resource := range list.Resources {
+		assert.Equal(t, "User "+string(rune('A'+i)), resource.DisplayName, "display name must come from the batched lookup")
+		require.Len(t, resource.Emails, 1)
+		assert.Equal(t, string(rune('a'+i))+"@example.com", resource.Emails[0].Value)
 	}
 }
 
