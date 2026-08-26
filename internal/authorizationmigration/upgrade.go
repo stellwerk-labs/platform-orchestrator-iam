@@ -80,8 +80,8 @@ func Upgrade(
 		if err := model.MigrateUp(ctx, logger, rawDB); err != nil {
 			return nil, report, errors.Wrap(err, "failed to finish Casbin database migrations")
 		}
-	case version > CasbinSchemaVersion:
-		return nil, report, errors.Errorf("database schema version %d is newer than supported version %d", version, CasbinSchemaVersion)
+	case version > model.MaxMigrationVersion():
+		return nil, report, errors.Errorf("database schema version %d is newer than this binary's latest migration %d", version, model.MaxMigrationVersion())
 	}
 
 	database, err := model.NewDatabaser(ctx, logger, connectionString)
@@ -104,7 +104,7 @@ func Upgrade(
 		return closeOnError(err)
 	}
 	if state.reconciled && expectedPolicySHA256 == "" && report.Ready {
-		logger.Info("authorization database is ready", zap.Int64("schema_version", CasbinSchemaVersion))
+		logger.Info("authorization database is ready", zap.Int64("schema_version", report.SchemaVersion))
 		return database, report, nil
 	}
 	if state.reconciled && expectedPolicySHA256 == "" {

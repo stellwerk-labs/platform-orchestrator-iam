@@ -13,10 +13,15 @@ import (
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/pressly/goose/v3"
+
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 )
 
 const (
 	LegacySchemaVersion = int64(29)
+	// CasbinSchemaVersion is the schema version at which the SpiceDB→Casbin
+	// cutover completed. It is a historical boundary, not the current schema:
+	// the ceiling of supported versions is model.MaxMigrationVersion().
 	CasbinSchemaVersion = int64(31)
 )
 
@@ -79,9 +84,12 @@ func Inspect(ctx context.Context, db *sql.DB, phase Phase) (Report, error) {
 			return report, err
 		}
 	case PhaseVerify:
-		if version != CasbinSchemaVersion {
-			report.fail("schema-version", fmt.Sprintf("expected Casbin schema version %d, found %d", CasbinSchemaVersion, version))
-		} else {
+		switch {
+		case version < CasbinSchemaVersion:
+			report.fail("schema-version", fmt.Sprintf("expected Casbin schema version %d or later, found %d", CasbinSchemaVersion, version))
+		case version > model.MaxMigrationVersion():
+			report.fail("schema-version", fmt.Sprintf("database schema version %d is newer than this binary's latest migration %d", version, model.MaxMigrationVersion()))
+		default:
 			report.pass("schema-version", fmt.Sprintf("Casbin schema is at version %d", version))
 		}
 		if err := inspectCasbin(ctx, tx, &report); err != nil {
