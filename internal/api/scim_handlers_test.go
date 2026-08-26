@@ -177,8 +177,16 @@ func TestScimCreateUser_ProvisionNew(t *testing.T) {
 	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.Membership{Id: uuid.New(), OrgId: orgId, UserId: globalUserId}, nil)
 
-	// CreateScimUser
-	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	// CreateScimUser — the stored row must carry exactly what the IDP sent.
+	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.Equal(t, orgId, u.OrgId)
+			assert.Equal(t, globalUserId, u.UserId)
+			assert.Equal(t, "alice@example.com", u.UserName)
+			assert.Equal(t, "ext-001", u.ExternalId.Must())
+			assert.True(t, u.Active)
+			return nil
+		})
 
 	// GetUser for resource rendering
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
@@ -224,7 +232,14 @@ func TestScimCreateUser_MatchByExternalId(t *testing.T) {
 		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
 	}).Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{Id: uuid.New()}}}, nil)
 
-	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	// The SCIM row must be bound to the user the identity matched — not a fresh one.
+	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.Equal(t, globalUserId, u.UserId)
+			assert.Equal(t, orgId, u.OrgId)
+			assert.Equal(t, "bob@example.com", u.UserName)
+			return nil
+		})
 
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Bob"}, nil)
@@ -238,6 +253,11 @@ func TestScimCreateUser_MatchByExternalId(t *testing.T) {
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimCreateUser(c))
 	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var res ScimUserResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.Equal(t, "bob@example.com", res.UserName)
+	assert.Equal(t, "ext-999", res.ExternalId)
 }
 
 func TestScimCreateUser_MatchByEmail(t *testing.T) {
@@ -266,7 +286,13 @@ func TestScimCreateUser_MatchByEmail(t *testing.T) {
 		}, nil)
 	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.Membership{Id: uuid.New()}, nil)
-	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	// The SCIM row must reuse the email-matched user, not a fresh one.
+	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.Equal(t, globalUserId, u.UserId)
+			assert.Equal(t, orgId, u.OrgId)
+			return nil
+		})
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Carol", PrimaryEmailAddress: opt.Of("carol@example.com")}, nil)
 
@@ -349,10 +375,13 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil) // no remaining memberships anywhere
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), globalUserId).Return(int64(1), nil)
-	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-	// After deactivation, we do another UpdateScimUser for field changes (same value).
-	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	// Membership removal and the row update happen in ONE transaction with a
+	// single UpdateScimUser call; the stored row must be inactive.
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.False(t, u.Active, "stored scim row must be inactive after deactivation")
+			return nil
+		})
 
 	// GetUser for response rendering.
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
@@ -403,10 +432,11 @@ func TestScimPatchUser_ReactivateUser(t *testing.T) {
 		Return([]model.Role{{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
 	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.Membership{Id: uuid.New()}, nil)
-	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-
-	// Field update after reactivation.
-	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.True(t, u.Active, "stored scim row must be active after reactivation")
+			return nil
+		})
 
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Eve"}, nil)
@@ -495,7 +525,11 @@ func TestScimDeleteUser_KeepsSessionsIfOtherMemberships(t *testing.T) {
 		Id: scimUserId, OrgId: orgId, UserId: globalUserId,
 		UserName: "grace@example.com", Active: true, CreatedAt: now, UpdatedAt: now,
 	}, nil)
-	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(1), nil)
+	// Membership removal must stay scoped to THIS org.
+	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
+		OrgId:  opt.Of(orgId),
+		UserId: opt.Of(globalUserId),
+	}).Return(int64(1), nil)
 	// Still has a membership in another org → no session revocation.
 	otherOrgId := "other-org"
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
@@ -528,6 +562,27 @@ func TestScimGetUser_AuthorizationDenied(t *testing.T) {
 	assert.Equal(t, "403", errBody.Status)
 }
 
+// A denied caller must get 403 from a mutating handler and no database
+// mutation may happen (no GetScimUser / delete expectations are registered,
+// so any DB touch fails the test).
+func TestScimDeleteUser_AuthorizationDenied(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+
+	mockScimAuthDenied(s, callerUserId)
+
+	c, rec := scimRequest(t, e, http.MethodDelete, "/", nil, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimDeleteUser(c))
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, "403", errBody.Status)
+}
+
 func TestScimCreateUser_NoFromHeader_Unauthorized(t *testing.T) {
 	e, s, fin := MockServer(t)
 	defer fin()
@@ -540,18 +595,13 @@ func TestScimCreateUser_NoFromHeader_Unauthorized(t *testing.T) {
 	c.SetParamNames("orgId")
 	c.SetParamValues(orgId)
 
-	// No user ID in context → GetAuthenticatedUserId should fail → 401.
-	// scimCheckAuth will panic if the user is missing because hecho.GetUserID panics.
-	// We handle this with a recover or return 401 from scimAuthMiddleware in production,
-	// but here we just confirm the middleware path catches it.
-	// Since the user id is not in context, GetAuthenticatedUserId returns an error.
-	// We need to call handleScimCreateUser which calls scimCheckAuth.
-	// Without ContextKeyUserID this will panic from hecho.GetUserID.
-	// The test exercises the scimAuthMiddleware path instead.
+	// The middleware is the only thing between a From-less request and the
+	// handlers, so exercise it directly: no From header must yield 401 and the
+	// wrapped handler must never run.
 	handler := s.scimAuthMiddleware(func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
+		t.Fatal("handler must not be reached without a From header")
+		return nil
 	})
-	// No From header → should return 401.
 	require.NoError(t, handler(c))
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
@@ -647,7 +697,13 @@ func TestScimCreateGroup_Success(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().CreateScimGroup(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	db.EXPECT().CreateScimGroup(gomock.Any(), gomock.Not(nil), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, g model.ScimGroup) error {
+			assert.Equal(t, "Engineering", g.DisplayName)
+			assert.Equal(t, orgId, g.OrgId, "group must be created in the caller's org")
+			assert.Empty(t, g.MemberIds)
+			return nil
+		})
 
 	body := ScimGroupResource{
 		Schemas:     []string{scimSchemaGroup},
@@ -656,6 +712,10 @@ func TestScimCreateGroup_Success(t *testing.T) {
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimCreateGroup(c))
 	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var res ScimGroupResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.Equal(t, "Engineering", res.DisplayName)
 }
 
 func TestScimPatchGroup_BracketMemberRemove(t *testing.T) {

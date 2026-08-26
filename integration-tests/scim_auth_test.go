@@ -233,6 +233,39 @@ func TestScimCrossOrgIsolation(t *testing.T) {
 			mustAssertScimErrorEnvelope(t, body, http.StatusNotFound)
 		}
 	})
+
+	// The cross-tenant guard in insertScimGroupMembers: org A's SCIM user id is a
+	// real, existing id — B must refuse it exactly like a nonexistent one, both
+	// at group create and at member add.
+	t.Run("SCIM user from A cannot become a member of B's group", func(t *testing.T) {
+		status, body := scimDo(t, http.MethodPost, scimProxyBaseURL(t, orgBId)+"/Groups", &callerB, testScimGroupBody{
+			Schemas:     []string{testScimGroupSchema},
+			DisplayName: "iso-group-" + uuid.New().String()[:8],
+		})
+		require.Equal(t, http.StatusCreated, status, "create group in B: %s", string(body))
+		groupId := mustDecodeScimGroup(t, body).Id
+
+		status, body = scimDo(t, http.MethodPost, scimProxyBaseURL(t, orgBId)+"/Groups", &callerB, testScimGroupBody{
+			Schemas:     []string{testScimGroupSchema},
+			DisplayName: "iso-group-" + uuid.New().String()[:8],
+			Members:     []map[string]string{{"value": scimIdFromA.String()}},
+		})
+		assert.Equal(t, http.StatusBadRequest, status, "cross-org member on group create must be a 400: %s", string(body))
+
+		status, body = scimDo(t, http.MethodPatch, fmt.Sprintf("%s/Groups/%s", scimProxyBaseURL(t, orgBId), groupId), &callerB, testScimPatch{
+			Schemas: []string{testScimPatchSchema},
+			Operations: []testScimPatchOp{
+				{Op: "add", Path: "members", Value: []map[string]string{{"value": scimIdFromA.String()}}},
+			},
+		})
+		assert.Equal(t, http.StatusBadRequest, status, "cross-org member add must be a 400: %s", string(body))
+
+		status, body = scimDo(t, http.MethodGet, fmt.Sprintf("%s/Groups/%s", scimProxyBaseURL(t, orgBId), groupId), &callerB, nil)
+		if assert.Equal(t, http.StatusOK, status, "body: %s", string(body)) {
+			g := mustDecodeScimGroup(t, body)
+			assert.Empty(t, g.Members, "the foreign member must not have been stored")
+		}
+	})
 }
 
 // TestScimMultiOrgDeprovisioning mirrors the real customer shape: the same

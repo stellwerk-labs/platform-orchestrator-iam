@@ -10,8 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -193,6 +191,67 @@ func TestSsoCallback_ScimDeprovisionedUserRejected(t *testing.T) {
 	require.True(t, ok, "deprovisioned SCIM user must get 401, got %T", resp)
 }
 
+// TestSsoCallback_ScimDeprovisionedUserWithLinkedSsoIdentityRejected covers the
+// other half of the deprovisioning gate: the user already has an SSO identity
+// linked (they logged in before), then the IDP deactivates them via SCIM. The
+// next SSO login resolves the identity directly (no email matching) and must
+// still be rejected — otherwise the membership integrity fallback would hand
+// the deprovisioned user a fresh Viewer membership.
+func TestSsoCallback_ScimDeprovisionedUserWithLinkedSsoIdentityRejected(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().IsMultitenant().Return(false).AnyTimes()
+	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().
+		GetOrganizationWithResponse(gomock.Any(), orgId).
+		Return(&cpclient.GetOrganizationResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      &cpclient.Organization{Id: orgId},
+		}, nil)
+
+	profile := &ssoprovider.UserProfile{
+		Email:          "linked-gone@example.com",
+		DisplayName:    "Linked Gone User",
+		ProviderOrgId:  "sso-provider-org",
+		ProviderUserId: "sso-user-linked-gone",
+	}
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().
+		GetUserProfile(gomock.Any(), TestSsoAuthCode).
+		Return(profile, nil)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+
+	// The SSO identity is already linked → resolves straight to the user id.
+	linkedUserId := userid.NewHumanUserId()
+	db.EXPECT().
+		GetUserIdByIdentity(gomock.Any(), gomock.Any(), model.UserIdentityProviderSso, "sso-provider-org:sso-user-linked-gone").
+		Return(&linkedUserId, nil)
+
+	// The org's SCIM row says the IDP deactivated them.
+	db.EXPECT().
+		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, linkedUserId).
+		Return(&model.ScimUser{
+			Id:     uuid.New(),
+			OrgId:  orgId,
+			UserId: linkedUserId,
+			Active: false,
+		}, nil)
+
+	// No GetUser / UpdateUser / ListMemberships / CreateMembership /
+	// CreateSessionToken expectations: any of those calls fails the test,
+	// because a deprovisioned user must be stopped before touching them.
+
+	state := testSsoState(t)
+	authCode := TestSsoAuthCode
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userid.InternalSystemUuid.String())
+	resp, err := s.GetSsoCallback(ctx, GetSsoCallbackRequestObject{
+		Params: GetSsoCallbackParams{Code: &authCode, State: &state},
+	})
+	require.NoError(t, err)
+	_, ok := resp.(GetSsoCallback401JSONResponse)
+	require.True(t, ok, "deprovisioned SCIM user with a linked SSO identity must get 401, got %T", resp)
+}
+
 // TestSsoCallback_EmailCollisionWithoutScimIsNotLinked verifies that an SSO login
 // whose email happens to match an existing account NOT provisioned by this org's
 // IDP does not get linked to that account (cross-org account-takeover guard) —
@@ -264,14 +323,6 @@ func TestSsoCallback_EmailCollisionWithoutScimIsNotLinked(t *testing.T) {
 			require.Equal(t, newUserId, in.UserId)
 			return in, nil
 		})
-
-	store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-	db.EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-			store.Put(m)
-			return m, nil
-		})
-	db.EXPECT().AsReliableOutboxStore().Return(store)
 
 	now := time.Now().UTC()
 	db.EXPECT().
