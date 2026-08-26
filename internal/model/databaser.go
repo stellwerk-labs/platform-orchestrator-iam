@@ -169,6 +169,7 @@ type Databaser interface {
 
 	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
+	LockScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)
 	FindScimGroupByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimGroup, error)
 	ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error)

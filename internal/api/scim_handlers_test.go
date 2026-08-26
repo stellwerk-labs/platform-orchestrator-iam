@@ -746,7 +746,8 @@ func TestScimPatchGroup_BracketMemberRemove(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).Return(&model.ScimGroup{
+	db.EXPECT().LockScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(nil)
+	db.EXPECT().GetScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(&model.ScimGroup{
 		Id: groupId, OrgId: orgId, DisplayName: "Eng",
 		MemberIds: []uuid.UUID{memberId, uuid.New()},
 		CreatedAt: now, UpdatedAt: now,
@@ -1000,7 +1001,8 @@ func TestScimPatchGroup_RemoveAllMembers(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).Return(&model.ScimGroup{
+	db.EXPECT().LockScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(nil)
+	db.EXPECT().GetScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(&model.ScimGroup{
 		Id: groupId, OrgId: orgId, DisplayName: "Eng",
 		MemberIds: []uuid.UUID{uuid.New(), uuid.New()},
 		CreatedAt: now, UpdatedAt: now,
@@ -1125,7 +1127,8 @@ func TestScimPatchGroup_SetExternalId(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).Return(&model.ScimGroup{
+	db.EXPECT().LockScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(nil)
+	db.EXPECT().GetScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(&model.ScimGroup{
 		Id: groupId, OrgId: orgId, DisplayName: "Eng", CreatedAt: now, UpdatedAt: now,
 	}, nil)
 	db.EXPECT().UpdateScimGroup(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -1161,12 +1164,9 @@ func TestScimPatchGroup_BracketPathAddReturns400InvalidPath(t *testing.T) {
 
 	mockScimWriteAuth(s, callerUserId, orgId)
 
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		GetScimGroup(gomock.Any(), nil, orgId, groupId).
-		Return(&model.ScimGroup{
-			Id: groupId, OrgId: orgId, DisplayName: "Eng",
-			MemberIds: []uuid.UUID{memberId}, CreatedAt: now, UpdatedAt: now,
-		}, nil)
+	// The bracket path is rejected while normalising the ops, before the
+	// transaction opens, so the group is never read.
+	_ = now
 
 	patchBody := scimPatchRequest{
 		Schemas:    []string{scimPatchOpSchema},
@@ -1279,7 +1279,10 @@ func TestScimPatchGroup_BlankDisplayNameRejected(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		GetScimGroup(gomock.Any(), nil, orgId, groupId).
+		LockScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).
+		Return(nil)
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).
 		Return(&model.ScimGroup{Id: groupId, OrgId: orgId, DisplayName: "Eng"}, nil)
 
 	patchBody := scimPatchRequest{

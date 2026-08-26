@@ -712,14 +712,6 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	if err != nil {
 		return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 	}
-	existing, err := s.Database.GetScimGroup(c.Request().Context(), nil, orgId, id)
-	if err != nil {
-		if _, ok := model.IsErrNotFound(err); ok {
-			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
-		}
-		return err
-	}
-
 	var req scimPatchRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
@@ -728,6 +720,29 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	ops, err := normalizePatchOps(req)
 	if err != nil {
 		return scimPatchErrorResp(c, err)
+	}
+
+	// The member set is read-modify-written, so the read has to happen inside
+	// the transaction behind a row lock. Reading it beforehand lets two
+	// concurrent PATCHes compute from the same baseline and lose one change.
+	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := s.Database.LockScimGroup(c.Request().Context(), tx, orgId, id); err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
+	}
+	existing, err := s.Database.GetScimGroup(c.Request().Context(), tx, orgId, id)
+	if err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
 	}
 
 	updated := *existing
@@ -771,11 +786,6 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	updated.MemberIds = setToSlice(memberSet)
 	updated.UpdatedAt = time.Now().UTC()
 
-	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, "group displayName already exists in org")

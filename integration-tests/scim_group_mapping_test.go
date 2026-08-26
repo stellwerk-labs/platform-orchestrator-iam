@@ -300,3 +300,88 @@ func TestScimGroupRoleMapping(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, d2.StatusCode(), "body: %s", string(d2.Body))
 	})
 }
+
+// TestScimGroupMemberDeleteCascade pins the FK cascade path: deleting a SCIM
+// user who belongs to a group removes the scim_group_members row via ON DELETE
+// CASCADE, not through the handler. The group must read back cleanly without
+// the member (no dangling id, no error), and the deleted user's mapped role
+// must be gone while the surviving member keeps theirs.
+func TestScimGroupMemberDeleteCascade(t *testing.T) {
+	t.Parallel()
+
+	client, err := serverclient.NewClientWithResponses(mustServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	internalClient, err := serverclient.NewClientWithResponses(mustInternalServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+
+	orgId, adminId := mustScimOrgWithAdmin(t, client, internalClient)
+	caller := mustProvisioningCaller(t, client, internalClient, orgId, adminId)
+	baseURL := fmt.Sprintf("%s/scim/v2/orgs/%s", mustInternalServerURL(t), orgId)
+
+	// A mapped group, so the deleted member's role revocation is observable.
+	mappedRole, err := client.CreateRoleWithResponse(t.Context(), orgId, serverclient.CreateRoleJSONRequestBody{
+		DisplayName: "Cascade Mapped Role",
+		Permissions: []string{authz.PermissionRoleRead},
+	}, WithAuthenticatedUserId(adminId))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, mappedRole.StatusCode(), "create mapped role: %s", string(mappedRole.Body))
+	mappedRoleId := mappedRole.JSON201.Id
+
+	const groupName = "Cascade Crew"
+	m, err := client.UpsertScimGroupMappingWithResponse(t.Context(), orgId, groupName,
+		serverclient.UpsertScimGroupMappingJSONRequestBody{RoleId: mappedRoleId},
+		WithAuthenticatedUserId(adminId))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, m.StatusCode(), "upsert mapping: %s", string(m.Body))
+
+	provision := func(t *testing.T, email string) uuid.UUID {
+		t.Helper()
+		status, body := scimDo(t, http.MethodPost, baseURL+"/Users", &caller, testScimUserBody{
+			Schemas:  []string{testScimUserSchema},
+			UserName: email,
+			Active:   true,
+			Emails:   []testScimEmail{{Value: email, Primary: true, Type: "work"}},
+		})
+		require.Equal(t, http.StatusCreated, status, "provision %s: %s", email, string(body))
+		return uuid.MustParse(mustDecodeScimUser(t, body).Id)
+	}
+	doomedEmail := "cascade-doomed-" + uuid.New().String()[:8] + "@test.example"
+	survivorEmail := "cascade-survivor-" + uuid.New().String()[:8] + "@test.example"
+	doomedId := provision(t, doomedEmail)
+	survivorId := provision(t, survivorEmail)
+
+	status, body := scimDo(t, http.MethodPost, baseURL+"/Groups", &caller, testScimGroupBody{
+		Schemas:     []string{testScimGroupSchema},
+		DisplayName: groupName,
+		Members: []map[string]string{
+			{"value": doomedId.String()},
+			{"value": survivorId.String()},
+		},
+	})
+	require.Equal(t, http.StatusCreated, status, "create group: %s", string(body))
+	groupId := uuid.MustParse(mustDecodeScimGroup(t, body).Id)
+
+	// Both members hold the mapped role before the delete.
+	_, doomedRoles := rolesHeldByEmail(t, client, orgId, adminId, doomedEmail)
+	require.Equal(t, map[string]bool{mappedRoleId.String(): true}, doomedRoles)
+	_, survivorRoles := rolesHeldByEmail(t, client, orgId, adminId, survivorEmail)
+	require.Equal(t, map[string]bool{mappedRoleId.String(): true}, survivorRoles)
+
+	status, body = scimDo(t, http.MethodDelete, fmt.Sprintf("%s/Users/%s", baseURL, doomedId), &caller, nil)
+	require.Equal(t, http.StatusNoContent, status, "delete member: %s", string(body))
+
+	t.Run("group reads back without the deleted member", func(t *testing.T) {
+		status, body := scimDo(t, http.MethodGet, fmt.Sprintf("%s/Groups/%s", baseURL, groupId), &caller, nil)
+		require.Equal(t, http.StatusOK, status, "get group after member delete: %s", string(body))
+		g := mustDecodeScimGroup(t, body)
+		require.Len(t, g.Members, 1, "only the survivor must remain")
+		assert.Equal(t, survivorId.String(), g.Members[0]["value"], "no dangling id of the deleted member")
+	})
+
+	t.Run("deleted member's mapped role is gone, survivor keeps theirs", func(t *testing.T) {
+		_, roles := rolesHeldByEmail(t, client, orgId, adminId, doomedEmail)
+		assert.Empty(t, roles, "the deleted user must hold no roles in the org")
+		_, roles = rolesHeldByEmail(t, client, orgId, adminId, survivorEmail)
+		assert.Equal(t, map[string]bool{mappedRoleId.String(): true}, roles, "the survivor's mapped role must be untouched")
+	})
+}

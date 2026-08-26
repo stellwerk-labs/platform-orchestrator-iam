@@ -253,3 +253,26 @@ func parseScimMemberIds(raw pq.StringArray, out *[]uuid.UUID) error {
 	*out = result
 	return nil
 }
+
+// LockScimGroup takes a row lock on the group for the remainder of the
+// transaction. Callers that read-modify-write the member set must hold it,
+// otherwise two concurrent PATCHes each compute their new set from the same
+// baseline and the second one silently drops the first one's change.
+//
+// It is a separate statement because GetScimGroup aggregates members with
+// GROUP BY, and Postgres rejects FOR UPDATE alongside GROUP BY.
+func (d *databaser) LockScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error {
+	optionalTx = d.txOrDb(optionalTx)
+	var found uuid.UUID
+	if err := optionalTx.QueryRowContext(
+		ctx,
+		`SELECT id FROM scim_groups WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+		orgId, id,
+	).Scan(&found); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NewErrNotFound("scim group not found")
+		}
+		return errors.Wrap(err, "failed to lock scim group")
+	}
+	return nil
+}

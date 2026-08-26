@@ -166,6 +166,36 @@ func TestScimServiceUserTokenAuth(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, status, "body: %s", string(body))
 	})
 
+	t.Run("expired SU token yields 401", func(t *testing.T) {
+		// Expiry is the failure mode operators actually hit: the token exists
+		// and is otherwise valid, but its current_token_expires_at has passed.
+		// A dedicated service user keeps the shared one usable, and its token
+		// is never authenticated before being expired, so the 60s
+		// GetTokenByHashCache cannot hold a stale not-yet-expired entry.
+		r, err := client.CreateServiceUserWithResponse(t.Context(), orgId, serverclient.ServiceUserCreateBody{
+			DisplayName:  "scim-provisioner-expired",
+			ExpiryInDays: 14,
+			Roles:        &[]serverclient.ServiceUserRole{{Id: provRoleId}},
+		}, WithAuthenticatedUserId(adminId))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, r.StatusCode(), "create expiring service user: %s", string(r.Body))
+		expiring := *r.JSON201
+
+		db := MustDatabase(t)
+		defer func() { _ = db.Close() }()
+		token, err := db.GetServiceUserToken(t.Context(), nil, expiring.Id)
+		require.NoError(t, err)
+		// The table enforces current_token_expires_at > generated_at, so the
+		// generation time moves back with the expiry.
+		token.GeneratedAt = time.Now().UTC().Add(-2 * time.Hour)
+		token.CurrentTokenExpiresAt = time.Now().UTC().Add(-time.Hour)
+		_, err = db.UpdateServiceUserToken(t.Context(), nil, token)
+		require.NoError(t, err)
+
+		status, _, body := extAuthDo(t, scimPath, expiring.Token)
+		assert.Equal(t, http.StatusUnauthorized, status, "expired token must be rejected; body: %s", string(body))
+	})
+
 	t.Run("SCIM token must not reach admin routes", func(t *testing.T) {
 		// admin/ paths authenticate against the super user token hash, never
 		// against service user tokens.
