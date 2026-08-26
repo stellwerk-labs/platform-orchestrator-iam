@@ -9,13 +9,37 @@ import (
 
 // Defines values for EventType.
 const (
-	IoPlatformOrchestratorScopeSync EventType = "io.platform-orchestrator.scope.sync"
+	IoPlatformOrchestratorScimUserDeprovisioned EventType = "io.platform-orchestrator.scim.user.deprovisioned"
+	IoPlatformOrchestratorScimUserProvisioned   EventType = "io.platform-orchestrator.scim.user.provisioned"
+	IoPlatformOrchestratorScopeSync             EventType = "io.platform-orchestrator.scope.sync"
 )
 
 // Valid indicates whether the value is a known member of the EventType enum.
 func (e EventType) Valid() bool {
 	switch e {
+	case IoPlatformOrchestratorScimUserDeprovisioned:
+		return true
+	case IoPlatformOrchestratorScimUserProvisioned:
+		return true
 	case IoPlatformOrchestratorScopeSync:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScimDeprovisionReason.
+const (
+	Deactivated ScimDeprovisionReason = "deactivated"
+	Deleted     ScimDeprovisionReason = "deleted"
+)
+
+// Valid indicates whether the value is a known member of the ScimDeprovisionReason enum.
+func (e ScimDeprovisionReason) Valid() bool {
+	switch e {
+	case Deactivated:
+		return true
+	case Deleted:
 		return true
 	default:
 		return false
@@ -27,6 +51,49 @@ type EventType string
 
 // OrgId defines model for OrgId.
 type OrgId = string
+
+// ScimDeprovisionReason Why the user was deprovisioned: 'deactivated' means the IDP set active=false, 'deleted' means the IDP removed the user resource.
+type ScimDeprovisionReason string
+
+// ScimExternalId The IDP-assigned externalId, when the IDP provided one.
+type ScimExternalId = string
+
+// ScimUserDeprovisionedData defines model for ScimUserDeprovisionedData.
+type ScimUserDeprovisionedData struct {
+	// ExternalId The IDP-assigned externalId, when the IDP provided one.
+	ExternalId *ScimExternalId `json:"external_id,omitempty"`
+	OrgId      OrgId           `json:"org_id"`
+
+	// Reason Why the user was deprovisioned: 'deactivated' means the IDP set active=false, 'deleted' means the IDP removed the user resource.
+	Reason ScimDeprovisionReason `json:"reason"`
+
+	// ScimUserId The org-scoped SCIM resource id of the user.
+	ScimUserId ScimUserId `json:"scim_user_id"`
+	UserId     UserId     `json:"user_id"`
+
+	// UserName The SCIM userName as sent by the IDP.
+	UserName ScimUserName `json:"user_name"`
+}
+
+// ScimUserId The org-scoped SCIM resource id of the user.
+type ScimUserId = openapi_types.UUID
+
+// ScimUserName The SCIM userName as sent by the IDP.
+type ScimUserName = string
+
+// ScimUserProvisionedData defines model for ScimUserProvisionedData.
+type ScimUserProvisionedData struct {
+	// ExternalId The IDP-assigned externalId, when the IDP provided one.
+	ExternalId *ScimExternalId `json:"external_id,omitempty"`
+	OrgId      OrgId           `json:"org_id"`
+
+	// ScimUserId The org-scoped SCIM resource id of the user.
+	ScimUserId ScimUserId `json:"scim_user_id"`
+	UserId     UserId     `json:"user_id"`
+
+	// UserName The SCIM userName as sent by the IDP.
+	UserName ScimUserName `json:"user_name"`
+}
 
 // Scope The scope that needs to be synchronized.
 type Scope = string

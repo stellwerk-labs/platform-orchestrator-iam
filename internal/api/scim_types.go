@@ -32,6 +32,7 @@ const (
 	scimAttrUserName    = "username"
 	scimAttrExternalId  = "externalid"
 	scimAttrDisplayName = "displayname"
+	scimAttrEmails      = "emails"
 	scimAttrMembers     = "members"
 
 	// PATCH op names (lower-case).

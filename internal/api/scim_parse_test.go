@@ -293,3 +293,82 @@ func TestNormalizePatchOps_MalformedMemberValueRejected(t *testing.T) {
 		assert.Equal(t, "invalidValue", pe.ScimType)
 	}
 }
+
+// ------------------------------------------------------------------ emails (D18)
+
+// An emails-targeted PATCH with an array value takes the primary entry.
+func TestNormalizePatchOps_EmailsArrayTakesPrimary(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "Replace", Path: "emails", Value: json.RawMessage(
+			`[{"value":"secondary@example.com","type":"home"},{"value":"primary@example.com","type":"work","primary":true}]`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	assert.Equal(t, scimAttrEmails, ops[0].Path)
+	require.NotNil(t, ops[0].StrValue)
+	assert.Equal(t, "primary@example.com", *ops[0].StrValue)
+}
+
+// Without a primary flag the first entry wins.
+func TestNormalizePatchOps_EmailsArrayFallsBackToFirst(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "replace", Path: "emails", Value: json.RawMessage(
+			`[{"value":"first@example.com"},{"value":"second@example.com"}]`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	require.NotNil(t, ops[0].StrValue)
+	assert.Equal(t, "first@example.com", *ops[0].StrValue)
+}
+
+// A single email object (not wrapped in an array) is accepted too.
+func TestNormalizePatchOps_EmailsSingleObject(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "replace", Path: "emails", Value: json.RawMessage(`{"value":"solo@example.com","type":"work"}`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	require.NotNil(t, ops[0].StrValue)
+	assert.Equal(t, "solo@example.com", *ops[0].StrValue)
+}
+
+// The Entra/Okta bracket form `emails[type eq "work"].value` carries a plain string.
+func TestNormalizePatchOps_EmailsBracketForm(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "Replace", Path: `emails[type eq "work"].value`, Value: json.RawMessage(`"bracket@example.com"`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	assert.Equal(t, scimAttrEmails, ops[0].Path)
+	require.NotNil(t, ops[0].StrValue)
+	assert.Equal(t, "bracket@example.com", *ops[0].StrValue)
+}
+
+// Okta pathless replace carrying emails in the value object.
+func TestNormalizePatchOps_OktaPathlessEmails(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "replace", Value: json.RawMessage(`{"emails":[{"value":"okta@example.com","primary":true}]}`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	assert.Equal(t, scimAttrEmails, ops[0].Path)
+	require.NotNil(t, ops[0].StrValue)
+	assert.Equal(t, "okta@example.com", *ops[0].StrValue)
+}
+
+// A garbage emails value must yield invalidValue, not a silent drop.
+func TestNormalizePatchOps_EmailsMalformedRejected(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "replace", Path: "emails", Value: json.RawMessage(`12345`)},
+	})
+	_, err := normalizePatchOps(req)
+	require.Error(t, err)
+	var pe *scimPatchError
+	require.ErrorAs(t, err, &pe)
+	assert.Equal(t, "invalidValue", pe.ScimType)
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -50,14 +51,6 @@ func (s *Server) scimProvisionUser(ctx context.Context, logger *zap.Logger, inpu
 		return nil, err
 	}
 
-	// Entra can stage users with active=false; they get their membership at
-	// activation time, not before.
-	if input.Active {
-		if err := s.ensureOrgMembership(ctx, logger, tx, now, input.OrgId, user.Id); err != nil {
-			return nil, err
-		}
-	}
-
 	externalIdOpt := opt.Empty[string]()
 	if input.ExternalId != "" {
 		externalIdOpt = opt.Of(input.ExternalId)
@@ -75,6 +68,20 @@ func (s *Server) scimProvisionUser(ctx context.Context, logger *zap.Logger, inpu
 	}
 	if err := s.Database.CreateScimUser(ctx, tx, scimUser); err != nil {
 		return nil, errors.Wrap(err, "failed to create scim user")
+	}
+
+	// Entra can stage users with active=false; they get their membership at
+	// activation time, not before. The scim_users row must exist first: the
+	// reconciler joins group memberships and records managed memberships
+	// against it. The provisioned audit event follows the same rule: a staged
+	// user emits it at activation (scimUpdateUser), not here.
+	if input.Active {
+		if err := s.reconcileScimUserRoles(ctx, logger, tx, scimUser); err != nil {
+			return nil, err
+		}
+		if err := s.insertScimUserProvisionedEvent(ctx, tx, scimUser); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -161,46 +168,154 @@ func (s *Server) resolveOrCreateGlobalUser(ctx context.Context, logger *zap.Logg
 	return user, nil
 }
 
-// ensureOrgMembership adds a Viewer role membership for the user in the org if one
-// doesn't already exist. Mirrors the SSO JIT path in sso.go.
-func (s *Server) ensureOrgMembership(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, now time.Time, orgId string, userId uuid.UUID) error {
-	subjectType := model.MembershipSubjectTypeRole
-	existing, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{
-		OrgId:       &orgId,
-		UserId:      &userId,
-		SubjectType: ref.Ref(subjectType),
-	})
+// reconcileScimUserRoles brings the SCIM-managed memberships of one user in
+// line with the roles mapped to their SCIM groups. It must run inside the
+// caller's transaction; the caller reloads the authorization policy after
+// commit.
+//
+// Semantics:
+//   - Target role set = the roles mapped (scim_group_role_mappings) to the
+//     groups the user is in. If no mapping applies AND the user would otherwise
+//     have no role membership in the org, the target is the Viewer system role
+//     (preserves the pre-mapping behaviour: a provisioned user is never left
+//     with no access).
+//   - Only memberships recorded in scim_managed_memberships are ever deleted.
+//     A role a human granted through the memberships API survives untouched.
+//   - If a human already granted a role that is also in the target set, the
+//     CreateMembership conflict is swallowed and the grant stays human-owned,
+//     so a later group removal cannot revoke it.
+func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, scimUser model.ScimUser) error {
+	mappedRoleIds, err := s.Database.ListRoleIdsForScimUserGroups(ctx, tx, scimUser.OrgId, scimUser.Id)
 	if err != nil {
-		return errors.Wrap(err, "failed to check existing memberships")
-	}
-	if len(existing) > 0 {
-		return nil // already a member
+		return errors.Wrap(err, "failed to list mapped roles for scim user")
 	}
 
-	roles, err := s.listOrSeedRoles(ctx, logger, tx, orgId)
+	managedIds, err := s.Database.ListScimManagedMembershipIds(ctx, tx, scimUser.Id)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to list scim managed memberships")
+	}
+	managedIdSet := make(map[uuid.UUID]struct{}, len(managedIds))
+	for _, id := range managedIds {
+		managedIdSet[id] = struct{}{}
 	}
 
-	viewerRole := getRoleByDisplayName(roles, RoleViewer)
-	if viewerRole == nil {
-		return fmt.Errorf("org %s is missing the Viewer system role", orgId)
-	}
-
-	_, err = s.Database.CreateMembership(ctx, tx, &model.Membership{
-		Id:          uuid.Must(uuid.NewV7()),
-		CreatedAt:   now,
-		OrgId:       orgId,
-		UserId:      userId,
-		SubjectType: model.MembershipSubjectTypeRole,
-		Subject:     viewerRole.Id.String(),
-		Role:        opt.Of(viewerRole.Id),
-	})
-	if err != nil {
-		if _, ok := model.IsErrConflict(err); ok {
-			return nil // race — already created
+	targetRoleIds := mappedRoleIds
+	if len(targetRoleIds) == 0 {
+		// No mapping applies. Fall back to Viewer, but only when the user has
+		// no human-made role membership in the org — the fallback's only job
+		// is to guarantee access, not to pile Viewer on top of a manual grant.
+		subjectType := model.MembershipSubjectTypeRole
+		existing, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{
+			OrgId:       &scimUser.OrgId,
+			UserId:      &scimUser.UserId,
+			SubjectType: ref.Ref(subjectType),
+		})
+		if err != nil {
+			return errors.Wrap(err, "failed to check existing memberships")
 		}
-		return errors.Wrap(err, "failed to create membership for scim-provisioned user")
+		manualExists := false
+		for _, m := range existing {
+			if _, managed := managedIdSet[m.Id]; !managed {
+				manualExists = true
+				break
+			}
+		}
+		if !manualExists {
+			roles, err := s.listOrSeedRoles(ctx, logger, tx, scimUser.OrgId)
+			if err != nil {
+				return err
+			}
+			viewerRole := getRoleByDisplayName(roles, RoleViewer)
+			if viewerRole == nil {
+				return fmt.Errorf("org %s is missing the Viewer system role", scimUser.OrgId)
+			}
+			targetRoleIds = []uuid.UUID{viewerRole.Id}
+		}
+	}
+	targetSet := make(map[uuid.UUID]struct{}, len(targetRoleIds))
+	for _, id := range targetRoleIds {
+		targetSet[id] = struct{}{}
+	}
+
+	// Drop managed memberships whose role fell out of the target set; keep the
+	// rest and note which target roles they already cover.
+	covered := make(map[uuid.UUID]struct{}, len(targetRoleIds))
+	for _, membershipId := range managedIds {
+		membership, err := s.Database.GetMembership(ctx, tx, membershipId)
+		if err != nil {
+			return errors.Wrap(err, "failed to get scim managed membership")
+		}
+		if membership.Role.IsSet() {
+			roleId := membership.Role.Must()
+			if _, wanted := targetSet[roleId]; wanted {
+				covered[roleId] = struct{}{}
+				continue
+			}
+		}
+		// The scim_managed_memberships row cascades away with the membership.
+		if err := s.Database.DeleteMembership(ctx, tx, membershipId); err != nil {
+			return errors.Wrap(err, "failed to delete stale scim managed membership")
+		}
+	}
+
+	// Create what is missing, recording each new membership as SCIM-managed.
+	for _, roleId := range targetRoleIds {
+		if _, done := covered[roleId]; done {
+			continue
+		}
+		membership, err := s.Database.CreateMembership(ctx, tx, &model.Membership{
+			Id:          uuid.Must(uuid.NewV7()),
+			CreatedAt:   time.Now().UTC(),
+			OrgId:       scimUser.OrgId,
+			UserId:      scimUser.UserId,
+			SubjectType: model.MembershipSubjectTypeRole,
+			Subject:     roleId.String(),
+			Role:        opt.Of(roleId),
+		})
+		if err != nil {
+			if _, ok := model.IsErrConflict(err); ok {
+				// A human already granted this exact role. Leave it theirs:
+				// adopting it as managed would let a group removal revoke it.
+				continue
+			}
+			return errors.Wrap(err, "failed to create scim managed membership")
+		}
+		if err := s.Database.CreateScimManagedMembership(ctx, tx, membership.Id, scimUser.Id); err != nil {
+			return err
+		}
+	}
+
+	logger.Debug("reconciled scim user roles",
+		zap.String("scim_user_id", scimUser.Id.String()),
+		zap.Int("target_roles", len(targetRoleIds)))
+	return nil
+}
+
+// reconcileScimUsersById reconciles the given SCIM users (deduplicated) after
+// a group membership change. Inactive users are skipped: they hold no
+// memberships until activation.
+func (s *Server) reconcileScimUsersById(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, orgId string, scimUserIds []uuid.UUID) error {
+	seen := make(map[uuid.UUID]struct{}, len(scimUserIds))
+	for _, id := range scimUserIds {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		scimUser, err := s.Database.GetScimUser(ctx, tx, orgId, id)
+		if err != nil {
+			// A member deleted between the group read and this pass has no
+			// memberships left to reconcile; don't fail the whole request.
+			if _, ok := model.IsErrNotFound(err); ok {
+				continue
+			}
+			return errors.Wrap(err, "failed to get scim user for reconciliation")
+		}
+		if !scimUser.Active {
+			continue
+		}
+		if err := s.reconcileScimUserRoles(ctx, logger, tx, *scimUser); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -224,6 +339,10 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 
 	if err := s.Database.DeleteScimUser(ctx, tx, scimUser.OrgId, scimUser.Id); err != nil {
 		return errors.Wrap(err, "failed to delete scim user row")
+	}
+
+	if err := s.insertScimUserDeprovisionedEvent(ctx, tx, *scimUser, genevents.Deleted); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -298,8 +417,18 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 		if err := s.removeOrgMembershipsAndMaybeSessions(ctx, tx, existing.OrgId, existing.UserId); err != nil {
 			return nil, err
 		}
+		// Audited with the updated row: a PATCH that renames and deactivates in
+		// one go must report the name the user ends up with.
+		if err := s.insertScimUserDeprovisionedEvent(ctx, tx, updated, genevents.Deactivated); err != nil {
+			return nil, err
+		}
 	case !existing.Active && updated.Active:
-		if err := s.ensureOrgMembership(ctx, logger, tx, now, existing.OrgId, existing.UserId); err != nil {
+		// Reactivation restores the roles the user's current groups map to
+		// (or the Viewer fallback when nothing is mapped).
+		if err := s.reconcileScimUserRoles(ctx, logger, tx, *existing); err != nil {
+			return nil, err
+		}
+		if err := s.insertScimUserProvisionedEvent(ctx, tx, updated); err != nil {
 			return nil, err
 		}
 	}

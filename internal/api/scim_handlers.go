@@ -21,13 +21,20 @@ import (
 // registerScimRoutes attaches SCIM routes to the given Echo group.
 // It is called from MapRoutes after RegisterHandlers.
 func (s *Server) registerScimRoutes(e *echo.Echo) {
-	g := e.Group("/scim/v2/orgs/:orgId", scimErrorEnvelopeMiddleware, s.scimAuthMiddleware)
+	base := e.Group("/scim/v2/orgs/:orgId", scimErrorEnvelopeMiddleware)
 
-	g.GET("/ServiceProviderConfig", s.handleScimServiceProviderConfig)
-	g.GET("/Schemas", s.handleScimSchemas)
-	g.GET("/Schemas/:schemaId", s.handleScimSchema)
-	g.GET("/ResourceTypes", s.handleScimResourceTypes)
-	g.GET("/ResourceTypes/:typeId", s.handleScimResourceType)
+	// Discovery endpoints are static documents containing no tenant data.
+	// RFC 7644 §4 permits serving them unauthenticated, and Entra's SCIM
+	// Validator probes them without a token, so they skip scimAuthMiddleware
+	// and carry no permission check.
+	base.GET("/ServiceProviderConfig", s.handleScimServiceProviderConfig)
+	base.GET("/Schemas", s.handleScimSchemas)
+	base.GET("/Schemas/:schemaId", s.handleScimSchema)
+	base.GET("/ResourceTypes", s.handleScimResourceTypes)
+	base.GET("/ResourceTypes/:typeId", s.handleScimResourceType)
+
+	// Everything below carries tenant data and stays authenticated + authorized.
+	g := base.Group("", s.scimAuthMiddleware)
 
 	g.GET("/Users", s.handleScimListUsers)
 	g.POST("/Users", s.handleScimCreateUser)
@@ -131,18 +138,16 @@ func scimPatchErrorResp(c echo.Context, err error) error {
 }
 
 // ------------------------------------------------------------------ static
+//
+// The discovery handlers below deliberately perform NO authentication or
+// authorization: they serve fixed protocol documents with no tenant data
+// (see registerScimRoutes).
 
 func (s *Server) handleScimServiceProviderConfig(c echo.Context) error {
-	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningRead); !ok {
-		return nil
-	}
 	return scimJSON(c, http.StatusOK, staticServiceProviderConfig())
 }
 
 func (s *Server) handleScimSchemas(c echo.Context) error {
-	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningRead); !ok {
-		return nil
-	}
 	schemas := []scimSchema{staticUserSchema(), staticGroupSchema()}
 	return scimJSON(c, http.StatusOK, scimListResponse{
 		Schemas:      []string{scimListResponseSchema},
@@ -154,9 +159,6 @@ func (s *Server) handleScimSchemas(c echo.Context) error {
 }
 
 func (s *Server) handleScimSchema(c echo.Context) error {
-	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningRead); !ok {
-		return nil
-	}
 	schemaId := c.Param("schemaId")
 	switch schemaId {
 	case scimSchemaIdUser:
@@ -169,9 +171,6 @@ func (s *Server) handleScimSchema(c echo.Context) error {
 }
 
 func (s *Server) handleScimResourceTypes(c echo.Context) error {
-	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningRead); !ok {
-		return nil
-	}
 	types := []scimResourceType{staticUserResourceType(), staticGroupResourceType()}
 	return scimJSON(c, http.StatusOK, scimListResponse{
 		Schemas:      []string{scimListResponseSchema},
@@ -183,9 +182,6 @@ func (s *Server) handleScimResourceTypes(c echo.Context) error {
 }
 
 func (s *Server) handleScimResourceType(c echo.Context) error {
-	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningRead); !ok {
-		return nil
-	}
 	switch c.Param("typeId") {
 	case scimResourceTypeUser:
 		return scimJSON(c, http.StatusOK, staticUserResourceType())
@@ -413,6 +409,7 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 
 	updated := *existing
 	var newDisplayName *string
+	var newEmail *string
 	for _, op := range ops {
 		switch op.Path {
 		case scimAttrActive:
@@ -437,10 +434,17 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 			if op.StrValue != nil {
 				newDisplayName = op.StrValue
 			}
+		case scimAttrEmails:
+			// Same authority rule as PUT: an email the IDP sends wins.
+			// A remove (or empty value) is ignored — we never blank the
+			// primary email, it identifies the user for the email-match path.
+			if op.StrValue != nil && *op.StrValue != "" {
+				newEmail = op.StrValue
+			}
 		}
 	}
 
-	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, scimGlobalUserFields{DisplayName: newDisplayName})
+	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, scimGlobalUserFields{DisplayName: newDisplayName, Email: newEmail})
 	if err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
@@ -601,7 +605,14 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 		}
 		return err
 	}
+	// The new group may carry a role mapping; its members' roles change with it.
+	if err := s.reconcileScimUsersById(c.Request().Context(), scimLogger(s, c.Request().Context()), tx, orgId, memberIds); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
 	return scimJSON(c, http.StatusCreated, scimGroupToResource(c, orgId, group))
@@ -678,7 +689,15 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 		}
 		return err
 	}
+	// Anyone who joined or left the group (and stayers, whose mapping may have
+	// changed with a rename) gets their SCIM-managed roles reconciled.
+	if err := s.reconcileScimUsersById(c.Request().Context(), scimLogger(s, c.Request().Context()), tx, orgId, append(existing.MemberIds, updated.MemberIds...)); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
 	return scimJSON(c, http.StatusOK, scimGroupToResource(c, orgId, updated))
@@ -766,7 +785,15 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 		}
 		return err
 	}
+	// Anyone who joined or left the group (and stayers, whose mapping may have
+	// changed with a rename) gets their SCIM-managed roles reconciled.
+	if err := s.reconcileScimUsersById(c.Request().Context(), scimLogger(s, c.Request().Context()), tx, orgId, append(existing.MemberIds, updated.MemberIds...)); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
 	return scimJSON(c, http.StatusOK, scimGroupToResource(c, orgId, updated))
@@ -781,10 +808,34 @@ func (s *Server) handleScimDeleteGroup(c echo.Context) error {
 	if err != nil {
 		return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 	}
-	if err := s.Database.DeleteScimGroup(c.Request().Context(), nil, orgId, id); err != nil {
+	// Deleting a group removes every member from it, so the former members'
+	// mapped roles must be reconciled away — same rule as any other membership
+	// change. Fetch the member list before the cascade wipes it.
+	existing, err := s.Database.GetScimGroup(c.Request().Context(), nil, orgId, id)
+	if err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
 			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 		}
+		return err
+	}
+	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.Database.DeleteScimGroup(c.Request().Context(), tx, orgId, id); err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
+	}
+	if err := s.reconcileScimUsersById(c.Request().Context(), scimLogger(s, c.Request().Context()), tx, orgId, existing.MemberIds); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)

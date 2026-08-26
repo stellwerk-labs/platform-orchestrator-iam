@@ -22,6 +22,7 @@ import (
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/genevents"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -79,6 +80,46 @@ func mockScimAuthDenied(s *Server, userId uuid.UUID) {
 			return []authorization.Result{{Check: checks[0], Allowed: false}}, nil
 		}).
 		Times(1)
+}
+
+// mockReconcileNoMappings wires the role reconciler's lookups for a user whose
+// groups map to nothing: mapped roles and managed memberships both come back
+// empty, then existing memberships decide whether the Viewer fallback applies.
+func mockReconcileNoMappings(db *mockmodel.MockDatabaser, globalUserId uuid.UUID, existing []model.MembershipWithUserMetadata) {
+	subjectTypeRole := model.MembershipSubjectTypeRole
+	db.EXPECT().ListRoleIdsForScimUserGroups(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
+		Return([]uuid.UUID{}, nil)
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return([]uuid.UUID{}, nil)
+	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
+		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
+	}).Return(existing, nil)
+}
+
+// mockReconcileViewerFallback wires the full fallback path: no mappings, no
+// managed memberships, no manual memberships → one SCIM-managed Viewer grant.
+func mockReconcileViewerFallback(t *testing.T, db *mockmodel.MockDatabaser, globalUserId uuid.UUID) {
+	t.Helper()
+	mockReconcileNoMappings(db, globalUserId, []model.MembershipWithUserMetadata{})
+	viewerRoleId := uuid.New()
+	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
+		Return([]model.Role{
+			{Id: viewerRoleId, OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
+		}, nil)
+	var createdMembershipId uuid.UUID
+	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, m *model.Membership) (*model.Membership, error) {
+			assert.Equal(t, orgId, m.OrgId)
+			assert.Equal(t, globalUserId, m.UserId)
+			assert.Equal(t, viewerRoleId.String(), m.Subject, "fallback must grant the Viewer role")
+			createdMembershipId = m.Id
+			return m, nil
+		})
+	db.EXPECT().CreateScimManagedMembership(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, membershipId uuid.UUID, _ uuid.UUID) error {
+			assert.Equal(t, createdMembershipId, membershipId, "the created membership must be recorded as SCIM-managed")
+			return nil
+		})
 }
 
 // ------------------------------------------------------------------ GET /Users
@@ -164,18 +205,9 @@ func TestScimCreateUser_ProvisionNew(t *testing.T) {
 	db.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.User{Id: globalUserId, DisplayName: "Alice", CreatedAt: now}, nil)
 
-	// ensureOrgMembership
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{
-			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleAdmin, Permissions: []string{"manage_all"}, IsSystem: true},
-			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
-		}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&model.Membership{Id: uuid.New(), OrgId: orgId, UserId: globalUserId}, nil)
+	// Role reconciliation: no mappings, no manual grants → managed Viewer.
+	mockReconcileViewerFallback(t, db, globalUserId)
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 
 	// CreateScimUser — the stored row must carry exactly what the IDP sent.
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -226,11 +258,10 @@ func TestScimCreateUser_MatchByExternalId(t *testing.T) {
 	db.EXPECT().GetUser(gomock.Any(), gomock.Any(), globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Bob", CreatedAt: now}, nil)
 
-	// ensureOrgMembership: already a member.
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{Id: uuid.New()}}}, nil)
+	// Role reconciliation: already a (manually granted) member, so the Viewer
+	// fallback must not add anything on top.
+	mockReconcileNoMappings(db, globalUserId, []model.MembershipWithUserMetadata{{Membership: model.Membership{Id: uuid.New()}}})
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 
 	// The SCIM row must be bound to the user the identity matched — not a fresh one.
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -276,16 +307,8 @@ func TestScimCreateUser_MatchByEmail(t *testing.T) {
 	db.EXPECT().FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "carol@example.com").
 		Return(&model.User{Id: globalUserId, DisplayName: "Carol", CreatedAt: now}, nil)
 
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{
-			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
-		}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&model.Membership{Id: uuid.New()}, nil)
+	mockReconcileViewerFallback(t, db, globalUserId)
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 	// The SCIM row must reuse the email-matched user, not a fresh one.
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
@@ -322,14 +345,8 @@ func TestScimCreateUser_ConflictUserName(t *testing.T) {
 		Return(nil, model.NewErrNotFound("not found"))
 	db.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.User{Id: globalUserId, CreatedAt: now}, nil)
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&model.Membership{Id: uuid.New()}, nil)
+	// CreateScimUser conflicts before any membership reconciliation runs, so no
+	// role or membership expectations belong here.
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(model.NewErrConflict("scim user name already exists in org"))
 
@@ -382,6 +399,7 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 			assert.False(t, u.Active, "stored scim row must be inactive after deactivation")
 			return nil
 		})
+	deprovisioned := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	// GetUser for response rendering.
 	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
@@ -401,6 +419,7 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 	var res ScimUserResource
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 	assert.False(t, bool(*res.Active))
+	assert.Equal(t, genevents.Deactivated, deprovisioned.Data.Reason)
 }
 
 func TestScimPatchUser_ReactivateUser(t *testing.T) {
@@ -423,15 +442,9 @@ func TestScimPatchUser_ReactivateUser(t *testing.T) {
 
 	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).Return(existing, nil)
 
-	// reactivateUser path.
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&model.Membership{Id: uuid.New()}, nil)
+	// Reactivation reconciles roles from group mappings (none here → Viewer).
+	mockReconcileViewerFallback(t, db, globalUserId)
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
 			assert.True(t, u.Active, "stored scim row must be active after reactivation")
@@ -483,10 +496,12 @@ func TestScimDeleteUser_Success(t *testing.T) {
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), globalUserId).Return(int64(0), nil)
 	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
+	deprovisioned := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	c, rec := scimRequest(t, e, http.MethodDelete, "/", nil, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
 	require.NoError(t, s.handleScimDeleteUser(c))
 	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, genevents.Deleted, deprovisioned.Data.Reason)
 }
 
 func TestScimDeleteUser_NotFound(t *testing.T) {
@@ -536,6 +551,7 @@ func TestScimDeleteUser_KeepsSessionsIfOtherMemberships(t *testing.T) {
 		Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{OrgId: otherOrgId}}}, nil)
 	// DeleteSessionTokensByUserId should NOT be called.
 	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
+	expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	c, rec := scimRequest(t, e, http.MethodDelete, "/", nil, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
 	require.NoError(t, s.handleScimDeleteUser(c))
@@ -672,8 +688,8 @@ func TestScimServiceProviderConfig(t *testing.T) {
 	e, s, fin := MockServer(t)
 	defer fin()
 
+	// Discovery is unauthenticated: no auth mock, no permission check.
 	callerUserId := userid.NewServiceUserTokenId()
-	mockScimReadAuth(s, callerUserId, orgId)
 
 	c, rec := scimRequest(t, e, http.MethodGet, "/", nil, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimServiceProviderConfig(c))
@@ -743,6 +759,12 @@ func TestScimPatchGroup_BracketMemberRemove(t *testing.T) {
 			}
 			return nil
 		})
+	// Both affected members get their roles reconciled; returning inactive
+	// users short-circuits that, keeping this test on the removal semantics.
+	db.EXPECT().GetScimUser(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, id uuid.UUID) (*model.ScimUser, error) {
+			return &model.ScimUser{Id: id, OrgId: orgId, Active: false}, nil
+		}).Times(2)
 
 	// Entra bracket remove path.
 	patchBody := scimPatchRequest{
@@ -870,16 +892,9 @@ func TestScimCreateUser_ActiveDefaultsTrueWhenOmitted(t *testing.T) {
 	db.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&model.User{Id: globalUserId, DisplayName: "No Active", CreatedAt: now}, nil)
 
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{
-			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
-		}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&model.Membership{Id: uuid.New(), OrgId: orgId, UserId: globalUserId}, nil)
+	// An active user (via the omission default) must get the Viewer fallback.
+	mockReconcileViewerFallback(t, db, globalUserId)
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
 			assert.True(t, u.Active, "omitted active must default to true")
@@ -995,6 +1010,12 @@ func TestScimPatchGroup_RemoveAllMembers(t *testing.T) {
 			assert.Empty(t, g.MemberIds, "remove with no value must clear all members")
 			return nil
 		})
+	// The removed members get their roles reconciled; returning inactive users
+	// short-circuits that, keeping this test on the remove-all semantics.
+	db.EXPECT().GetScimUser(gomock.Any(), gomock.Any(), orgId, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, _ string, id uuid.UUID) (*model.ScimUser, error) {
+			return &model.ScimUser{Id: id, OrgId: orgId, Active: false}, nil
+		}).Times(2)
 
 	patchBody := scimPatchRequest{
 		Schemas:    []string{scimPatchOpSchema},
@@ -1345,19 +1366,10 @@ func TestScimCreateUser_SecondOrgMatchByEmailPersistsItsOwnIdentity(t *testing.T
 		AddUserIdentity(gomock.Any(), gomock.Any(), globalUserId, model.UserIdentityProviderScim, identityKey).
 		Return(nil)
 
-	subjectTypeRole := model.MembershipSubjectTypeRole
-	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
-		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
-	}).Return([]model.MembershipWithUserMetadata{}, nil)
-	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
-		Return([]model.Role{
-			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
-		}, nil)
-	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ model.Tx, m *model.Membership) (*model.Membership, error) {
-			assert.Equal(t, globalUserId, m.UserId, "must reuse the existing global user, not create a second one")
-			return m, nil
-		})
+	// The fallback helper asserts the membership is created for globalUserId,
+	// i.e. the existing global user is reused rather than a second one created.
+	mockReconcileViewerFallback(t, db, globalUserId)
+	expectScimUserEvent[genevents.ScimUserProvisionedData](t, db, genevents.IoPlatformOrchestratorScimUserProvisioned)
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
 			assert.Equal(t, globalUserId, u.UserId)
@@ -1376,4 +1388,101 @@ func TestScimCreateUser_SecondOrgMatchByEmailPersistsItsOwnIdentity(t *testing.T
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimCreateUser(c))
 	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+// ------------------------------------------------------------------ emails on PATCH (D18)
+
+// A PATCH targeting the emails attribute must reach the global user record,
+// exactly like a PUT would (D18: it used to be silently dropped).
+func TestScimPatchUser_EmailsArrayPropagates(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	globalUserId := userid.NewHumanUserId()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).
+		Return(&model.ScimUser{
+			Id: scimUserId, OrgId: orgId, UserId: globalUserId,
+			UserName: "grace@example.com", Active: true,
+			CreatedAt: now, UpdatedAt: now,
+		}, nil)
+
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	db.EXPECT().GetUser(gomock.Any(), gomock.Not(nil), globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "Grace", PrimaryEmailAddress: opt.Of("old@example.com")}, nil)
+	db.EXPECT().UpdateUser(gomock.Any(), gomock.Not(nil), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.TxWithCommit, u *model.User) (*model.User, error) {
+			assert.Equal(t, "new@example.com", *u.PrimaryEmailAddress.Ref())
+			return u, nil
+		})
+
+	// Resource rendering after the update.
+	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "Grace", PrimaryEmailAddress: opt.Of("new@example.com")}, nil)
+
+	body := map[string]interface{}{
+		"schemas": []string{scimPatchOpSchema},
+		"Operations": []map[string]interface{}{
+			{"op": "Replace", "path": "emails", "value": []map[string]interface{}{
+				{"value": "new@example.com", "type": "work", "primary": true},
+			}},
+		},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", body, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimPatchUser(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var res ScimUserResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	require.NotEmpty(t, res.Emails)
+	assert.Equal(t, "new@example.com", res.Emails[0].Value)
+}
+
+// The Entra/Okta bracket form (`emails[type eq "work"].value` with a plain
+// string) must land on the same email path.
+func TestScimPatchUser_EmailsBracketFormPropagates(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	globalUserId := userid.NewHumanUserId()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).
+		Return(&model.ScimUser{
+			Id: scimUserId, OrgId: orgId, UserId: globalUserId,
+			UserName: "heidi@example.com", Active: true,
+			CreatedAt: now, UpdatedAt: now,
+		}, nil)
+
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	db.EXPECT().GetUser(gomock.Any(), gomock.Not(nil), globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "Heidi", PrimaryEmailAddress: opt.Of("old@example.com")}, nil)
+	db.EXPECT().UpdateUser(gomock.Any(), gomock.Not(nil), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.TxWithCommit, u *model.User) (*model.User, error) {
+			assert.Equal(t, "bracket@example.com", *u.PrimaryEmailAddress.Ref())
+			return u, nil
+		})
+	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "Heidi", PrimaryEmailAddress: opt.Of("bracket@example.com")}, nil)
+
+	body := map[string]interface{}{
+		"schemas": []string{scimPatchOpSchema},
+		"Operations": []map[string]interface{}{
+			{"op": "Replace", "path": `emails[type eq "work"].value`, "value": "bracket@example.com"},
+		},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", body, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimPatchUser(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
 }

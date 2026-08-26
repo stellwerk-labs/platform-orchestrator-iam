@@ -159,6 +159,14 @@ type Databaser interface {
 	UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
 	DeleteScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 
+	UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) error
+	DeleteScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) error
+	ListScimGroupRoleMappings(ctx context.Context, optionalTx Tx, orgId string) ([]ScimGroupRoleMapping, error)
+	ListRoleIdsForScimUserGroups(ctx context.Context, optionalTx Tx, orgId string, scimUserId uuid.UUID) ([]uuid.UUID, error)
+	ListScimUserIdsInGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) ([]uuid.UUID, error)
+	CreateScimManagedMembership(ctx context.Context, optionalTx Tx, membershipId uuid.UUID, scimUserId uuid.UUID) error
+	ListScimManagedMembershipIds(ctx context.Context, optionalTx Tx, scimUserId uuid.UUID) ([]uuid.UUID, error)
+
 	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
 	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)

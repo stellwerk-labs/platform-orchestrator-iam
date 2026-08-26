@@ -36,6 +36,11 @@ func parseScimFilter(filter string) (*scimFilterResult, error) {
 // captures the scim user id so we can reduce it to a plain remove-by-id op.
 var bracketMemberRegexp = regexp.MustCompile(`(?i)^members\[value\s+eq\s+"([^"]*)"\]$`)
 
+// bracketEmailRegexp matches the Entra/Okta path form `emails[type eq "work"].value`.
+// We store a single primary email, so the type filter is accepted but not used
+// to discriminate — whatever value arrives becomes the primary email.
+var bracketEmailRegexp = regexp.MustCompile(`(?i)^emails\[type\s+eq\s+"[^"]*"\]\.value$`)
+
 // scimPatchError is a PATCH normalization failure that carries the RFC 7644
 // scimType it should surface as. Plain errors default to scimTypeInvalidSyntax.
 type scimPatchError struct {
@@ -133,6 +138,20 @@ func normalizePatchOps(req scimPatchRequest) ([]normalizedScimPatchOp, error) {
 			continue
 		}
 
+		// Bracket email form: `emails[type eq "work"].value` with a plain
+		// string value. Reduce it to an ordinary emails op.
+		if bracketEmailRegexp.MatchString(path) {
+			out = append(out, normalizedScimPatchOp{Op: op, Path: scimAttrEmails})
+			if len(raw.Value) > 0 {
+				var s string
+				if err := json.Unmarshal(raw.Value, &s); err != nil {
+					return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid string value for %s: %v", raw.Path, err)}
+				}
+				out[len(out)-1].StrValue = &s
+			}
+			continue
+		}
+
 		// Ordinary scalar path-based op.
 		if path != "" {
 			norm, err := buildScalarOp(op, path, raw.Value)
@@ -172,11 +191,38 @@ func buildScalarOp(op, attr string, rawVal json.RawMessage) (*normalizedScimPatc
 			return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid string value for %s: %v", attr, err)}
 		}
 		norm.StrValue = &s
+	case scimAttrEmails:
+		email, err := parseEmailsValue(rawVal)
+		if err != nil {
+			return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid value for emails: %v", err)}
+		}
+		if email != "" {
+			norm.StrValue = &email
+		}
 	default:
 		// Unknown attribute — ignore silently (Entra sends many we don't store).
 		return nil, nil
 	}
 	return &norm, nil
+}
+
+// parseEmailsValue decodes the value of an emails-targeted PATCH op. IDPs send
+// three shapes: an array of email objects, a single email object, or (for the
+// bracket path) a plain string. Returns the primary (or first) email value.
+func parseEmailsValue(raw json.RawMessage) (string, error) {
+	var list []scimEmail
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return scimPrimaryEmail(list), nil
+	}
+	var single scimEmail
+	if err := json.Unmarshal(raw, &single); err == nil && single.Value != "" {
+		return single.Value, nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", fmt.Errorf("expected an email object, array, or string: %w", err)
+	}
+	return s, nil
 }
 
 // parseMemberValueList decodes `[{"value":"<id>"},...]`. Legacy Entra builds
