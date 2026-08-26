@@ -21,6 +21,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -138,7 +139,7 @@ func TestScimGetUser_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 	assert.Equal(t, scimUserId, res.Id)
 	assert.Equal(t, "alice@example.com", res.UserName)
-	assert.True(t, bool(res.Active))
+	assert.True(t, bool(*res.Active))
 }
 
 // ------------------------------------------------------------------ POST /Users (provision)
@@ -187,7 +188,7 @@ func TestScimCreateUser_ProvisionNew(t *testing.T) {
 		Schemas:    []string{scimSchemaUser},
 		UserName:   "alice@example.com",
 		ExternalId: "ext-001",
-		Active:     true,
+		Active:     ref.Ref(boolOrString(true)),
 		Emails:     []scimEmail{{Value: "alice@example.com", Primary: true, Type: "work"}},
 	}
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
@@ -232,7 +233,7 @@ func TestScimCreateUser_MatchByExternalId(t *testing.T) {
 		Schemas:    []string{scimSchemaUser},
 		UserName:   "bob@example.com",
 		ExternalId: "ext-999",
-		Active:     true,
+		Active:     ref.Ref(boolOrString(true)),
 	}
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimCreateUser(c))
@@ -272,7 +273,7 @@ func TestScimCreateUser_MatchByEmail(t *testing.T) {
 	body := ScimUserResource{
 		Schemas:  []string{scimSchemaUser},
 		UserName: "carol@example.com",
-		Active:   true,
+		Active:   ref.Ref(boolOrString(true)),
 		Emails:   []scimEmail{{Value: "carol@example.com", Primary: true}},
 	}
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
@@ -306,7 +307,7 @@ func TestScimCreateUser_ConflictUserName(t *testing.T) {
 	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(model.NewErrConflict("scim user name already exists in org"))
 
-	body := ScimUserResource{Schemas: []string{scimSchemaUser}, UserName: "dup@example.com", Active: true,
+	body := ScimUserResource{Schemas: []string{scimSchemaUser}, UserName: "dup@example.com", Active: ref.Ref(boolOrString(true)),
 		Emails: []scimEmail{{Value: "dup@example.com", Primary: true}}}
 	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
 	require.NoError(t, s.handleScimCreateUser(c))
@@ -370,7 +371,7 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 
 	var res ScimUserResource
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
-	assert.False(t, bool(res.Active))
+	assert.False(t, bool(*res.Active))
 }
 
 func TestScimPatchUser_ReactivateUser(t *testing.T) {
@@ -420,7 +421,7 @@ func TestScimPatchUser_ReactivateUser(t *testing.T) {
 
 	var res ScimUserResource
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
-	assert.True(t, bool(res.Active))
+	assert.True(t, bool(*res.Active))
 }
 
 // ------------------------------------------------------------------ DELETE /Users
@@ -739,7 +740,7 @@ func TestScimCreateUser_StagedInactive(t *testing.T) {
 
 	var res ScimUserResource
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
-	assert.False(t, bool(res.Active))
+	assert.False(t, bool(*res.Active))
 }
 
 // The IDP is authoritative for names of provisioned users: a displayName PATCH
@@ -789,4 +790,54 @@ func TestScimPatchUser_DisplayNamePropagates(t *testing.T) {
 	var res ScimUserResource
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 	assert.Equal(t, "New Name", res.DisplayName)
+}
+
+// An IDP that omits `active` on create must still get a usable (active) user;
+// the zero value of a plain bool would silently provision a membershipless husk.
+func TestScimCreateUser_ActiveDefaultsTrueWhenOmitted(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	globalUserId := userid.NewHumanUserId()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "noactive@example.com").
+		Return(nil, model.NewErrNotFound("not found"))
+	db.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&model.User{Id: globalUserId, DisplayName: "No Active", CreatedAt: now}, nil)
+
+	subjectTypeRole := model.MembershipSubjectTypeRole
+	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
+		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
+	}).Return([]model.MembershipWithUserMetadata{}, nil)
+	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
+		Return([]model.Role{
+			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
+		}, nil)
+	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&model.Membership{Id: uuid.New(), OrgId: orgId, UserId: globalUserId}, nil)
+	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.True(t, u.Active, "omitted active must default to true")
+			return nil
+		})
+	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "No Active"}, nil)
+
+	body := map[string]interface{}{
+		"schemas":  []string{scimSchemaUser},
+		"userName": "noactive@example.com",
+	}
+	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
+	require.NoError(t, s.handleScimCreateUser(c))
+	assert.Equal(t, http.StatusCreated, rec.Code)
+
+	var res ScimUserResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	require.NotNil(t, res.Active)
+	assert.True(t, bool(*res.Active))
 }

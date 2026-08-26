@@ -97,14 +97,17 @@ type scimMeta struct {
 
 // ScimUserResource is the full SCIM User wire representation.
 type ScimUserResource struct {
-	Schemas     []string     `json:"schemas"`
-	Id          uuid.UUID    `json:"id"`
-	ExternalId  string       `json:"externalId,omitempty"`
-	UserName    string       `json:"userName"`
-	DisplayName string       `json:"displayName,omitempty"`
-	Active      boolOrString `json:"active"`
-	Emails      []scimEmail  `json:"emails,omitempty"`
-	Meta        scimMeta     `json:"meta,omitempty"`
+	Schemas     []string  `json:"schemas"`
+	Id          uuid.UUID `json:"id"`
+	ExternalId  string    `json:"externalId,omitempty"`
+	UserName    string    `json:"userName"`
+	DisplayName string    `json:"displayName,omitempty"`
+	// Pointer so an omitted active can be told apart from an explicit false:
+	// omission defaults to active (RFC 7643 lists active as optional; an IDP
+	// that skips it still expects a usable user). Responses always set it.
+	Active *boolOrString `json:"active"`
+	Emails []scimEmail   `json:"emails,omitempty"`
+	Meta   scimMeta      `json:"meta,omitempty"`
 }
 
 // scimGroupMember is one entry in a Group's members array.

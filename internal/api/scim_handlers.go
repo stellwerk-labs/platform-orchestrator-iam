@@ -14,6 +14,7 @@ import (
 	"github.com/stellwerk-labs/golib/hecho"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
@@ -258,12 +259,16 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", "userName is required")
 	}
 
+	active := true
+	if body.Active != nil {
+		active = bool(*body.Active)
+	}
 	input := scimProvisionUserInput{
 		OrgId:       orgId,
 		UserName:    body.UserName,
 		DisplayName: body.DisplayName,
 		ExternalId:  body.ExternalId,
-		Active:      bool(body.Active),
+		Active:      active,
 		Email:       scimPrimaryEmail(body.Emails),
 	}
 
@@ -325,7 +330,10 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 
 	updated := *existing
 	updated.UserName = body.UserName
-	updated.Active = bool(body.Active)
+	updated.Active = true
+	if body.Active != nil {
+		updated.Active = bool(*body.Active)
+	}
 	if body.ExternalId != "" {
 		updated.ExternalId = opt.Of(body.ExternalId)
 	}
@@ -708,7 +716,7 @@ func (s *Server) scimUserToResource(c echo.Context, orgId string, u model.ScimUs
 		Schemas:  []string{scimSchemaUser},
 		Id:       u.Id,
 		UserName: u.UserName,
-		Active:   boolOrString(u.Active),
+		Active:   ref.Ref(boolOrString(u.Active)),
 		Meta: scimMeta{
 			ResourceType: "User",
 			Created:      u.CreatedAt,
