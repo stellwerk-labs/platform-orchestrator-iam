@@ -647,7 +647,7 @@ func TestScimCreateGroup_Success(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().CreateScimGroup(gomock.Any(), nil, gomock.Any()).Return(nil)
+	db.EXPECT().CreateScimGroup(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
 
 	body := ScimGroupResource{
 		Schemas:     []string{scimSchemaGroup},

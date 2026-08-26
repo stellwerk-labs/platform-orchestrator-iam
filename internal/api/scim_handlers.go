@@ -533,10 +533,24 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.Database.CreateScimGroup(c.Request().Context(), nil, group); err != nil {
+	// One transaction: the group row and its member rows must land together,
+	// otherwise a failed member insert leaves a memberless group behind and the
+	// IDP's retry hits a uniqueness conflict.
+	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.Database.CreateScimGroup(c.Request().Context(), tx, group); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
 		}
+		if _, ok := model.IsErrBadRequest(err); ok {
+			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+		}
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return scimJSON(c, http.StatusCreated, scimGroupToResource(c, orgId, group))
@@ -607,6 +621,9 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
+		}
+		if _, ok := model.IsErrBadRequest(err); ok {
+			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
 		}
 		return err
 	}
@@ -679,6 +696,9 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
+		}
+		if _, ok := model.IsErrBadRequest(err); ok {
+			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
 		}
 		return err
 	}

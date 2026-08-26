@@ -445,6 +445,27 @@ func TestScimProvisioning(t *testing.T) {
 		}
 	})
 
+	// Tenant isolation: membership is pinned to one org by composite foreign
+	// keys, so a member id that is not a SCIM user of this org must be refused
+	// rather than stored. A stale id from the IDP takes the same path.
+	t.Run("PATCH /Groups rejects a member that is not a SCIM user of this org", func(t *testing.T) {
+		require.NotEmpty(t, scimGroupId)
+		foreignMemberId := uuid.New()
+		status, body := scimDo(t, http.MethodPatch, fmt.Sprintf("%s/Groups/%s", baseURL, scimGroupId), &callerID, testScimPatch{
+			Schemas: []string{testScimPatchSchema},
+			Operations: []testScimPatchOp{
+				{Op: "add", Path: "members", Value: []map[string]string{{"value": foreignMemberId.String()}}},
+			},
+		})
+		assert.Equal(t, http.StatusBadRequest, status, "body: %s", string(body))
+
+		status, body = scimDo(t, http.MethodGet, fmt.Sprintf("%s/Groups/%s", baseURL, scimGroupId), &callerID, nil)
+		if assert.Equal(t, http.StatusOK, status, "body: %s", string(body)) {
+			g := mustDecodeScimGroup(t, body)
+			assert.Empty(t, g.Members, "foreign member must not have been stored")
+		}
+	})
+
 	t.Run("DELETE /Groups returns 204", func(t *testing.T) {
 		require.NotEmpty(t, scimGroupId)
 		status, body := scimDo(t, http.MethodDelete, fmt.Sprintf("%s/Groups/%s", baseURL, scimGroupId), &callerID, nil)

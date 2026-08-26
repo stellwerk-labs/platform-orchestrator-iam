@@ -38,7 +38,7 @@ func (d *databaser) CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGr
 		return errors.Wrap(err, "failed to insert scim group")
 	}
 	if len(g.MemberIds) > 0 {
-		if err := insertScimGroupMembers(ctx, optionalTx, g.Id, g.MemberIds); err != nil {
+		if err := insertScimGroupMembers(ctx, optionalTx, g.OrgId, g.Id, g.MemberIds); err != nil {
 			return err
 		}
 	}
@@ -167,7 +167,7 @@ func (d *databaser) UpdateScimGroup(ctx context.Context, optionalTx Tx, g ScimGr
 		return errors.Wrap(err, "failed to clear scim group members")
 	}
 	if len(g.MemberIds) > 0 {
-		if err := insertScimGroupMembers(ctx, optionalTx, g.Id, g.MemberIds); err != nil {
+		if err := insertScimGroupMembers(ctx, optionalTx, g.OrgId, g.Id, g.MemberIds); err != nil {
 			return err
 		}
 	}
@@ -184,17 +184,34 @@ func (d *databaser) DeleteScimGroup(ctx context.Context, optionalTx Tx, orgId st
 	return nil
 }
 
-func insertScimGroupMembers(ctx context.Context, tx Tx, groupId uuid.UUID, memberIds []uuid.UUID) error {
-	memberStrings := make([]string, len(memberIds))
-	for i, id := range memberIds {
-		memberStrings[i] = id.String()
+// insertScimGroupMembers adds members to a group, accepting only SCIM users of
+// the same organization. Selecting the members through scim_users means a
+// foreign or stale id is reported as a bad request instead of surfacing as a
+// constraint violation. Duplicate ids in the input are collapsed.
+func insertScimGroupMembers(ctx context.Context, tx Tx, orgId string, groupId uuid.UUID, memberIds []uuid.UUID) error {
+	seen := make(map[uuid.UUID]struct{}, len(memberIds))
+	memberStrings := make([]string, 0, len(memberIds))
+	for _, id := range memberIds {
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		memberStrings = append(memberStrings, id.String())
 	}
-	if _, err := tx.ExecContext(
+	if len(memberStrings) == 0 {
+		return nil
+	}
+	rs, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO scim_group_members (group_id, scim_user_id) SELECT $1, unnest($2::uuid[])`,
-		groupId, pq.Array(memberStrings),
-	); err != nil {
+		`INSERT INTO scim_group_members (group_id, org_id, scim_user_id)
+		SELECT $1, $2, u.id FROM scim_users u WHERE u.org_id = $2 AND u.id = ANY($3::uuid[])`,
+		groupId, orgId, pq.Array(memberStrings),
+	)
+	if err != nil {
 		return errors.Wrap(err, "failed to insert scim group members")
+	}
+	if rc, _ := rs.RowsAffected(); rc != int64(len(memberStrings)) {
+		return NewErrBadRequest("one or more group members do not exist in this organization")
 	}
 	return nil
 }

@@ -8,9 +8,9 @@ import (
 	"net/http"
 
 	"github.com/pkg/errors"
-	"github.com/stellwerk-labs/golib/hlogger"
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
+	"github.com/stellwerk-labs/golib/hlogger"
 	"go.uber.org/zap"
 )
 
