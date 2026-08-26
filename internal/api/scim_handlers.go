@@ -21,7 +21,7 @@ import (
 // registerScimRoutes attaches SCIM routes to the given Echo group.
 // It is called from MapRoutes after RegisterHandlers.
 func (s *Server) registerScimRoutes(e *echo.Echo) {
-	g := e.Group("/scim/v2/orgs/:orgId", s.scimAuthMiddleware)
+	g := e.Group("/scim/v2/orgs/:orgId", scimErrorEnvelopeMiddleware, s.scimAuthMiddleware)
 
 	g.GET("/ServiceProviderConfig", s.handleScimServiceProviderConfig)
 	g.GET("/Schemas", s.handleScimSchemas)
@@ -87,6 +87,20 @@ func (s *Server) scimCheckAuth(c echo.Context, permission string) (uuid.UUID, bo
 	return uid, true
 }
 
+// scimErrorEnvelopeMiddleware converts errors bubbling out of SCIM handlers into
+// a SCIM Error envelope (RFC 7644 §3.12) instead of echo's default {"message":...}
+// body. The error is still returned so the server's error handler logs it as
+// usual (it skips writing once the response is committed).
+func scimErrorEnvelopeMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		err := next(c)
+		if err != nil && !c.Response().Committed {
+			_ = scimErrorResp(c, http.StatusInternalServerError, "", "internal server error")
+		}
+		return err
+	}
+}
+
 // scimErrorResp writes a SCIM-compliant error body and returns the error so callers
 // can `return scimErrorResp(...)` in one line.
 func scimErrorResp(c echo.Context, status int, scimType, detail string) error {
@@ -104,6 +118,16 @@ func scimErrorResp(c echo.Context, status int, scimType, detail string) error {
 func scimJSON(c echo.Context, status int, body interface{}) error {
 	c.Response().Header().Set(echo.HeaderContentType, scimContentType)
 	return c.JSON(status, body)
+}
+
+// scimPatchErrorResp maps a normalizePatchOps failure onto the scimType it
+// carries; plain errors are malformed request structure → invalidSyntax.
+func scimPatchErrorResp(c echo.Context, err error) error {
+	var pe *scimPatchError
+	if errors.As(err, &pe) {
+		return scimErrorResp(c, http.StatusBadRequest, pe.ScimType, pe.Detail)
+	}
+	return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, err.Error())
 }
 
 // ------------------------------------------------------------------ static
@@ -181,13 +205,15 @@ func (s *Server) handleScimListUsers(c echo.Context) error {
 	orgId := c.Param("orgId")
 	startIndex, count := scimPageParams(c)
 
-	filterStr := c.QueryParam("filter")
-	if filterStr != "" {
+	if filterStr := c.QueryParam("filter"); filterStr != "" {
 		f, err := parseScimFilter(filterStr)
 		if err != nil {
-			return scimErrorResp(c, http.StatusBadRequest, "invalidFilter", err.Error())
+			return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidFilter, err.Error())
 		}
-		return s.handleScimListUsersFiltered(c, orgId, f)
+		// A whitespace-only filter parses to nil; treat it as no filter.
+		if f != nil {
+			return s.handleScimListUsersFiltered(c, orgId, f)
+		}
 	}
 
 	total, err := s.Database.CountScimUsers(c.Request().Context(), nil, orgId)
@@ -221,7 +247,7 @@ func (s *Server) handleScimListUsersFiltered(c echo.Context, orgId string, f *sc
 	case scimAttrExternalId:
 		user, err = s.Database.FindScimUserByExternalId(ctx, nil, orgId, f.Value)
 	default:
-		return scimErrorResp(c, http.StatusBadRequest, "invalidFilter", fmt.Sprintf("unsupported filter attribute %q", f.Attr))
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidFilter, fmt.Sprintf("unsupported filter attribute %q", f.Attr))
 	}
 	if err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
@@ -253,10 +279,10 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 
 	var body ScimUserResource
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 	if body.UserName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", "userName is required")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required")
 	}
 
 	active := true
@@ -275,7 +301,7 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 	scimUser, err := s.scimProvisionUser(c.Request().Context(), logger, input)
 	if err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", err.Error())
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
 		}
 		return err
 	}
@@ -322,10 +348,10 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 
 	var body ScimUserResource
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 	if body.UserName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", "userName is required")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required")
 	}
 
 	updated := *existing
@@ -337,15 +363,19 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 	if body.ExternalId != "" {
 		updated.ExternalId = opt.Of(body.ExternalId)
 	}
-	var newDisplayName *string
+	global := scimGlobalUserFields{}
 	if body.DisplayName != "" {
-		newDisplayName = &body.DisplayName
+		global.DisplayName = &body.DisplayName
+	}
+	// PUT is a full replace, so an email the IDP sends is authoritative.
+	if email := scimPrimaryEmail(body.Emails); email != "" {
+		global.Email = &email
 	}
 
-	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, newDisplayName)
+	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, global)
 	if err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", err.Error())
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
 		}
 		return err
 	}
@@ -373,12 +403,12 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 
 	var req scimPatchRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 
 	ops, err := normalizePatchOps(req)
 	if err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", err.Error())
+		return scimPatchErrorResp(c, err)
 	}
 
 	updated := *existing
@@ -391,10 +421,16 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 			}
 		case scimAttrUserName:
 			if op.StrValue != nil {
+				if *op.StrValue == "" {
+					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName must not be empty")
+				}
 				updated.UserName = *op.StrValue
 			}
 		case scimAttrExternalId:
-			if op.StrValue != nil {
+			// A remove (or an explicit empty string) clears the stored externalId.
+			if op.Op == scimOpRemove || (op.StrValue != nil && *op.StrValue == "") {
+				updated.ExternalId = opt.Empty[string]()
+			} else if op.StrValue != nil {
 				updated.ExternalId = opt.Of(*op.StrValue)
 			}
 		case scimAttrDisplayName:
@@ -404,10 +440,10 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 		}
 	}
 
-	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, newDisplayName)
+	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, scimGlobalUserFields{DisplayName: newDisplayName})
 	if err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", err.Error())
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
 		}
 		return err
 	}
@@ -448,35 +484,15 @@ func (s *Server) handleScimListGroups(c echo.Context) error {
 	orgId := c.Param("orgId")
 	startIndex, count := scimPageParams(c)
 
-	filterStr := c.QueryParam("filter")
-	if filterStr != "" {
+	if filterStr := c.QueryParam("filter"); filterStr != "" {
 		f, err := parseScimFilter(filterStr)
 		if err != nil {
-			return scimErrorResp(c, http.StatusBadRequest, "invalidFilter", err.Error())
+			return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidFilter, err.Error())
 		}
-		if f != nil && f.Attr == scimAttrDisplayName {
-			group, err := s.Database.FindScimGroupByDisplayName(c.Request().Context(), nil, orgId, f.Value)
-			if err != nil {
-				if _, ok := model.IsErrNotFound(err); ok {
-					return scimJSON(c, http.StatusOK, scimListResponse{
-						Schemas:      []string{scimListResponseSchema},
-						TotalResults: 0,
-						StartIndex:   1,
-						ItemsPerPage: 0,
-						Resources:    []ScimGroupResource{},
-					})
-				}
-				return err
-			}
-			return scimJSON(c, http.StatusOK, scimListResponse{
-				Schemas:      []string{scimListResponseSchema},
-				TotalResults: 1,
-				StartIndex:   1,
-				ItemsPerPage: 1,
-				Resources:    []ScimGroupResource{scimGroupToResource(c, orgId, *group)},
-			})
+		// A whitespace-only filter parses to nil; treat it as no filter.
+		if f != nil {
+			return s.handleScimListGroupsFiltered(c, orgId, f)
 		}
-		return scimErrorResp(c, http.StatusBadRequest, "invalidFilter", "unsupported filter attribute")
 	}
 
 	total, err := s.Database.CountScimGroups(c.Request().Context(), nil, orgId)
@@ -500,6 +516,41 @@ func (s *Server) handleScimListGroups(c echo.Context) error {
 	})
 }
 
+func (s *Server) handleScimListGroupsFiltered(c echo.Context, orgId string, f *scimFilterResult) error {
+	ctx := c.Request().Context()
+	var group *model.ScimGroup
+	var err error
+	switch f.Attr {
+	case scimAttrDisplayName:
+		group, err = s.Database.FindScimGroupByDisplayName(ctx, nil, orgId, f.Value)
+	case scimAttrExternalId:
+		// Entra probes this when its group matching attribute is externalId;
+		// a 400 here quarantines the whole provisioning job.
+		group, err = s.Database.FindScimGroupByExternalId(ctx, nil, orgId, f.Value)
+	default:
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidFilter, fmt.Sprintf("unsupported filter attribute %q", f.Attr))
+	}
+	if err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimJSON(c, http.StatusOK, scimListResponse{
+				Schemas:      []string{scimListResponseSchema},
+				TotalResults: 0,
+				StartIndex:   1,
+				ItemsPerPage: 0,
+				Resources:    []ScimGroupResource{},
+			})
+		}
+		return err
+	}
+	return scimJSON(c, http.StatusOK, scimListResponse{
+		Schemas:      []string{scimListResponseSchema},
+		TotalResults: 1,
+		StartIndex:   1,
+		ItemsPerPage: 1,
+		Resources:    []ScimGroupResource{scimGroupToResource(c, orgId, *group)},
+	})
+}
+
 func (s *Server) handleScimCreateGroup(c echo.Context) error {
 	if _, ok := s.scimCheckAuth(c, sharedauthz.PermissionProvisioningWrite); !ok {
 		return nil
@@ -508,15 +559,15 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 
 	var body ScimGroupResource
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 	if body.DisplayName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", "displayName is required")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required")
 	}
 
 	memberIds, err := parseMemberResourceIds(body.Members)
 	if err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 	}
 
 	now := time.Now().UTC()
@@ -543,10 +594,10 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.CreateScimGroup(c.Request().Context(), tx, group); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, "group displayName already exists in org")
 		}
 		if _, ok := model.IsErrBadRequest(err); ok {
-			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+			return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 		}
 		return err
 	}
@@ -594,15 +645,15 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 
 	var body ScimGroupResource
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 	if body.DisplayName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", "displayName is required")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required")
 	}
 
 	memberIds, err := parseMemberResourceIds(body.Members)
 	if err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 	}
 
 	updated := *existing
@@ -620,10 +671,10 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, "group displayName already exists in org")
 		}
 		if _, ok := model.IsErrBadRequest(err); ok {
-			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+			return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 		}
 		return err
 	}
@@ -652,12 +703,12 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 
 	var req scimPatchRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", "invalid JSON body")
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
 
 	ops, err := normalizePatchOps(req)
 	if err != nil {
-		return scimErrorResp(c, http.StatusBadRequest, "invalidSyntax", err.Error())
+		return scimPatchErrorResp(c, err)
 	}
 
 	updated := *existing
@@ -667,7 +718,17 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 		switch op.Path {
 		case scimAttrDisplayName:
 			if op.StrValue != nil {
+				if *op.StrValue == "" {
+					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName must not be empty")
+				}
 				updated.DisplayName = *op.StrValue
+			}
+		case scimAttrExternalId:
+			// Entra sets externalId via PATCH right after group create.
+			if op.Op == scimOpRemove || (op.StrValue != nil && *op.StrValue == "") {
+				updated.ExternalId = opt.Empty[string]()
+			} else if op.StrValue != nil {
+				updated.ExternalId = opt.Of(*op.StrValue)
 			}
 		case scimAttrMembers:
 			switch op.Op {
@@ -676,6 +737,9 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 					memberSet[id] = struct{}{}
 				}
 			case scimOpRemove:
+				if op.RemoveAll {
+					memberSet = map[uuid.UUID]struct{}{}
+				}
 				for _, id := range op.MemberIds {
 					delete(memberSet, id)
 				}
@@ -695,10 +759,10 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, "uniqueness", "group displayName already exists in org")
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, "group displayName already exists in org")
 		}
 		if _, ok := model.IsErrBadRequest(err); ok {
-			return scimErrorResp(c, http.StatusBadRequest, "invalidValue", err.Error())
+			return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 		}
 		return err
 	}
@@ -785,12 +849,10 @@ func scimGroupToResource(c echo.Context, orgId string, g model.ScimGroup) ScimGr
 }
 
 // scimResourceLocation builds the absolute URL for a SCIM resource.
+// c.Scheme() honors X-Forwarded-Proto, so TLS termination at Envoy still
+// yields https:// locations.
 func scimResourceLocation(c echo.Context, path string) string {
-	scheme := "https"
-	if c.Request().TLS == nil {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://%s%s", scheme, c.Request().Host, path)
+	return fmt.Sprintf("%s://%s%s", c.Scheme(), c.Request().Host, path)
 }
 
 // scimPrimaryEmail extracts the primary (or first) email from a SCIM emails array.
@@ -806,8 +868,14 @@ func scimPrimaryEmail(emails []scimEmail) string {
 	return ""
 }
 
+// scimMaxPageSize caps `count` at the filter.maxResults=200 that
+// ServiceProviderConfig advertises.
+const scimMaxPageSize = 200
+
 // scimPageParams reads SCIM pagination query params.
-// startIndex is 1-based (default 1); count defaults to 100.
+// startIndex is 1-based (default 1); count defaults to 100. Per RFC 7644
+// §3.4.2.4 a count of 0 returns no resources (with an honest totalResults)
+// and a negative count is treated as 0.
 func scimPageParams(c echo.Context) (startIndex, count int) {
 	startIndex = 1
 	count = 100
@@ -817,8 +885,15 @@ func scimPageParams(c echo.Context) (startIndex, count int) {
 		}
 	}
 	if v := c.QueryParam("count"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			count = n
+		if n, err := strconv.Atoi(v); err == nil {
+			switch {
+			case n < 0:
+				count = 0
+			case n > scimMaxPageSize:
+				count = scimMaxPageSize
+			default:
+				count = n
+			}
 		}
 	}
 	return

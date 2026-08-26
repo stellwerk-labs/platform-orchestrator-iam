@@ -121,8 +121,8 @@ func (s *Server) resolveOrCreateGlobalUser(ctx context.Context, logger *zap.Logg
 		} else if user != nil {
 			// Attach the SCIM identity to this existing user if externalId is present.
 			if input.ExternalId != "" {
-				if err := s.attachScimIdentity(ctx, tx, user.Id, identityKey); err != nil {
-					return nil, err
+				if err := s.Database.AddUserIdentity(ctx, tx, user.Id, model.UserIdentityProviderScim, identityKey); err != nil {
+					return nil, errors.Wrap(err, "failed to attach scim identity to existing user")
 				}
 			}
 			return user, nil
@@ -159,23 +159,6 @@ func (s *Server) resolveOrCreateGlobalUser(ctx context.Context, logger *zap.Logg
 	}
 	logger.Info("created new global user via scim provisioning", zap.String("user_id", user.Id.String()))
 	return user, nil
-}
-
-// attachScimIdentity writes the (scim, orgId:externalId) row into user_identities.
-// It is a no-op if the identity already exists (idempotent).
-func (s *Server) attachScimIdentity(ctx context.Context, tx model.TxWithCommit, userId uuid.UUID, identityKey string) error {
-	user, err := s.Database.GetUser(ctx, tx, userId)
-	if err != nil {
-		return errors.Wrap(err, "failed to get user to attach scim identity")
-	}
-	if _, exists := user.UserIdentities[model.UserIdentityProviderScim]; exists {
-		return nil // already has a scim identity
-	}
-	user.UserIdentities[model.UserIdentityProviderScim] = identityKey
-	if _, err := s.Database.UpdateUser(ctx, tx, user); err != nil {
-		return errors.Wrap(err, "failed to attach scim identity to user")
-	}
-	return nil
 }
 
 // ensureOrgMembership adds a Viewer role membership for the user in the org if one
@@ -220,36 +203,6 @@ func (s *Server) ensureOrgMembership(ctx context.Context, logger *zap.Logger, tx
 		return errors.Wrap(err, "failed to create membership for scim-provisioned user")
 	}
 	return nil
-}
-
-// scimDeactivateUser removes all org memberships for the user and, if the user has
-// no memberships anywhere, revokes their session tokens. The scim_users row is kept
-// with active=false. Reactivation is handled separately.
-func (s *Server) scimDeactivateUser(ctx context.Context, logger *zap.Logger, scimUser *model.ScimUser) error {
-	tx, err := s.Database.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "failed to begin deactivation transaction")
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			logger.Error("failed to rollback deactivation transaction", zap.Error(err))
-		}
-	}()
-
-	if err := s.removeOrgMembershipsAndMaybeSessions(ctx, tx, scimUser.OrgId, scimUser.UserId); err != nil {
-		return err
-	}
-
-	scimUser.Active = false
-	scimUser.UpdatedAt = time.Now().UTC()
-	if err := s.Database.UpdateScimUser(ctx, tx, *scimUser); err != nil {
-		return errors.Wrap(err, "failed to mark scim user inactive")
-	}
-
-	if err := tx.Commit(); err != nil {
-		return errors.Wrap(err, "failed to commit deactivation transaction")
-	}
-	return s.reloadAuthorizationPolicy()
 }
 
 // scimDeleteUser removes all org memberships and the scim_users row entirely.
@@ -302,91 +255,6 @@ func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, tx mo
 	return nil
 }
 
-// scimReactivateUser re-creates the Viewer membership and sets active=true on the
-// scim_users row.
-func (s *Server) scimReactivateUser(ctx context.Context, logger *zap.Logger, scimUser *model.ScimUser) error {
-	tx, err := s.Database.BeginTx(ctx, nil)
-	if err != nil {
-		return errors.Wrap(err, "failed to begin reactivation transaction")
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			logger.Error("failed to rollback reactivation transaction", zap.Error(err))
-		}
-	}()
-
-	now := time.Now().UTC()
-	if err := s.ensureOrgMembership(ctx, logger, tx, now, scimUser.OrgId, scimUser.UserId); err != nil {
-		return err
-	}
-
-	scimUser.Active = true
-	scimUser.UpdatedAt = now
-	if err := s.Database.UpdateScimUser(ctx, tx, *scimUser); err != nil {
-		return errors.Wrap(err, "failed to mark scim user active")
-	}
-
-	if err := tx.Commit(); err != nil {
-		return errors.Wrap(err, "failed to commit reactivation transaction")
-	}
-	return s.reloadAuthorizationPolicy()
-}
-
-// scimUpdateUser performs a full-replace update on a SCIM user (PUT semantics).
-// If active changes from true→false or vice versa, the appropriate membership/session
-// side-effects are applied. A non-nil displayName is propagated to the global user
-// record — the IDP is authoritative for names of provisioned users.
-func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existing *model.ScimUser, updated model.ScimUser, displayName *string) (*model.ScimUser, error) {
-	activating := !existing.Active && updated.Active
-	deactivating := existing.Active && !updated.Active
-
-	if deactivating {
-		if err := s.scimDeactivateUser(ctx, logger, existing); err != nil {
-			return nil, err
-		}
-		updated.Active = false
-	} else if activating {
-		if err := s.scimReactivateUser(ctx, logger, existing); err != nil {
-			return nil, err
-		}
-		updated.Active = true
-	}
-
-	// Apply field updates outside the membership side-effect transactions.
-	tx, err := s.Database.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to begin update transaction")
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			logger.Error("failed to rollback update transaction", zap.Error(err))
-		}
-	}()
-
-	updated.UpdatedAt = time.Now().UTC()
-	if err := s.Database.UpdateScimUser(ctx, tx, updated); err != nil {
-		return nil, errors.Wrap(err, "failed to update scim user")
-	}
-
-	if displayName != nil && *displayName != "" {
-		globalUser, err := s.Database.GetUser(ctx, tx, updated.UserId)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get global user for display name update")
-		}
-		if globalUser.DisplayName != *displayName {
-			globalUser.DisplayName = *displayName
-			if _, err := s.Database.UpdateUser(ctx, tx, globalUser); err != nil {
-				return nil, errors.Wrap(err, "failed to update global user display name")
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, errors.Wrap(err, "failed to commit update transaction")
-	}
-	return &updated, nil
-}
-
 // findScimUserForOrg returns the org's SCIM row for the user, or nil if the
 // user was not SCIM-provisioned in that org.
 func (s *Server) findScimUserForOrg(ctx context.Context, tx model.TxWithCommit, orgId string, userId uuid.UUID) (*model.ScimUser, error) {
@@ -398,6 +266,92 @@ func (s *Server) findScimUserForOrg(ctx context.Context, tx model.TxWithCommit, 
 		return nil, errors.Wrap(err, "failed to look up scim user")
 	}
 	return scimUser, nil
+}
+
+// scimGlobalUserFields carries the parts of a SCIM payload that live on the
+// global user record rather than the org-scoped SCIM row. A nil field means the
+// IDP did not send it, so leave it alone; for anything it does send the IDP is
+// authoritative, because it owns the lifecycle of provisioned users.
+type scimGlobalUserFields struct {
+	DisplayName *string
+	Email       *string
+}
+
+// scimUpdateUser applies a SCIM user update. Membership side effects, the SCIM
+// row, and the global user record all move in ONE transaction: a PATCH that
+// both deactivates a user and renames them must not be able to strip
+// memberships and then fail, leaving active=true with no access.
+func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existing *model.ScimUser, updated model.ScimUser, global scimGlobalUserFields) (*model.ScimUser, error) {
+	tx, err := s.Database.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to begin scim update transaction")
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			logger.Error("failed to rollback scim update transaction", zap.Error(err))
+		}
+	}()
+
+	now := time.Now().UTC()
+	switch {
+	case existing.Active && !updated.Active:
+		if err := s.removeOrgMembershipsAndMaybeSessions(ctx, tx, existing.OrgId, existing.UserId); err != nil {
+			return nil, err
+		}
+	case !existing.Active && updated.Active:
+		if err := s.ensureOrgMembership(ctx, logger, tx, now, existing.OrgId, existing.UserId); err != nil {
+			return nil, err
+		}
+	}
+
+	updated.UpdatedAt = now
+	if err := s.Database.UpdateScimUser(ctx, tx, updated); err != nil {
+		return nil, errors.Wrap(err, "failed to update scim user")
+	}
+
+	if err := s.applyGlobalUserFields(ctx, tx, updated.UserId, global); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "failed to commit scim update transaction")
+	}
+	return &updated, s.reloadAuthorizationPolicy()
+}
+
+// applyGlobalUserFields writes IDP-supplied display name and email onto the
+// global user record, so a rename in the IDP does not leave the orchestrator
+// showing a stale name or address forever.
+func (s *Server) applyGlobalUserFields(ctx context.Context, tx model.TxWithCommit, userId uuid.UUID, global scimGlobalUserFields) error {
+	if global.DisplayName == nil && global.Email == nil {
+		return nil
+	}
+	user, err := s.Database.GetUser(ctx, tx, userId)
+	if err != nil {
+		return errors.Wrap(err, "failed to get global user for scim field update")
+	}
+	changed := false
+	if global.DisplayName != nil && *global.DisplayName != "" && user.DisplayName != *global.DisplayName {
+		user.DisplayName = *global.DisplayName
+		changed = true
+	}
+	if global.Email != nil && *global.Email != "" {
+		current := ""
+		if user.PrimaryEmailAddress.IsSet() {
+			current = *user.PrimaryEmailAddress.Ref()
+		}
+		if current != *global.Email {
+			user.PrimaryEmailAddress = opt.Of(*global.Email)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	if _, err := s.Database.UpdateUser(ctx, tx, user); err != nil {
+		return errors.Wrap(err, "failed to update global user from scim")
+	}
+	return nil
 }
 
 func scimLogger(s *Server, ctx context.Context) *zap.Logger {

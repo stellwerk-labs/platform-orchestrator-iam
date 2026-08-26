@@ -841,3 +841,479 @@ func TestScimCreateUser_ActiveDefaultsTrueWhenOmitted(t *testing.T) {
 	require.NotNil(t, res.Active)
 	assert.True(t, bool(*res.Active))
 }
+
+// scimListRequest builds a context for a list handler with a raw query string.
+func scimListRequest(e *echo.Echo, query string, callerUserId uuid.UUID) (echo.Context, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodGet, "/"+query, nil)
+	req = req.WithContext(context.WithValue(req.Context(), hecho.ContextKeyUserID, callerUserId.String()))
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("orgId")
+	c.SetParamValues(orgId)
+	return c, rec
+}
+
+// A bad active value ("yes") must yield 400 invalidValue, not a panic/500.
+func TestScimPatchUser_InvalidActiveValueReturns400InvalidValue(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimUser(gomock.Any(), nil, orgId, scimUserId).
+		Return(&model.ScimUser{Id: scimUserId, OrgId: orgId, UserName: "x@example.com", Active: true}, nil)
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "replace", Path: "active", Value: json.RawMessage(`"yes"`)}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimPatchUser(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, "invalidValue", errBody.ScimType)
+}
+
+// A whitespace-only filter parses to nil and must fall through to the
+// unfiltered list instead of dereferencing a nil filter.
+func TestScimListUsers_WhitespaceFilterFallsThroughToList(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().CountScimUsers(gomock.Any(), nil, orgId).Return(0, nil)
+	db.EXPECT().ListScimUsers(gomock.Any(), nil, orgId, 100, 0).Return([]model.ScimUser{}, nil)
+
+	c, rec := scimListRequest(e, "?filter=%20", callerUserId)
+	require.NoError(t, s.handleScimListUsers(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestScimListGroups_WhitespaceFilterFallsThroughToList(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().CountScimGroups(gomock.Any(), nil, orgId).Return(0, nil)
+	db.EXPECT().ListScimGroups(gomock.Any(), nil, orgId, 100, 0).Return([]model.ScimGroup{}, nil)
+
+	c, rec := scimListRequest(e, "?filter=%20", callerUserId)
+	require.NoError(t, s.handleScimListGroups(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// RFC 7644 §3.5.2.2: remove on "members" with no value removes ALL members.
+func TestScimPatchGroup_RemoveAllMembers(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	groupId := uuid.New()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).Return(&model.ScimGroup{
+		Id: groupId, OrgId: orgId, DisplayName: "Eng",
+		MemberIds: []uuid.UUID{uuid.New(), uuid.New()},
+		CreatedAt: now, UpdatedAt: now,
+	}, nil)
+	db.EXPECT().UpdateScimGroup(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.TxWithCommit, g model.ScimGroup) error {
+			assert.Empty(t, g.MemberIds, "remove with no value must clear all members")
+			return nil
+		})
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "remove", Path: "members"}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "groupId": groupId.String()})
+	require.NoError(t, s.handleScimPatchGroup(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// A scalar remove on externalId must clear the stored value.
+func TestScimPatchUser_RemoveExternalIdClearsIt(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	globalUserId := userid.NewHumanUserId()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).Return(&model.ScimUser{
+		Id: scimUserId, OrgId: orgId, UserId: globalUserId,
+		UserName: "x@example.com", ExternalId: opt.Of("ext-1"), Active: true,
+		CreatedAt: now, UpdatedAt: now,
+	}, nil)
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.False(t, u.ExternalId.IsSet(), "remove must clear externalId")
+			return nil
+		})
+	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "X"}, nil)
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "remove", Path: "externalId"}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimPatchUser(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var res ScimUserResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.Empty(t, res.ExternalId)
+}
+
+// Entra probes group externalId filters when its matching attribute is externalId.
+func TestScimListGroups_FilterExternalId_Found(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	groupId := uuid.New()
+	now := time.Now().UTC()
+
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		FindScimGroupByExternalId(gomock.Any(), nil, orgId, "grp-ext-1").
+		Return(&model.ScimGroup{
+			Id: groupId, OrgId: orgId, DisplayName: "Eng",
+			ExternalId: opt.Of("grp-ext-1"), CreatedAt: now, UpdatedAt: now,
+		}, nil)
+
+	c, rec := scimListRequest(e, `?filter=externalId+eq+"grp-ext-1"`, callerUserId)
+	require.NoError(t, s.handleScimListGroups(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var list scimListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	assert.Equal(t, 1, list.TotalResults)
+}
+
+func TestScimListGroups_FilterExternalId_MissReturnsEmptyList(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		FindScimGroupByExternalId(gomock.Any(), nil, orgId, "no-such").
+		Return(nil, model.NewErrNotFound("scim group not found"))
+
+	c, rec := scimListRequest(e, `?filter=externalId+eq+"no-such"`, callerUserId)
+	require.NoError(t, s.handleScimListGroups(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var list scimListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	assert.Equal(t, 0, list.TotalResults)
+	assert.Equal(t, 0, list.ItemsPerPage)
+}
+
+// Entra sets externalId via PATCH right after group create.
+func TestScimPatchGroup_SetExternalId(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	groupId := uuid.New()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).Return(&model.ScimGroup{
+		Id: groupId, OrgId: orgId, DisplayName: "Eng", CreatedAt: now, UpdatedAt: now,
+	}, nil)
+	db.EXPECT().UpdateScimGroup(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.TxWithCommit, g model.ScimGroup) error {
+			require.True(t, g.ExternalId.IsSet())
+			assert.Equal(t, "grp-ext-9", *g.ExternalId.Ref())
+			return nil
+		})
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "replace", Path: "externalId", Value: json.RawMessage(`"grp-ext-9"`)}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "groupId": groupId.String()})
+	require.NoError(t, s.handleScimPatchGroup(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var res ScimGroupResource
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.Equal(t, "grp-ext-9", res.ExternalId)
+}
+
+// A bracket member path with a non-remove op must be rejected, not coerced
+// into a remove.
+func TestScimPatchGroup_BracketPathAddReturns400InvalidPath(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	groupId := uuid.New()
+	memberId := uuid.New()
+	now := time.Now().UTC()
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimGroup(gomock.Any(), nil, orgId, groupId).
+		Return(&model.ScimGroup{
+			Id: groupId, OrgId: orgId, DisplayName: "Eng",
+			MemberIds: []uuid.UUID{memberId}, CreatedAt: now, UpdatedAt: now,
+		}, nil)
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "add", Path: `members[value eq "` + memberId.String() + `"]`}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "groupId": groupId.String()})
+	require.NoError(t, s.handleScimPatchGroup(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, "invalidPath", errBody.ScimType)
+}
+
+// ------------------------------------------------------------------ pagination
+
+func TestScimPageParams(t *testing.T) {
+	e := echo.New()
+	cases := []struct {
+		query     string
+		wantStart int
+		wantCount int
+	}{
+		{query: "", wantStart: 1, wantCount: 100},
+		{query: "?count=0", wantStart: 1, wantCount: 0},
+		{query: "?count=-5", wantStart: 1, wantCount: 0},
+		{query: "?count=50", wantStart: 1, wantCount: 50},
+		{query: "?count=1000", wantStart: 1, wantCount: 200},
+		{query: "?startIndex=3&count=10", wantStart: 3, wantCount: 10},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/"+tc.query, nil)
+		c := e.NewContext(req, httptest.NewRecorder())
+		start, count := scimPageParams(c)
+		assert.Equal(t, tc.wantStart, start, "query %q", tc.query)
+		assert.Equal(t, tc.wantCount, count, "query %q", tc.query)
+	}
+}
+
+// RFC 7644 §3.4.2.4: count=0 returns no resources but an honest totalResults.
+func TestScimListUsers_CountZeroReturnsHonestTotal(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().CountScimUsers(gomock.Any(), nil, orgId).Return(42, nil)
+	db.EXPECT().ListScimUsers(gomock.Any(), nil, orgId, 0, 0).Return([]model.ScimUser{}, nil)
+
+	c, rec := scimListRequest(e, "?count=0", callerUserId)
+	require.NoError(t, s.handleScimListUsers(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var list scimListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	assert.Equal(t, 42, list.TotalResults)
+	assert.Equal(t, 0, list.ItemsPerPage)
+}
+
+// ------------------------------------------------------------------ meta.location scheme
+
+// Behind TLS-terminating Envoy the request itself is plaintext; the scheme
+// must come from X-Forwarded-Proto, not the TLS connection state.
+func TestScimResourceLocation_HonorsXForwardedProto(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "iam.example.com"
+	req.Header.Set(echo.HeaderXForwardedProto, "https")
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	loc := scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
+	assert.Equal(t, "https://iam.example.com/scim/v2/orgs/o/Users/u", loc)
+}
+
+// ------------------------------------------------------------------ blank scalar values
+
+func TestScimPatchUser_BlankUserNameRejected(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimUser(gomock.Any(), nil, orgId, scimUserId).
+		Return(&model.ScimUser{Id: scimUserId, OrgId: orgId, UserName: "x@example.com", Active: true}, nil)
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "replace", Path: "userName", Value: json.RawMessage(`""`)}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
+	require.NoError(t, s.handleScimPatchUser(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, "invalidValue", errBody.ScimType)
+}
+
+func TestScimPatchGroup_BlankDisplayNameRejected(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	groupId := uuid.New()
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimGroup(gomock.Any(), nil, orgId, groupId).
+		Return(&model.ScimGroup{Id: groupId, OrgId: orgId, DisplayName: "Eng"}, nil)
+
+	patchBody := scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "replace", Path: "displayName", Value: json.RawMessage(`""`)}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPatch, "/", patchBody, callerUserId, map[string]string{"orgId": orgId, "groupId": groupId.String()})
+	require.NoError(t, s.handleScimPatchGroup(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, "invalidValue", errBody.ScimType)
+}
+
+// ------------------------------------------------------------------ error envelope
+
+// Internal errors leaving a SCIM handler must produce a SCIM Error envelope,
+// not echo's default {"message":...} body. Exercised through the full router
+// so the group middleware chain is what's under test.
+func TestScimErrorEnvelope_InternalErrorReturnsScimBody(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	scimUserId := uuid.New()
+	mockScimReadAuth(s, callerUserId, orgId)
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		GetScimUser(gomock.Any(), nil, orgId, scimUserId).
+		Return(nil, assert.AnError)
+
+	req := httptest.NewRequest(http.MethodGet, "/scim/v2/orgs/"+orgId+"/Users/"+scimUserId.String(), nil)
+	req.Header.Set(authenticatedUserIdHeader, callerUserId.String())
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, []string{scimErrorSchema}, errBody.Schemas)
+	assert.Equal(t, "500", errBody.Status)
+}
+
+// The middleware must not touch responses that handlers already committed.
+func TestScimErrorEnvelopeMiddleware_PassesThroughCommittedResponses(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	handler := scimErrorEnvelopeMiddleware(func(c echo.Context) error {
+		return scimErrorResp(c, http.StatusNotFound, "", "user not found")
+	})
+	require.NoError(t, handler(c))
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// Provisioning the same person into a second organization always matches by
+// email, because the first org owns the only SCIM identity key. That match must
+// still record this org's key, otherwise a later email change in the IDP makes
+// the second org match nothing and create a duplicate global user.
+func TestScimCreateUser_SecondOrgMatchByEmailPersistsItsOwnIdentity(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	globalUserId := userid.NewHumanUserId()
+	now := time.Now().UTC()
+	externalId := "ext-multi-org"
+	identityKey := orgId + ":" + externalId
+
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+
+	// This org has no identity key yet (the other org holds its own).
+	db.EXPECT().GetUserIdByIdentity(gomock.Any(), gomock.Any(), model.UserIdentityProviderScim, identityKey).
+		Return(nil, model.NewErrNotFound("not found"))
+	db.EXPECT().FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "dana@example.com").
+		Return(&model.User{Id: globalUserId, DisplayName: "Dana", CreatedAt: now}, nil)
+
+	db.EXPECT().
+		AddUserIdentity(gomock.Any(), gomock.Any(), globalUserId, model.UserIdentityProviderScim, identityKey).
+		Return(nil)
+
+	subjectTypeRole := model.MembershipSubjectTypeRole
+	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{
+		OrgId: &orgId, UserId: &globalUserId, SubjectType: &subjectTypeRole,
+	}).Return([]model.MembershipWithUserMetadata{}, nil)
+	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
+		Return([]model.Role{
+			{Id: uuid.New(), OrgId: orgId, DisplayName: RoleViewer, Permissions: []string{"read_all"}, IsSystem: true},
+		}, nil)
+	db.EXPECT().CreateMembership(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, m *model.Membership) (*model.Membership, error) {
+			assert.Equal(t, globalUserId, m.UserId, "must reuse the existing global user, not create a second one")
+			return m, nil
+		})
+	db.EXPECT().CreateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ model.Tx, u model.ScimUser) error {
+			assert.Equal(t, globalUserId, u.UserId)
+			return nil
+		})
+	db.EXPECT().GetUser(gomock.Any(), nil, globalUserId).
+		Return(&model.User{Id: globalUserId, DisplayName: "Dana", PrimaryEmailAddress: opt.Of("dana@example.com")}, nil)
+
+	body := ScimUserResource{
+		Schemas:    []string{scimSchemaUser},
+		UserName:   "dana@example.com",
+		ExternalId: externalId,
+		Active:     ref.Ref(boolOrString(true)),
+		Emails:     []scimEmail{{Value: "dana@example.com", Primary: true}},
+	}
+	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
+	require.NoError(t, s.handleScimCreateUser(c))
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}

@@ -262,6 +262,11 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 			if user, err = s.Database.UpdateUser(ctx, tx, existingUser); err != nil {
 				return nil, errors.Wrap(err, "failed to update user with sso identity")
 			}
+			// UpdateUser does not persist identities, so write the link explicitly;
+			// without this the account is re-matched by email on every login.
+			if err := s.Database.AddUserIdentity(ctx, tx, user.Id, model.UserIdentityProviderSso, identityId); err != nil {
+				return nil, errors.Wrap(err, "failed to persist sso identity")
+			}
 			userId = &user.Id
 		} else {
 			newUser := model.User{

@@ -89,6 +89,7 @@ type Databaser interface {
 	UpdateUser(ctx context.Context, optionalTx Tx, request *User) (*User, error)
 	DeleteUser(ctx context.Context, optionalTx Tx, id uuid.UUID) error
 	GetUserIdByIdentity(ctx context.Context, optionalTx Tx, identity UserIdentityProvider, identityId string) (*uuid.UUID, error)
+	AddUserIdentity(ctx context.Context, optionalTx Tx, userId uuid.UUID, provider UserIdentityProvider, providerUserId string) error
 	DismissUserPrompt(ctx context.Context, optionalTx Tx, userId uuid.UUID, promptId string) error
 	FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, email string) (*User, error)
 
@@ -161,6 +162,7 @@ type Databaser interface {
 	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
 	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)
+	FindScimGroupByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimGroup, error)
 	ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error)
 	CountScimGroups(ctx context.Context, optionalTx Tx, orgId string) (int, error)
 	UpdateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error

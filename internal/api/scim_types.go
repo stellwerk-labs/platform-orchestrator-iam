@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,6 +39,13 @@ const (
 	scimOpReplace = "replace"
 	scimOpRemove  = "remove"
 
+	// RFC 7644 §3.12 scimType error values.
+	scimTypeInvalidValue  = "invalidValue"
+	scimTypeInvalidPath   = "invalidPath"
+	scimTypeInvalidSyntax = "invalidSyntax"
+	scimTypeInvalidFilter = "invalidFilter"
+	scimTypeUniqueness    = "uniqueness"
+
 	// Schema attribute property values.
 	scimReturnedDefault = "default"
 	scimUniquenessNone  = "none"
@@ -71,7 +79,9 @@ func (b *boolOrString) UnmarshalJSON(data []byte) error {
 	case "false":
 		*b = false
 	default:
-		return &json.UnmarshalTypeError{Value: "string " + s, Type: nil}
+		// Not a json.UnmarshalTypeError: constructing one by hand with a nil
+		// reflect.Type panics as soon as anything formats it.
+		return fmt.Errorf("invalid boolean value %q", s)
 	}
 	return nil
 }

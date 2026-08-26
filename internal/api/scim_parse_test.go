@@ -207,3 +207,89 @@ func TestNormalizePatchOps_UnknownOpErrors(t *testing.T) {
 	_, err := normalizePatchOps(req)
 	require.Error(t, err)
 }
+
+// A hand-built json.UnmarshalTypeError with a nil Type used to panic the
+// moment anything formatted it; the replacement must be a plain error.
+func TestBoolOrString_InvalidStringErrorFormatsWithoutPanic(t *testing.T) {
+	var b boolOrString
+	err := json.Unmarshal([]byte(`"yes"`), &b)
+	require.Error(t, err)
+	require.NotPanics(t, func() {
+		assert.Contains(t, err.Error(), "yes")
+	})
+}
+
+// A whitespace-only filter parses to (nil, nil), not an error.
+func TestParseScimFilter_WhitespaceOnly(t *testing.T) {
+	f, err := parseScimFilter("   ")
+	require.NoError(t, err)
+	assert.Nil(t, f)
+}
+
+// RFC 7644 §3.5.2.2: remove on "members" with no value removes ALL members.
+func TestNormalizePatchOps_RemoveMembersNoValueIsRemoveAll(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "remove", Path: "members"},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	assert.Equal(t, "remove", ops[0].Op)
+	assert.Equal(t, "members", ops[0].Path)
+	assert.True(t, ops[0].RemoveAll)
+	assert.Empty(t, ops[0].MemberIds)
+}
+
+// A scalar remove with no value must still produce an op so handlers can
+// clear the attribute (e.g. externalId).
+func TestNormalizePatchOps_RemoveExternalIdNoValue(t *testing.T) {
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "remove", Path: "externalId"},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	assert.Equal(t, "remove", ops[0].Op)
+	assert.Equal(t, "externalid", ops[0].Path)
+	assert.Nil(t, ops[0].StrValue)
+}
+
+// The bracket member path selects an existing member; only remove may use it.
+func TestNormalizePatchOps_BracketPathAddRejected(t *testing.T) {
+	path := `members[value eq "` + uuid.New().String() + `"]`
+	for _, op := range []string{"add", "replace"} {
+		req := makePatchRequest([]scimPatchOp{{Op: op, Path: path}})
+		_, err := normalizePatchOps(req)
+		require.Error(t, err, "op %s must be rejected", op)
+		var pe *scimPatchError
+		require.ErrorAs(t, err, &pe)
+		assert.Equal(t, "invalidPath", pe.ScimType)
+	}
+}
+
+// Legacy Entra builds send a single member object instead of an array.
+func TestNormalizePatchOps_LegacyEntraSingleMemberObject(t *testing.T) {
+	memberId := uuid.New()
+	req := makePatchRequest([]scimPatchOp{
+		{Op: "add", Path: "members", Value: json.RawMessage(`{"value":"` + memberId.String() + `"}`)},
+	})
+	ops, err := normalizePatchOps(req)
+	require.NoError(t, err)
+	require.Len(t, ops, 1)
+	require.Len(t, ops[0].MemberIds, 1)
+	assert.Equal(t, memberId, ops[0].MemberIds[0])
+}
+
+// Genuinely malformed member values must still be rejected.
+func TestNormalizePatchOps_MalformedMemberValueRejected(t *testing.T) {
+	for _, val := range []string{`{"foo":"bar"}`, `"garbage"`, `{"value":"not-a-uuid"}`} {
+		req := makePatchRequest([]scimPatchOp{
+			{Op: "add", Path: "members", Value: json.RawMessage(val)},
+		})
+		_, err := normalizePatchOps(req)
+		require.Error(t, err, "value %s must be rejected", val)
+		var pe *scimPatchError
+		require.ErrorAs(t, err, &pe)
+		assert.Equal(t, "invalidValue", pe.ScimType)
+	}
+}

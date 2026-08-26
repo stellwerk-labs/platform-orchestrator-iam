@@ -88,6 +88,13 @@ func TestSsoCallback_ScimProvisionedUserLinked(t *testing.T) {
 			Active: true,
 		}, nil)
 
+	// The SSO identity must be written to the identities table: UpdateUser
+	// deliberately does not persist them, so without this the account would be
+	// re-matched by email on every single login.
+	db.EXPECT().
+		AddUserIdentity(gomock.Any(), gomock.Any(), scimProvisionedUserId, model.UserIdentityProviderSso, identityId).
+		Return(nil)
+
 	// UpdateUser attaches the SSO identity to the existing user.
 	db.EXPECT().
 		UpdateUser(gomock.Any(), gomock.Any(), gomock.Any()).

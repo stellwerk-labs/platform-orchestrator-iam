@@ -36,6 +36,15 @@ func parseScimFilter(filter string) (*scimFilterResult, error) {
 // captures the scim user id so we can reduce it to a plain remove-by-id op.
 var bracketMemberRegexp = regexp.MustCompile(`(?i)^members\[value\s+eq\s+"([^"]*)"\]$`)
 
+// scimPatchError is a PATCH normalization failure that carries the RFC 7644
+// scimType it should surface as. Plain errors default to scimTypeInvalidSyntax.
+type scimPatchError struct {
+	ScimType string
+	Detail   string
+}
+
+func (e *scimPatchError) Error() string { return e.Detail }
+
 // normalizedScimPatchOp is a parsed, normalised PATCH operation ready for execution.
 type normalizedScimPatchOp struct {
 	Op   string // always lower-case: "add", "replace", "remove"
@@ -45,11 +54,12 @@ type normalizedScimPatchOp struct {
 	BoolValue *bool
 	// Member list (for add/remove on members path):
 	MemberIds []uuid.UUID
-	// Object-style value map (for pathless replace, e.g. Okta):
-	Attrs map[string]interface{}
 	// If true, Path was a bracket member filter (`members[value eq "id"]`)
 	// and MemberIds contains the single member to remove.
 	IsBracketMemberRemove bool
+	// If true, this is a remove on "members" with no value: RFC 7644
+	// §3.5.2.2 says that removes ALL members.
+	RemoveAll bool
 }
 
 // normalizePatchOps expands a raw scimPatchRequest into a flat slice of
@@ -71,9 +81,15 @@ func normalizePatchOps(req scimPatchRequest) ([]normalizedScimPatchOp, error) {
 
 		// Entra bracket form: `members[value eq "id"]`
 		if bm := bracketMemberRegexp.FindStringSubmatch(path); bm != nil {
+			// The bracket filter selects an existing member, which only makes
+			// sense for remove; coercing add/replace into a remove would drop
+			// members the IDP meant to keep.
+			if op != scimOpRemove {
+				return nil, &scimPatchError{ScimType: scimTypeInvalidPath, Detail: fmt.Sprintf("bracket member path is only supported for op remove, got %q", raw.Op)}
+			}
 			memberId, err := uuid.Parse(bm[1])
 			if err != nil {
-				return nil, fmt.Errorf("invalid member id in bracket path %q: %w", raw.Path, err)
+				return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid member id in bracket path %q: %v", raw.Path, err)}
 			}
 			out = append(out, normalizedScimPatchOp{
 				Op:                    scimOpRemove,
@@ -101,11 +117,17 @@ func normalizePatchOps(req scimPatchRequest) ([]normalizedScimPatchOp, error) {
 			}
 		}
 
+		// Remove on "members" with no value: RFC 7644 §3.5.2.2 — remove ALL members.
+		if path == scimAttrMembers && op == scimOpRemove && len(raw.Value) == 0 {
+			out = append(out, normalizedScimPatchOp{Op: scimOpRemove, Path: scimAttrMembers, RemoveAll: true})
+			continue
+		}
+
 		// Path-based op with a members list value.
 		if path == scimAttrMembers && len(raw.Value) > 0 {
 			ids, err := parseMemberValueList(raw.Value)
 			if err != nil {
-				return nil, fmt.Errorf("invalid members value: %w", err)
+				return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid members value: %v", err)}
 			}
 			out = append(out, normalizedScimPatchOp{Op: op, Path: scimAttrMembers, MemberIds: ids})
 			continue
@@ -140,14 +162,14 @@ func buildScalarOp(op, attr string, rawVal json.RawMessage) (*normalizedScimPatc
 	case scimAttrActive:
 		var b boolOrString
 		if err := json.Unmarshal(rawVal, &b); err != nil {
-			return nil, fmt.Errorf("invalid value for active: %w", err)
+			return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid value for active: %v", err)}
 		}
 		bv := bool(b)
 		norm.BoolValue = &bv
 	case scimAttrUserName, scimAttrDisplayName, scimAttrExternalId:
 		var s string
 		if err := json.Unmarshal(rawVal, &s); err != nil {
-			return nil, fmt.Errorf("invalid string value for %s: %w", attr, err)
+			return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("invalid string value for %s: %v", attr, err)}
 		}
 		norm.StrValue = &s
 	default:
@@ -157,13 +179,21 @@ func buildScalarOp(op, attr string, rawVal json.RawMessage) (*normalizedScimPatc
 	return &norm, nil
 }
 
-// parseMemberValueList decodes `[{"value":"<id>"},...]`.
+// parseMemberValueList decodes `[{"value":"<id>"},...]`. Legacy Entra builds
+// send a single member object (`{"value":"<id>"}`) instead of an array;
+// accept that shape too.
 func parseMemberValueList(raw json.RawMessage) ([]uuid.UUID, error) {
 	var entries []struct {
 		Value string `json:"value"`
 	}
 	if err := json.Unmarshal(raw, &entries); err != nil {
-		return nil, err
+		var single struct {
+			Value string `json:"value"`
+		}
+		if singleErr := json.Unmarshal(raw, &single); singleErr != nil || single.Value == "" {
+			return nil, err
+		}
+		entries = append(entries, single)
 	}
 	ids := make([]uuid.UUID, 0, len(entries))
 	for _, e := range entries {

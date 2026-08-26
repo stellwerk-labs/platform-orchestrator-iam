@@ -95,6 +95,31 @@ func (d *databaser) FindScimGroupByDisplayName(ctx context.Context, optionalTx T
 	return &out, nil
 }
 
+func (d *databaser) FindScimGroupByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimGroup, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	var out ScimGroup
+	var memberIdStrings pq.StringArray
+	if err := optionalTx.QueryRowContext(
+		ctx,
+		`SELECT g.id, g.org_id, g.display_name, g.external_id, g.created_at, g.updated_at,
+			COALESCE(ARRAY_AGG(m.scim_user_id::text ORDER BY m.scim_user_id) FILTER (WHERE m.scim_user_id IS NOT NULL), '{}')
+		FROM scim_groups g
+		LEFT JOIN scim_group_members m ON g.id = m.group_id
+		WHERE g.org_id = $1 AND g.external_id = $2
+		GROUP BY g.id`,
+		orgId, externalId,
+	).Scan(&out.Id, &out.OrgId, &out.DisplayName, opt.Scan(&out.ExternalId), &out.CreatedAt, &out.UpdatedAt, &memberIdStrings); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewErrNotFound("scim group not found")
+		}
+		return nil, errors.Wrap(err, "failed to find scim group by external id")
+	}
+	if err := parseScimMemberIds(memberIdStrings, &out.MemberIds); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (d *databaser) ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error) {
 	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
 	optionalTx = d.txOrDb(optionalTx)

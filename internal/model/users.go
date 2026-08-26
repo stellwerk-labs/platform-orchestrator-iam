@@ -198,3 +198,23 @@ func (d *databaser) FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, e
 
 	return &out, nil
 }
+
+// AddUserIdentity links an external identity to an existing user. It is
+// idempotent: the identities primary key is (provider, provider_user_id), so
+// re-linking the same key is a no-op, and a user may hold several identities of
+// the same provider (e.g. one SCIM key per organization).
+//
+// This exists because UpdateUser deliberately does not persist
+// User.UserIdentities, so mutating that map is not enough to attach an identity.
+func (d *databaser) AddUserIdentity(ctx context.Context, optionalTx Tx, userId uuid.UUID, provider UserIdentityProvider, providerUserId string) error {
+	optionalTx = d.txOrDb(optionalTx)
+	if _, err := optionalTx.ExecContext(
+		ctx,
+		`INSERT INTO identities (provider, provider_user_id, user_id) VALUES ($1, $2, $3)
+		ON CONFLICT (provider, provider_user_id) DO NOTHING`,
+		provider, providerUserId, userId,
+	); err != nil {
+		return errors.Wrap(err, "failed to add user identity")
+	}
+	return nil
+}
