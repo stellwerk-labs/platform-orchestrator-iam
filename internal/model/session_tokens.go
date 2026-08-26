@@ -94,6 +94,16 @@ func (d *databaser) ListSessionTokenByUserId(ctx context.Context, optionalTx Tx,
 	}
 }
 
+func (d *databaser) DeleteSessionTokensByUserId(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int64, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	rs, err := optionalTx.ExecContext(ctx, `DELETE FROM session_tokens WHERE user_id = $1`, userId)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to delete session tokens by user id")
+	}
+	rc, _ := rs.RowsAffected()
+	return rc, nil
+}
+
 func (d *databaser) DeleteExpiredSessionTokens(ctx context.Context, optionalTx Tx) (int64, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	rs, err := optionalTx.ExecContext(ctx, `DELETE FROM session_tokens WHERE expires_at < $1`, time.Now().UTC())

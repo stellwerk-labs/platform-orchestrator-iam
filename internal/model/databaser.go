@@ -90,11 +90,13 @@ type Databaser interface {
 	DeleteUser(ctx context.Context, optionalTx Tx, id uuid.UUID) error
 	GetUserIdByIdentity(ctx context.Context, optionalTx Tx, identity UserIdentityProvider, identityId string) (*uuid.UUID, error)
 	DismissUserPrompt(ctx context.Context, optionalTx Tx, userId uuid.UUID, promptId string) error
+	FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, email string) (*User, error)
 
 	CreateSessionToken(ctx context.Context, optionalTx Tx, request *SessionToken) (*SessionToken, error)
 	ListSessionTokenByUserId(ctx context.Context, optionalTx Tx, userId uuid.UUID, params ListSessionTokensParams) ([]SessionToken, error)
 	GetSessionTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*SessionToken, error)
 	DeleteSessionTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) error
+	DeleteSessionTokensByUserId(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int64, error)
 	DeleteExpiredSessionTokens(ctx context.Context, optionalTx Tx) (int64, error)
 
 	CreateMembership(ctx context.Context, optionalTx Tx, request *Membership) (*Membership, error)
@@ -145,6 +147,24 @@ type Databaser interface {
 
 	GetSsoConfiguration(ctx context.Context, optionalTx Tx, orgId string) (*SsoConfiguration, error)
 	UpsertSsoConfiguration(ctx context.Context, optionalTx Tx, orgId string, request *SsoConfiguration) (*SsoConfiguration, error)
+
+	CreateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
+	GetScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimUser, error)
+	FindScimUserByUserName(ctx context.Context, optionalTx Tx, orgId string, userName string) (*ScimUser, error)
+	FindScimUserByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimUser, error)
+	FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error)
+	ListScimUsers(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimUser, error)
+	CountScimUsers(ctx context.Context, optionalTx Tx, orgId string) (int, error)
+	UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
+	DeleteScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
+
+	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
+	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
+	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)
+	ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error)
+	CountScimGroups(ctx context.Context, optionalTx Tx, orgId string) (int, error)
+	UpdateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
+	DeleteScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 }
 
 type Tx interface {

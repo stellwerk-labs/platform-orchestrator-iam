@@ -28,6 +28,7 @@ const (
 	UserIdentityProviderDevice    = UserIdentityProvider("devicelogin")
 	UserIdentityProviderGoogle    = UserIdentityProvider("google")
 	UserIdentityProviderMicrosoft = UserIdentityProvider("microsoft")
+	UserIdentityProviderScim      = UserIdentityProvider("scim")
 	UserIdentityProviderSso       = UserIdentityProvider("sso")
 	UserIdentityProviderTestUser  = UserIdentityProvider("testuser")
 )
@@ -158,4 +159,42 @@ func (d *databaser) DismissUserPrompt(ctx context.Context, optionalTx Tx, userId
 		return errors.Wrap(err, "failed to dismiss prompt")
 	}
 	return nil
+}
+
+func (d *databaser) FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, email string) (*User, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	out := User{UserIdentities: make(map[UserIdentityProvider]string), DismissedPrompts: make([]string, 0)}
+
+	row := optionalTx.QueryRowContext(
+		ctx,
+		`SELECT
+			u.id,
+			u.display_name,
+			u.created_at,
+			u.last_logged_in_at,
+			u.primary_email_address,
+			COALESCE(
+				json_object_agg(p.provider, p.provider_user_id)
+				FILTER (WHERE p.user_id IS NOT NULL), '{}'
+			) AS identities,
+			COALESCE(
+				json_agg(DISTINCT dp.id)
+				FILTER (WHERE dp.id IS NOT NULL), '[]'
+			) AS dismissed_prompt_ids
+		FROM users u
+		LEFT JOIN identities p ON u.id = p.user_id
+		LEFT JOIN dismissed_prompts dp ON u.id = dp.user_id
+		WHERE LOWER(u.primary_email_address) = LOWER($1)
+		GROUP BY u.id`,
+		email,
+	)
+
+	if err := row.Scan(&out.Id, &out.DisplayName, &out.CreatedAt, &out.LastLoggedInAt, opt.Scan(&out.PrimaryEmailAddress), asJson(&out.UserIdentities), asJson(&out.DismissedPrompts)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NewErrNotFound("user not found")
+		}
+		return nil, errors.Wrap(err, "failed to scan user")
+	}
+
+	return &out, nil
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -69,10 +70,16 @@ func (s *Server) MapRoutes(e *echo.Echo) {
 	// Internal wildcard auth handlers. We MUST still have this handler so that we can skip authN for login and device
 	// paths.
 	e.Any("/internal/authenticate/*", s.buildInternalAuthenticateWildcard(apiHandler))
+
+	// SCIM 2.0 routes are registered manually (not via oapi-codegen) because SCIM
+	// wire format conflicts with our OpenAPI codegen conventions.
+	s.registerScimRoutes(e)
 }
 
 func OpenApiValidatorSkipper(c echo.Context) bool {
-	return hecho.DefaultOAIValidationSkipper(c) || c.Path() == "/internal/authenticate/*"
+	return hecho.DefaultOAIValidationSkipper(c) ||
+		c.Path() == "/internal/authenticate/*" ||
+		strings.HasPrefix(c.Path(), "/scim/v2")
 }
 
 // StrictServerInterface is the interface that your Server implementation should generate methods for.
