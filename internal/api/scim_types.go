@@ -48,14 +48,16 @@ const (
 	scimTypeUniqueness    = "uniqueness"
 
 	// Schema attribute property values.
-	scimReturnedDefault = "default"
-	scimUniquenessNone  = "none"
-	scimMutabilityRW    = "readWrite"
+	scimReturnedDefault     = "default"
+	scimUniquenessNone      = "none"
+	scimMutabilityRW        = "readWrite"
+	scimMutabilityImmutable = "immutable"
 
 	// Schema attribute type names.
-	scimAttrTypeString  = "string"
-	scimAttrTypeBoolean = "boolean"
-	scimAttrTypeComplex = "complex"
+	scimAttrTypeString    = "string"
+	scimAttrTypeBoolean   = "boolean"
+	scimAttrTypeComplex   = "complex"
+	scimAttrTypeReference = "reference"
 )
 
 // boolOrString handles both JSON booleans and the string "True"/"False"/"true"/"false"
@@ -220,15 +222,18 @@ func staticServiceProviderConfig() scimServiceProviderConfig {
 
 // scimSchemaAttribute describes a single attribute in a schema document.
 type scimSchemaAttribute struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	MultiValued bool   `json:"multiValued"`
-	Description string `json:"description,omitempty"`
-	Required    bool   `json:"required"`
-	CaseExact   bool   `json:"caseExact"`
-	Mutability  string `json:"mutability"`
-	Returned    string `json:"returned"`
-	Uniqueness  string `json:"uniqueness"`
+	Name            string                `json:"name"`
+	Type            string                `json:"type"`
+	MultiValued     bool                  `json:"multiValued"`
+	Description     string                `json:"description,omitempty"`
+	Required        bool                  `json:"required"`
+	CanonicalValues []string              `json:"canonicalValues,omitempty"`
+	CaseExact       bool                  `json:"caseExact"`
+	Mutability      string                `json:"mutability"`
+	Returned        string                `json:"returned"`
+	Uniqueness      string                `json:"uniqueness"`
+	ReferenceTypes  []string              `json:"referenceTypes,omitempty"`
+	SubAttributes   []scimSchemaAttribute `json:"subAttributes,omitempty"`
 }
 
 type scimSchema struct {
@@ -242,6 +247,31 @@ type scimSchema struct {
 
 const scimSchemaDefinitionSchema = "urn:ietf:params:scim:schemas:core:2.0:Schema"
 
+// emailsSubAttributes are the sub-attributes of the User "emails" complex
+// attribute per RFC 7643 §4.1.2 / §8.7.1. Entra's SCIM validator consumes
+// /Schemas and expects complex attributes to declare their sub-attributes.
+func emailsSubAttributes() []scimSchemaAttribute {
+	return []scimSchemaAttribute{
+		{Name: "value", Type: scimAttrTypeString, MultiValued: false, Description: "Email address value.", Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+		{Name: "type", Type: scimAttrTypeString, MultiValued: false, Description: "A label indicating the attribute's function, e.g., 'work' or 'home'.", Required: false, CanonicalValues: []string{"work", "home", "other"}, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+		{Name: "primary", Type: scimAttrTypeBoolean, MultiValued: false, Description: "A Boolean value indicating the preferred email address; only one may be 'true'.", Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+		{Name: "display", Type: scimAttrTypeString, MultiValued: false, Description: "A human-readable name, primarily used for display purposes.", Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+	}
+}
+
+// membersSubAttributes are the sub-attributes of the Group "members" complex
+// attribute per RFC 7643 §4.2 / §8.7.1 (which mark them immutable: membership
+// entries are replaced, not edited in place). "display" is the common
+// multi-valued sub-attribute from §2.4 that Entra sends alongside each member.
+func membersSubAttributes() []scimSchemaAttribute {
+	return []scimSchemaAttribute{
+		{Name: "value", Type: scimAttrTypeString, MultiValued: false, Description: "Identifier of the member of this Group.", Required: false, CaseExact: false, Mutability: scimMutabilityImmutable, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+		{Name: "$ref", Type: scimAttrTypeReference, MultiValued: false, Description: "The URI corresponding to a SCIM resource that is a member of this Group.", Required: false, CaseExact: false, Mutability: scimMutabilityImmutable, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone, ReferenceTypes: []string{scimResourceTypeUser, scimResourceTypeGroup}},
+		{Name: "type", Type: scimAttrTypeString, MultiValued: false, Description: "A label indicating the type of resource, e.g., 'User' or 'Group'.", Required: false, CanonicalValues: []string{"User", "Group"}, CaseExact: false, Mutability: scimMutabilityImmutable, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+		{Name: "display", Type: scimAttrTypeString, MultiValued: false, Description: "A human-readable name for the member, primarily used for display purposes.", Required: false, CaseExact: false, Mutability: scimMutabilityImmutable, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+	}
+}
+
 func staticUserSchema() scimSchema {
 	return scimSchema{
 		Schemas:     []string{scimSchemaDefinitionSchema},
@@ -252,7 +282,7 @@ func staticUserSchema() scimSchema {
 			{Name: "userName", Type: scimAttrTypeString, MultiValued: false, Required: true, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: "server"},
 			{Name: "displayName", Type: scimAttrTypeString, MultiValued: false, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
 			{Name: scimAttrActive, Type: scimAttrTypeBoolean, MultiValued: false, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
-			{Name: "emails", Type: scimAttrTypeComplex, MultiValued: true, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+			{Name: "emails", Type: scimAttrTypeComplex, MultiValued: true, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone, SubAttributes: emailsSubAttributes()},
 			{Name: "externalId", Type: scimAttrTypeString, MultiValued: false, Required: false, CaseExact: true, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
 		},
 	}
@@ -266,7 +296,7 @@ func staticGroupSchema() scimSchema {
 		Description: scimResourceTypeGroup,
 		Attributes: []scimSchemaAttribute{
 			{Name: "displayName", Type: scimAttrTypeString, MultiValued: false, Required: true, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: "server"},
-			{Name: scimAttrMembers, Type: scimAttrTypeComplex, MultiValued: true, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
+			{Name: scimAttrMembers, Type: scimAttrTypeComplex, MultiValued: true, Required: false, CaseExact: false, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone, SubAttributes: membersSubAttributes()},
 			{Name: "externalId", Type: scimAttrTypeString, MultiValued: false, Required: false, CaseExact: true, Mutability: scimMutabilityRW, Returned: scimReturnedDefault, Uniqueness: scimUniquenessNone},
 		},
 	}

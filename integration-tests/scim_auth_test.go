@@ -35,7 +35,9 @@ func extAuthDo(t *testing.T, path, bearerToken string) (int, http.Header, []byte
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, mustInternalServerURL(t)+"/internal/authenticate"+path, nil)
 	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
 	resp, err := testHttpClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
@@ -157,6 +159,42 @@ func TestScimServiceUserTokenAuth(t *testing.T) {
 		require.Equal(t, http.StatusOK, status, "body: %s", string(body))
 		assert.Equal(t, su.Id.String(), headers.Get("From"), "From header must carry the service user id")
 		assert.NotEmpty(t, headers.Get("X-Token-Hash"), "X-Token-Hash header must be set")
+	})
+
+	// The discovery documents are meant to be readable without a token. That is
+	// decided at the ext-auth boundary, not in the handler: Envoy calls
+	// /internal/authenticate before the route, so a handler placed outside the
+	// SCIM auth middleware still 401s in production unless the path is
+	// allow-listed here. Testing the handler directly cannot see this.
+	t.Run("discovery clears ext-auth without any token", func(t *testing.T) {
+		for _, res := range []string{"ServiceProviderConfig", "Schemas", "ResourceTypes"} {
+			path := fmt.Sprintf("/scim/v2/orgs/%s/%s", orgId, res)
+			status, headers, body := extAuthDo(t, path, "")
+			assert.Equal(t, http.StatusOK, status, "%s must not require a token: %s", res, string(body))
+			assert.Equal(t, uuid.Nil.String(), headers.Get("From"),
+				"%s is anonymous, so the principal must be the nil uuid", res)
+		}
+	})
+
+	t.Run("Users and Groups still require a token at ext-auth", func(t *testing.T) {
+		for _, res := range []string{"Users", "Groups"} {
+			path := fmt.Sprintf("/scim/v2/orgs/%s/%s", orgId, res)
+			status, _, body := extAuthDo(t, path, "")
+			assert.Equal(t, http.StatusUnauthorized, status,
+				"%s must never be reachable anonymously: %s", res, string(body))
+		}
+	})
+
+	t.Run("discovery is readable through the proxy with no Authorization header", func(t *testing.T) {
+		// End to end, the way Entra's validator probes it.
+		status, body := scimDo(t, http.MethodGet, scimProxyBaseURL(t, orgId)+"/ServiceProviderConfig", nil, nil)
+		if assert.Equal(t, http.StatusOK, status, "body: %s", string(body)) {
+			var cfg struct {
+				Patch struct{ Supported bool } `json:"patch"`
+			}
+			require.NoError(t, json.Unmarshal(body, &cfg))
+			assert.True(t, cfg.Patch.Supported, "ServiceProviderConfig must be the real document")
+		}
 	})
 
 	t.Run("unknown SU token yields 401", func(t *testing.T) {

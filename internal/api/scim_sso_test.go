@@ -344,3 +344,126 @@ func TestSsoCallback_EmailCollisionWithoutScimIsNotLinked(t *testing.T) {
 	require.Equal(t, newUserId, successResp.Body.Id)
 	require.NotEqual(t, victimUserId, successResp.Body.Id)
 }
+
+// TestSsoCallback_ScimDeletedUserRejected covers deprovisioning by DELETE
+// rather than active=false: only a tombstoned scim_users row remains
+// (DeletedAt set). The email-match path must reject the login instead of
+// linking the account — even if the row somehow still says active=true, the
+// tombstone alone decides.
+func TestSsoCallback_ScimDeletedUserRejected(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().IsMultitenant().Return(false).AnyTimes()
+	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().
+		GetOrganizationWithResponse(gomock.Any(), orgId).
+		Return(&cpclient.GetOrganizationResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      &cpclient.Organization{Id: orgId},
+		}, nil)
+
+	profile := &ssoprovider.UserProfile{
+		Email:          "tombstoned@example.com",
+		DisplayName:    "Tombstoned User",
+		ProviderOrgId:  "sso-provider-org",
+		ProviderUserId: "sso-user-tombstoned",
+	}
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().
+		GetUserProfile(gomock.Any(), TestSsoAuthCode).
+		Return(profile, nil)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().
+		GetUserIdByIdentity(gomock.Any(), gomock.Any(), model.UserIdentityProviderSso, "sso-provider-org:sso-user-tombstoned").
+		Return(nil, model.NewErrNotFound("not found"))
+
+	tombstonedUserId := userid.NewHumanUserId()
+	db.EXPECT().
+		FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "tombstoned@example.com").
+		Return(&model.User{
+			Id:                  tombstonedUserId,
+			DisplayName:         "Tombstoned User",
+			PrimaryEmailAddress: opt.Of("tombstoned@example.com"),
+			UserIdentities:      map[model.UserIdentityProvider]string{},
+		}, nil)
+
+	db.EXPECT().
+		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, tombstonedUserId).
+		Return(&model.ScimUser{
+			Id:        uuid.New(),
+			OrgId:     orgId,
+			UserId:    tombstonedUserId,
+			Active:    true, // deliberately inconsistent: the tombstone must win regardless
+			DeletedAt: opt.Of(time.Now().UTC()),
+		}, nil)
+
+	state := testSsoState(t)
+	authCode := TestSsoAuthCode
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userid.InternalSystemUuid.String())
+	resp, err := s.GetSsoCallback(ctx, GetSsoCallbackRequestObject{
+		Params: GetSsoCallbackParams{Code: &authCode, State: &state},
+	})
+	require.NoError(t, err)
+	_, ok := resp.(GetSsoCallback401JSONResponse)
+	require.True(t, ok, "SCIM-deleted user must get 401, got %T", resp)
+}
+
+// TestSsoCallback_ScimDeletedUserWithLinkedSsoIdentityRejected is the exact
+// audit finding: the user logged in before (SSO identity linked), then the IDP
+// DELETEd them via SCIM. The identity resolves directly, only a tombstone row
+// remains, and the login must be a 401 with no membership and no session —
+// otherwise the membership integrity fallback would resurrect their access.
+func TestSsoCallback_ScimDeletedUserWithLinkedSsoIdentityRejected(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().IsMultitenant().Return(false).AnyTimes()
+	s.CpClient.(*mockplatformorchestratorcp.MockClientWithResponsesInterface).EXPECT().
+		GetOrganizationWithResponse(gomock.Any(), orgId).
+		Return(&cpclient.GetOrganizationResponse{
+			HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+			JSON200:      &cpclient.Organization{Id: orgId},
+		}, nil)
+
+	profile := &ssoprovider.UserProfile{
+		Email:          "linked-tombstoned@example.com",
+		DisplayName:    "Linked Tombstoned User",
+		ProviderOrgId:  "sso-provider-org",
+		ProviderUserId: "sso-user-linked-tombstoned",
+	}
+	s.SsoProvider.(*mocksso.MockProvider).EXPECT().
+		GetUserProfile(gomock.Any(), TestSsoAuthCode).
+		Return(profile, nil)
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+
+	linkedUserId := userid.NewHumanUserId()
+	db.EXPECT().
+		GetUserIdByIdentity(gomock.Any(), gomock.Any(), model.UserIdentityProviderSso, "sso-provider-org:sso-user-linked-tombstoned").
+		Return(&linkedUserId, nil)
+
+	// Only the tombstone left by the SCIM DELETE remains.
+	db.EXPECT().
+		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, linkedUserId).
+		Return(&model.ScimUser{
+			Id:        uuid.New(),
+			OrgId:     orgId,
+			UserId:    linkedUserId,
+			Active:    false,
+			DeletedAt: opt.Of(time.Now().UTC()),
+		}, nil)
+
+	// No GetUser / UpdateUser / ListMemberships / CreateMembership /
+	// CreateSessionToken expectations: any of those calls fails the test,
+	// because a deleted user must be stopped before touching them.
+
+	state := testSsoState(t)
+	authCode := TestSsoAuthCode
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userid.InternalSystemUuid.String())
+	resp, err := s.GetSsoCallback(ctx, GetSsoCallbackRequestObject{
+		Params: GetSsoCallbackParams{Code: &authCode, State: &state},
+	})
+	require.NoError(t, err)
+	_, ok := resp.(GetSsoCallback401JSONResponse)
+	require.True(t, ok, "SCIM-deleted user with a linked SSO identity must get 401, got %T", resp)
+}

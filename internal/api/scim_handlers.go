@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -277,8 +278,10 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
-	if body.UserName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required")
+	// Whitespace-only would slip past an == "" check and blow up on the
+	// database CHECK as a 500; reject it here as the 400 it is.
+	if strings.TrimSpace(body.UserName) == "" {
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required and must not be blank")
 	}
 
 	active := true
@@ -346,24 +349,30 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
-	if body.UserName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required")
+	if strings.TrimSpace(body.UserName) == "" {
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required and must not be blank")
 	}
 
+	// PUT is a full replace (RFC 7644 §3.5.1): writable attributes the IDP
+	// omits are cleared, not preserved.
 	updated := *existing
 	updated.UserName = body.UserName
 	updated.Active = true
 	if body.Active != nil {
 		updated.Active = bool(*body.Active)
 	}
+	updated.ExternalId = opt.Empty[string]()
 	if body.ExternalId != "" {
 		updated.ExternalId = opt.Of(body.ExternalId)
 	}
-	global := scimGlobalUserFields{}
-	if body.DisplayName != "" {
-		global.DisplayName = &body.DisplayName
-	}
-	// PUT is a full replace, so an email the IDP sends is authoritative.
+	// displayName follows the full-replace rule too: an omitted (or blank)
+	// value clears it, which applyGlobalUserFields resolves to the same
+	// default used at provisioning time (the userName). Whether the write
+	// lands at all is decided by the multi-org ownership rule there.
+	global := scimGlobalUserFields{DisplayName: &body.DisplayName}
+	// Emails are the deliberate exception to full-replace: the primary email
+	// identifies the person for the email-match dedup path and SSO linking,
+	// so an omitted emails array leaves it untouched instead of blanking it.
 	if email := scimPrimaryEmail(body.Emails); email != "" {
 		global.Email = &email
 	}
@@ -417,9 +426,14 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 				updated.Active = *op.BoolValue
 			}
 		case scimAttrUserName:
+			// userName is required (RFC 7643 §4.1.1): it can be replaced but
+			// never removed or blanked.
+			if op.Op == scimOpRemove {
+				return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName is required and cannot be removed")
+			}
 			if op.StrValue != nil {
-				if *op.StrValue == "" {
-					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName must not be empty")
+				if strings.TrimSpace(*op.StrValue) == "" {
+					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "userName must not be blank")
 				}
 				updated.UserName = *op.StrValue
 			}
@@ -431,7 +445,12 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 				updated.ExternalId = opt.Of(*op.StrValue)
 			}
 		case scimAttrDisplayName:
-			if op.StrValue != nil {
+			// A remove clears the display name, same as an explicit blank:
+			// applyGlobalUserFields resolves a cleared value to the
+			// provisioning default (the userName).
+			if op.Op == scimOpRemove {
+				newDisplayName = ref.Ref("")
+			} else if op.StrValue != nil {
 				newDisplayName = op.StrValue
 			}
 		case scimAttrEmails:
@@ -565,8 +584,10 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
-	if body.DisplayName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required")
+	// Whitespace-only would slip past an == "" check and blow up on the
+	// database CHECK as a 500; reject it here as the 400 it is.
+	if strings.TrimSpace(body.DisplayName) == "" {
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required and must not be blank")
 	}
 
 	memberIds, err := parseMemberResourceIds(body.Members)
@@ -658,8 +679,8 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
 	}
-	if body.DisplayName == "" {
-		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required")
+	if strings.TrimSpace(body.DisplayName) == "" {
+		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required and must not be blank")
 	}
 
 	memberIds, err := parseMemberResourceIds(body.Members)
@@ -667,10 +688,13 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 	}
 
+	// PUT is a full replace (RFC 7644 §3.5.1): an externalId the IDP omits is
+	// cleared, not preserved.
 	updated := *existing
 	updated.DisplayName = body.DisplayName
 	updated.MemberIds = memberIds
 	updated.UpdatedAt = time.Now().UTC()
+	updated.ExternalId = opt.Empty[string]()
 	if body.ExternalId != "" {
 		updated.ExternalId = opt.Of(body.ExternalId)
 	}
@@ -751,9 +775,14 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	for _, op := range ops {
 		switch op.Path {
 		case scimAttrDisplayName:
+			// A group's displayName is required (RFC 7643 §4.2): it can be
+			// replaced but never removed or blanked.
+			if op.Op == scimOpRemove {
+				return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName is required and cannot be removed")
+			}
 			if op.StrValue != nil {
-				if *op.StrValue == "" {
-					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName must not be empty")
+				if strings.TrimSpace(*op.StrValue) == "" {
+					return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, "displayName must not be blank")
 				}
 				updated.DisplayName = *op.StrValue
 			}
@@ -863,7 +892,7 @@ func (s *Server) scimUserToResource(c echo.Context, orgId string, u model.ScimUs
 		UserName: u.UserName,
 		Active:   ref.Ref(boolOrString(u.Active)),
 		Meta: scimMeta{
-			ResourceType: "User",
+			ResourceType: scimResourceTypeUser,
 			Created:      u.CreatedAt,
 			LastModified: u.UpdatedAt,
 			Location:     loc,
@@ -897,7 +926,7 @@ func scimGroupToResource(c echo.Context, orgId string, g model.ScimGroup) ScimGr
 		DisplayName: g.DisplayName,
 		Members:     members,
 		Meta: scimMeta{
-			ResourceType: "Group",
+			ResourceType: scimResourceTypeGroup,
 			Created:      g.CreatedAt,
 			LastModified: g.UpdatedAt,
 			Location:     loc,

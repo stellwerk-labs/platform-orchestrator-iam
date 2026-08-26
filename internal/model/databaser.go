@@ -76,6 +76,14 @@ func MigrateDownTo(ctx context.Context, logger *zap.Logger, db *sql.DB, targetVe
 	return goose.DownToContext(ctx, db, "migrations", targetVersion)
 }
 
+// MigrateUpTo applies embedded migrations up to (and including) targetVersion.
+// It exists for tests that need to stage pre-migration data (e.g. rows a later
+// migration must detect and refuse) before running the remaining migrations.
+func MigrateUpTo(ctx context.Context, logger *zap.Logger, db *sql.DB, targetVersion int64) error {
+	configureMigrations(logger)
+	return goose.UpToContext(ctx, db, "migrations", targetVersion)
+}
+
 // Databaser provides an interface which can be used to mock the model
 type Databaser interface {
 	Close() error
@@ -156,8 +164,9 @@ type Databaser interface {
 	FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error)
 	ListScimUsers(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimUser, error)
 	CountScimUsers(ctx context.Context, optionalTx Tx, orgId string) (int, error)
+	CountLiveScimUsersForUser(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int, error)
 	UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
-	DeleteScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
+	TombstoneScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 
 	UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) error
 	DeleteScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) error

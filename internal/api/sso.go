@@ -250,7 +250,10 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 				return nil, err
 			}
 		}
-		if scimUser != nil && !scimUser.Active {
+		// Deprovisioned covers both a deactivated live row and a tombstone left
+		// behind by a SCIM DELETE; either way this org's IDP has withdrawn the
+		// user and the login must not recreate access.
+		if scimUser != nil && scimUser.Deprovisioned() {
 			msg := fmt.Sprintf("User was deprovisioned via SCIM for organization %s", orgId)
 			return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: msg}}}, nil
 		}
@@ -285,11 +288,12 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 		}
 	} else {
 		// SCIM is authoritative for provisioned users: if this org's IDP
-		// deprovisioned the user, an SSO login must not resurrect access via the
-		// membership integrity fallback below.
+		// deprovisioned the user (deactivated, or deleted → only a tombstone
+		// remains), an SSO login must not resurrect access via the membership
+		// integrity fallback below.
 		if scimUser, err := s.findScimUserForOrg(ctx, tx, orgId, *userId); err != nil {
 			return nil, err
-		} else if scimUser != nil && !scimUser.Active {
+		} else if scimUser != nil && scimUser.Deprovisioned() {
 			msg := fmt.Sprintf("User was deprovisioned via SCIM for organization %s", orgId)
 			return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: msg}}}, nil
 		}

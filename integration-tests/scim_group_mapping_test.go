@@ -98,8 +98,8 @@ func TestScimGroupRoleMapping(t *testing.T) {
 	// ------------------------------------------------------------------ mapping CRUD + authorization
 
 	t.Run("provisioning-only caller cannot manage mappings", func(t *testing.T) {
-		// role_write is required; the SCIM client's provisioning_write must NOT
-		// be enough, or the IDP could self-escalate via a group→Admin mapping.
+		// membership_write is required; the SCIM client's provisioning_write must
+		// NOT be enough, or the IDP could self-escalate via a group→Admin mapping.
 		r, err := client.UpsertScimGroupMappingWithResponse(t.Context(), org.Id, groupName,
 			serverclient.UpsertScimGroupMappingJSONRequestBody{RoleId: mappedRoleId},
 			WithAuthenticatedUserId(scimCaller.Id))
@@ -113,6 +113,56 @@ func TestScimGroupRoleMapping(t *testing.T) {
 		l, err := client.ListScimGroupMappingsWithResponse(t.Context(), org.Id, WithAuthenticatedUserId(scimCaller.Id))
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusForbidden, l.StatusCode(), "body: %s", string(l.Body))
+	})
+
+	t.Run("role-admin caller cannot manage mappings", func(t *testing.T) {
+		// Mapping a populated group to a role hands that role to its members,
+		// which is membership administration. A caller who may only manage role
+		// DEFINITIONS (role_read/role_write) must not be able to grant access by
+		// mapping a group to a privileged role.
+		roleAdminRole, err := client.CreateRoleWithResponse(t.Context(), org.Id, serverclient.CreateRoleJSONRequestBody{
+			DisplayName: "Role Definitions Only",
+			Permissions: []string{authz.PermissionRoleRead, authz.PermissionRoleWrite},
+		}, WithAuthenticatedUserId(admin.Id))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, roleAdminRole.StatusCode(), "create role-admin role: %s", string(roleAdminRole.Body))
+
+		roleAdmin := MustRegisterTestUser(client, t)
+		rm, err := internalClient.InternalCreateOrgMembershipWithResponse(t.Context(), org.Id,
+			serverclient.InternalCreateOrgMembershipJSONRequestBody{
+				UserId:      roleAdmin.Id,
+				SubjectType: serverclient.SubjectTypeRole,
+				Subject:     roleAdminRole.JSON201.Id.String(),
+			})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, rm.StatusCode(), "add role-admin membership: %s", string(rm.Body))
+
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := client.CheckPermissionsWithResponse(t.Context(), []serverclient.ResourcePermissionCheck{
+				authz.OrgCheck(org.Id, authz.PermissionRoleWrite),
+			}, WithAuthenticatedUserId(roleAdmin.Id))
+			require.NoError(t, err)
+			if !assert.Equal(c, http.StatusOK, resp.StatusCode(), "check perms: %s", string(resp.Body)) {
+				return
+			}
+			assert.Equal(c, []serverclient.ResourcePermissionCheckResultItem{
+				{Allowed: true, PermissionCheck: authz.OrgCheck(org.Id, authz.PermissionRoleWrite)},
+			}, resp.JSON200.Items)
+		}, 30*time.Second, 500*time.Millisecond, "role-admin caller did not get role_write in time")
+
+		r, err := client.UpsertScimGroupMappingWithResponse(t.Context(), org.Id, groupName,
+			serverclient.UpsertScimGroupMappingJSONRequestBody{RoleId: mappedRoleId},
+			WithAuthenticatedUserId(roleAdmin.Id))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusForbidden, r.StatusCode(), "role_write alone must not create a mapping; body: %s", string(r.Body))
+
+		d, err := client.DeleteScimGroupMappingWithResponse(t.Context(), org.Id, groupName, WithAuthenticatedUserId(roleAdmin.Id))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusForbidden, d.StatusCode(), "role_write alone must not delete a mapping; body: %s", string(d.Body))
+
+		l, err := client.ListScimGroupMappingsWithResponse(t.Context(), org.Id, WithAuthenticatedUserId(roleAdmin.Id))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusForbidden, l.StatusCode(), "role_read alone must not list mappings; body: %s", string(l.Body))
 	})
 
 	t.Run("mapping to a role from another org is rejected", func(t *testing.T) {
@@ -301,11 +351,12 @@ func TestScimGroupRoleMapping(t *testing.T) {
 	})
 }
 
-// TestScimGroupMemberDeleteCascade pins the FK cascade path: deleting a SCIM
-// user who belongs to a group removes the scim_group_members row via ON DELETE
-// CASCADE, not through the handler. The group must read back cleanly without
-// the member (no dangling id, no error), and the deleted user's mapped role
-// must be gone while the surviving member keeps theirs.
+// TestScimGroupMemberDeleteCascade pins the group cleanup on user delete:
+// tombstoning a SCIM user who belongs to a group removes the
+// scim_group_members row (explicitly, since the tombstoned row survives and
+// the old ON DELETE CASCADE no longer fires). The group must read back cleanly
+// without the member (no dangling id, no error), and the deleted user's mapped
+// role must be gone while the surviving member keeps theirs.
 func TestScimGroupMemberDeleteCascade(t *testing.T) {
 	t.Parallel()
 

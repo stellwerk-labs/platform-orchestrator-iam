@@ -495,7 +495,7 @@ func TestScimDeleteUser_Success(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), globalUserId).Return(int64(0), nil)
-	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
+	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
 	deprovisioned := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	c, rec := scimRequest(t, e, http.MethodDelete, "/", nil, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
@@ -550,7 +550,7 @@ func TestScimDeleteUser_KeepsSessionsIfOtherMemberships(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &globalUserId}).
 		Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{OrgId: otherOrgId}}}, nil)
 	// DeleteSessionTokensByUserId should NOT be called.
-	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
+	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUserId).Return(nil)
 	expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	c, rec := scimRequest(t, e, http.MethodDelete, "/", nil, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
@@ -848,6 +848,8 @@ func TestScimPatchUser_DisplayNamePropagates(t *testing.T) {
 		}, nil)
 
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	// Sole governing org → the global profile write is allowed.
+	db.EXPECT().CountLiveScimUsersForUser(gomock.Any(), gomock.Not(nil), globalUserId).Return(1, nil)
 	db.EXPECT().GetUser(gomock.Any(), gomock.Not(nil), globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Old Name"}, nil)
 	db.EXPECT().UpdateUser(gomock.Any(), gomock.Not(nil), gomock.Any()).
@@ -1417,6 +1419,8 @@ func TestScimPatchUser_EmailsArrayPropagates(t *testing.T) {
 		}, nil)
 
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	// Sole governing org → the global profile write is allowed.
+	db.EXPECT().CountLiveScimUsersForUser(gomock.Any(), gomock.Not(nil), globalUserId).Return(1, nil)
 	db.EXPECT().GetUser(gomock.Any(), gomock.Not(nil), globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Grace", PrimaryEmailAddress: opt.Of("old@example.com")}, nil)
 	db.EXPECT().UpdateUser(gomock.Any(), gomock.Not(nil), gomock.Any()).
@@ -1469,6 +1473,8 @@ func TestScimPatchUser_EmailsBracketFormPropagates(t *testing.T) {
 		}, nil)
 
 	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Not(nil), gomock.Any()).Return(nil)
+	// Sole governing org → the global profile write is allowed.
+	db.EXPECT().CountLiveScimUsersForUser(gomock.Any(), gomock.Not(nil), globalUserId).Return(1, nil)
 	db.EXPECT().GetUser(gomock.Any(), gomock.Not(nil), globalUserId).
 		Return(&model.User{Id: globalUserId, DisplayName: "Heidi", PrimaryEmailAddress: opt.Of("old@example.com")}, nil)
 	db.EXPECT().UpdateUser(gomock.Any(), gomock.Not(nil), gomock.Any()).

@@ -14,6 +14,32 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 )
 
+// newScratchSchemaDb opens a connection whose search_path holds ONLY a fresh
+// scratch schema, so goose cannot see the main schema's goose_db_version and
+// replays the full migration history without touching the tables the parallel
+// tests depend on. The schema is dropped on cleanup.
+func newScratchSchemaDb(t *testing.T, prefix string) (*sql.DB, string) {
+	t.Helper()
+	connStr := os.Getenv("DATABASE_URL")
+	require.NotEmpty(t, connStr, "DATABASE_URL must be set")
+
+	admin, err := sql.Open("postgres", connStr)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close() })
+
+	scratchName := prefix + strings.ReplaceAll(uuid.New().String(), "-", "")
+	_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+scratchName)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = admin.Exec("DROP SCHEMA IF EXISTS " + scratchName + " CASCADE")
+	})
+
+	db, err := sql.Open("postgres", connStr+" options='-c search_path="+scratchName+"'")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	return db, scratchName
+}
+
 // scimMigrationTables are the tables introduced by 000032_scim.sql and
 // 000033_scim_group_role_mappings.sql, in no particular order.
 var scimMigrationTables = []string{
@@ -25,7 +51,7 @@ var scimMigrationTables = []string{
 }
 
 // preScimMigrationVersion is the migration the SCIM feature builds on top of;
-// rolling back to it must undo 000033 and 000032.
+// rolling back to it must undo 000034, 000033, and 000032.
 const preScimMigrationVersion = 31
 
 // TestScimMigrationRollback executes the `-- +goose Down` blocks of the SCIM
@@ -38,25 +64,7 @@ const preScimMigrationVersion = 31
 func TestScimMigrationRollback(t *testing.T) {
 	t.Parallel()
 
-	connStr := os.Getenv("DATABASE_URL")
-	require.NotEmpty(t, connStr, "DATABASE_URL must be set")
-
-	admin, err := sql.Open("postgres", connStr)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = admin.Close() })
-
-	scratchName := "scim_migration_test_" + strings.ReplaceAll(uuid.New().String(), "-", "")
-	_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+scratchName)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = admin.Exec("DROP SCHEMA IF EXISTS " + scratchName + " CASCADE")
-	})
-
-	// search_path holds ONLY the scratch schema, so goose cannot see the main
-	// schema's goose_db_version and skip the replay.
-	db, err := sql.Open("postgres", connStr+" options='-c search_path="+scratchName+"'")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	db, scratchName := newScratchSchemaDb(t, "scim_migration_test_")
 
 	logger := zap.NewNop()
 	ctx := t.Context()
@@ -99,5 +107,89 @@ func TestScimMigrationRollback(t *testing.T) {
 	var version int64
 	require.NoError(t, db.QueryRowContext(ctx,
 		"SELECT version_id FROM goose_db_version ORDER BY id DESC LIMIT 1").Scan(&version))
-	assert.GreaterOrEqual(t, version, int64(33), "database must be back at (or beyond) the scim migrations")
+	assert.GreaterOrEqual(t, version, int64(34), "database must be back at (or beyond) the scim migrations")
+}
+
+// TestScimCaseCollisionMigrationFailsLoudly pins the operator-facing failure
+// mode of 000035: rows that differ only in case (legal before, duplicates
+// after) must abort the migration with a message that lists the colliding
+// rows, instead of erroring out on the index build. After the operator
+// resolves them, the migration must complete and enforce case-insensitive
+// uniqueness from then on.
+func TestScimCaseCollisionMigrationFailsLoudly(t *testing.T) {
+	t.Parallel()
+
+	db, _ := newScratchSchemaDb(t, "scim_case_migration_test_")
+	logger := zap.NewNop()
+	ctx := t.Context()
+
+	// Stage the world as it was BEFORE case-insensitive uniqueness.
+	require.NoError(t, model.MigrateUpTo(ctx, logger, db, 34), "migrate up to the pre-case-folding version")
+
+	mustInsertUser := func(userId uuid.UUID, name string) {
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO users (id, display_name, created_at) VALUES ($1, $2, now())`, userId, name)
+		require.NoError(t, err)
+	}
+	mustInsertScimUser := func(userName string, deleted bool) {
+		userId := uuid.New()
+		mustInsertUser(userId, userName)
+		var deletedAt *string
+		if deleted {
+			s := "2026-01-01T00:00:00Z"
+			deletedAt = &s
+		}
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO scim_users (id, org_id, user_id, user_name, active, created_at, updated_at, deleted_at)
+			 VALUES ($1, 'case-org', $2, $3, true, now(), now(), $4)`,
+			uuid.New(), userId, userName, deletedAt)
+		require.NoError(t, err)
+	}
+	mustInsertScimGroup := func(displayName string) uuid.UUID {
+		id := uuid.New()
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO scim_groups (id, org_id, display_name, created_at, updated_at)
+			 VALUES ($1, 'case-org', $2, now(), now())`, id, displayName)
+		require.NoError(t, err)
+		return id
+	}
+
+	// Live case-collisions in both tables, plus a tombstoned user that folds to
+	// the same name — tombstones are exempt and must NOT trip the check.
+	mustInsertScimUser("Alice@Example.com", false)
+	mustInsertScimUser("alice@example.com", false)
+	mustInsertScimUser("ALICE@EXAMPLE.COM", true)
+	collidingGroupId := mustInsertScimGroup("Engineering")
+	mustInsertScimGroup("engineering")
+
+	err := model.MigrateUp(ctx, logger, db)
+	require.Error(t, err, "migration must refuse to build the case-insensitive index over colliding rows")
+	assert.Contains(t, err.Error(), "differ only in userName case", "the error must explain the problem")
+	assert.Contains(t, err.Error(), "alice@example.com", "the error must name the colliding rows")
+
+	// Resolve the user collision only; the group collision must still block.
+	_, err = db.ExecContext(ctx, `DELETE FROM scim_users WHERE user_name = 'alice@example.com'`)
+	require.NoError(t, err)
+	err = model.MigrateUp(ctx, logger, db)
+	require.Error(t, err, "the group collision must still block the migration")
+	assert.Contains(t, err.Error(), "differ only in displayName case")
+	assert.Contains(t, err.Error(), "engineering")
+
+	// Resolve the group collision too; now the migration must complete.
+	_, err = db.ExecContext(ctx, `DELETE FROM scim_groups WHERE id = $1`, collidingGroupId)
+	require.NoError(t, err)
+	require.NoError(t, model.MigrateUp(ctx, logger, db), "migration must succeed once the collisions are resolved")
+
+	// And from here on, case-insensitive uniqueness is enforced by the database.
+	userId := uuid.New()
+	mustInsertUser(userId, "dupe probe")
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO scim_users (id, org_id, user_id, user_name, active, created_at, updated_at)
+		 VALUES ($1, 'case-org', $2, 'aLiCe@ExAmPlE.cOm', true, now(), now())`,
+		uuid.New(), userId)
+	require.ErrorContains(t, err, "unique_scim_user_name", "a case-variant duplicate userName must violate the unique index")
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO scim_groups (id, org_id, display_name, created_at, updated_at)
+		 VALUES ($1, 'case-org', 'ENGINEERING', now(), now())`, uuid.New())
+	assert.ErrorContains(t, err, "unique_scim_group_name", "a case-variant duplicate displayName must violate the unique index")
 }

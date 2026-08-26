@@ -320,8 +320,11 @@ func (s *Server) reconcileScimUsersById(ctx context.Context, logger *zap.Logger,
 	return nil
 }
 
-// scimDeleteUser removes all org memberships and the scim_users row entirely.
-// Session tokens are revoked if the user has no remaining memberships anywhere.
+// scimDeleteUser removes all org memberships and tombstones the scim_users row
+// (deleted_at set, active=false, group membership rows removed). The row must
+// survive: it is the only record that this org's IDP governs the user, and the
+// SSO gate needs it to refuse a deleted user who tries to log back in. Session
+// tokens are revoked if the user has no remaining memberships anywhere.
 func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUser *model.ScimUser) error {
 	tx, err := s.Database.BeginTx(ctx, nil)
 	if err != nil {
@@ -337,8 +340,8 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 		return err
 	}
 
-	if err := s.Database.DeleteScimUser(ctx, tx, scimUser.OrgId, scimUser.Id); err != nil {
-		return errors.Wrap(err, "failed to delete scim user row")
+	if err := s.Database.TombstoneScimUser(ctx, tx, scimUser.OrgId, scimUser.Id); err != nil {
+		return errors.Wrap(err, "failed to tombstone scim user row")
 	}
 
 	if err := s.insertScimUserDeprovisionedEvent(ctx, tx, *scimUser, genevents.Deleted); err != nil {
@@ -374,8 +377,10 @@ func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, tx mo
 	return nil
 }
 
-// findScimUserForOrg returns the org's SCIM row for the user, or nil if the
-// user was not SCIM-provisioned in that org.
+// findScimUserForOrg returns the org's SCIM governance record for the user:
+// the live row if one exists, otherwise the most recent tombstone (DeletedAt
+// set), otherwise nil — the org's SCIM never provisioned this user. Callers
+// gate on Deprovisioned(), which covers both deactivated and deleted.
 func (s *Server) findScimUserForOrg(ctx context.Context, tx model.TxWithCommit, orgId string, userId uuid.UUID) (*model.ScimUser, error) {
 	scimUser, err := s.Database.FindScimUserByUserId(ctx, tx, orgId, userId)
 	if err != nil {
@@ -389,8 +394,10 @@ func (s *Server) findScimUserForOrg(ctx context.Context, tx model.TxWithCommit, 
 
 // scimGlobalUserFields carries the parts of a SCIM payload that live on the
 // global user record rather than the org-scoped SCIM row. A nil field means the
-// IDP did not send it, so leave it alone; for anything it does send the IDP is
-// authoritative, because it owns the lifecycle of provisioned users.
+// IDP did not send it, so leave it alone. A non-nil blank DisplayName means the
+// IDP cleared it (PUT omitted it, PATCH removed it), which resets it to the
+// provisioning default. Whether any of it lands on the shared record is
+// decided by the multi-org ownership rule in applyGlobalUserFields.
 type scimGlobalUserFields struct {
 	DisplayName *string
 	Email       *string
@@ -438,7 +445,20 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 		return nil, errors.Wrap(err, "failed to update scim user")
 	}
 
-	if err := s.applyGlobalUserFields(ctx, tx, updated.UserId, global); err != nil {
+	// A changed externalId means the IDP now addresses this person by a new
+	// key; bind it so resolveOrCreateGlobalUser's identity lookup keeps
+	// working. The old binding is deliberately left in place: it still maps
+	// the retired key to the same person (harmless, and historically
+	// accurate), while deleting it would break a concurrent request that
+	// resolved the old key moments ago. AddUserIdentity is idempotent.
+	if updated.ExternalId.IsSet() && updated.ExternalId != existing.ExternalId {
+		identityKey := fmt.Sprintf("%s:%s", updated.OrgId, updated.ExternalId.Must())
+		if err := s.Database.AddUserIdentity(ctx, tx, updated.UserId, model.UserIdentityProviderScim, identityKey); err != nil {
+			return nil, errors.Wrap(err, "failed to bind changed scim external id")
+		}
+	}
+
+	if err := s.applyGlobalUserFields(ctx, logger, tx, updated, global); err != nil {
 		return nil, err
 	}
 
@@ -451,18 +471,45 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 // applyGlobalUserFields writes IDP-supplied display name and email onto the
 // global user record, so a rename in the IDP does not leave the orchestrator
 // showing a stale name or address forever.
-func (s *Server) applyGlobalUserFields(ctx context.Context, tx model.TxWithCommit, userId uuid.UUID, global scimGlobalUserFields) error {
+//
+// Multi-organization ownership rule: the write only happens while the calling
+// organization holds the SOLE live (non-tombstoned) SCIM record for this user.
+// The global user is shared across organizations, so if two of them provision
+// the same person, letting either IDP write here degrades to silent
+// last-writer-wins renames that ripple into every other organization. No
+// organization's IDP gets to rename a person for everybody else; with more
+// than one live SCIM record the shared profile stays untouched and we log why.
+func (s *Server) applyGlobalUserFields(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, scimUser model.ScimUser, global scimGlobalUserFields) error {
 	if global.DisplayName == nil && global.Email == nil {
 		return nil
 	}
-	user, err := s.Database.GetUser(ctx, tx, userId)
+	governingOrgs, err := s.Database.CountLiveScimUsersForUser(ctx, tx, scimUser.UserId)
+	if err != nil {
+		return errors.Wrap(err, "failed to count live scim records for user")
+	}
+	if governingOrgs > 1 {
+		logger.Info("skipping scim update of the shared global user profile: the user is scim-provisioned in multiple organizations, so no single organization's IDP owns the profile",
+			zap.String("org_id", scimUser.OrgId),
+			zap.String("user_id", scimUser.UserId.String()),
+			zap.Int("governing_orgs", governingOrgs))
+		return nil
+	}
+	user, err := s.Database.GetUser(ctx, tx, scimUser.UserId)
 	if err != nil {
 		return errors.Wrap(err, "failed to get global user for scim field update")
 	}
 	changed := false
-	if global.DisplayName != nil && *global.DisplayName != "" && user.DisplayName != *global.DisplayName {
-		user.DisplayName = *global.DisplayName
-		changed = true
+	if global.DisplayName != nil {
+		// A cleared display name (PUT omitted it, PATCH removed it) resets to
+		// the same default used at provisioning time: the userName.
+		target := *global.DisplayName
+		if strings.TrimSpace(target) == "" {
+			target = scimUser.UserName
+		}
+		if user.DisplayName != target {
+			user.DisplayName = target
+			changed = true
+		}
 	}
 	if global.Email != nil && *global.Email != "" {
 		current := ""

@@ -94,6 +94,7 @@ func (d *databaser) ListRoleIdsForScimUserGroups(ctx context.Context, optionalTx
 		ctx,
 		`SELECT DISTINCT m.role_id
 		FROM scim_group_members gm
+		JOIN scim_users su ON su.id = gm.scim_user_id AND su.deleted_at IS NULL
 		JOIN scim_groups g ON gm.group_id = g.id
 		JOIN scim_group_role_mappings m ON m.org_id = g.org_id AND LOWER(m.group_display_name) = LOWER(g.display_name)
 		WHERE gm.org_id = $1 AND gm.scim_user_id = $2`,
@@ -132,6 +133,7 @@ func (d *databaser) ListScimUserIdsInGroupByDisplayName(ctx context.Context, opt
 		ctx,
 		`SELECT gm.scim_user_id
 		FROM scim_group_members gm
+		JOIN scim_users su ON su.id = gm.scim_user_id AND su.deleted_at IS NULL
 		JOIN scim_groups g ON gm.group_id = g.id
 		WHERE g.org_id = $1 AND LOWER(g.display_name) = LOWER($2)`,
 		orgId, groupDisplayName,

@@ -1659,7 +1659,7 @@
         ],
         "operationId": "upsertScimGroupMapping",
         "summary": "Create or replace the role mapping for a SCIM group display name.",
-        "description": "Members of the SCIM group with this display name (compared case-insensitively) are granted the mapped role on their next provisioning sync or group membership change. Requires role management permission, not provisioning permission.",
+        "description": "Members of the SCIM group with this display name (compared case-insensitively) are granted the mapped role on their next provisioning sync or group membership change. Requires membership management permission, not provisioning or role permission.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgIdPathParam"

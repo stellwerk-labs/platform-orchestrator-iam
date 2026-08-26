@@ -48,6 +48,7 @@ type testScimUserResp struct {
 type testScimGroupBody struct {
 	Schemas     []string            `json:"schemas"`
 	DisplayName string              `json:"displayName"`
+	ExternalId  string              `json:"externalId,omitempty"`
 	Members     []map[string]string `json:"members,omitempty"`
 }
 

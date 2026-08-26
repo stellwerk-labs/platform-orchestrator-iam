@@ -52,9 +52,10 @@ func (d *databaser) GetScimGroup(ctx context.Context, optionalTx Tx, orgId strin
 	if err := optionalTx.QueryRowContext(
 		ctx,
 		`SELECT g.id, g.org_id, g.display_name, g.external_id, g.created_at, g.updated_at,
-			COALESCE(ARRAY_AGG(m.scim_user_id::text ORDER BY m.scim_user_id) FILTER (WHERE m.scim_user_id IS NOT NULL), '{}')
+			COALESCE(ARRAY_AGG(su.id::text ORDER BY su.id) FILTER (WHERE su.id IS NOT NULL), '{}')
 		FROM scim_groups g
 		LEFT JOIN scim_group_members m ON g.id = m.group_id
+		LEFT JOIN scim_users su ON su.id = m.scim_user_id AND su.deleted_at IS NULL
 		WHERE g.org_id = $1 AND g.id = $2
 		GROUP BY g.id`,
 		orgId, id,
@@ -70,6 +71,9 @@ func (d *databaser) GetScimGroup(ctx context.Context, optionalTx Tx, orgId strin
 	return &out, nil
 }
 
+// FindScimGroupByDisplayName matches case-insensitively: /Schemas advertises
+// displayName with caseExact=false, and migration 000035 enforces uniqueness
+// on LOWER(display_name), so at most one group can match.
 func (d *databaser) FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var out ScimGroup
@@ -77,10 +81,11 @@ func (d *databaser) FindScimGroupByDisplayName(ctx context.Context, optionalTx T
 	if err := optionalTx.QueryRowContext(
 		ctx,
 		`SELECT g.id, g.org_id, g.display_name, g.external_id, g.created_at, g.updated_at,
-			COALESCE(ARRAY_AGG(m.scim_user_id::text ORDER BY m.scim_user_id) FILTER (WHERE m.scim_user_id IS NOT NULL), '{}')
+			COALESCE(ARRAY_AGG(su.id::text ORDER BY su.id) FILTER (WHERE su.id IS NOT NULL), '{}')
 		FROM scim_groups g
 		LEFT JOIN scim_group_members m ON g.id = m.group_id
-		WHERE g.org_id = $1 AND g.display_name = $2
+		LEFT JOIN scim_users su ON su.id = m.scim_user_id AND su.deleted_at IS NULL
+		WHERE g.org_id = $1 AND LOWER(g.display_name) = LOWER($2)
 		GROUP BY g.id`,
 		orgId, displayName,
 	).Scan(&out.Id, &out.OrgId, &out.DisplayName, opt.Scan(&out.ExternalId), &out.CreatedAt, &out.UpdatedAt, &memberIdStrings); err != nil {
@@ -102,9 +107,10 @@ func (d *databaser) FindScimGroupByExternalId(ctx context.Context, optionalTx Tx
 	if err := optionalTx.QueryRowContext(
 		ctx,
 		`SELECT g.id, g.org_id, g.display_name, g.external_id, g.created_at, g.updated_at,
-			COALESCE(ARRAY_AGG(m.scim_user_id::text ORDER BY m.scim_user_id) FILTER (WHERE m.scim_user_id IS NOT NULL), '{}')
+			COALESCE(ARRAY_AGG(su.id::text ORDER BY su.id) FILTER (WHERE su.id IS NOT NULL), '{}')
 		FROM scim_groups g
 		LEFT JOIN scim_group_members m ON g.id = m.group_id
+		LEFT JOIN scim_users su ON su.id = m.scim_user_id AND su.deleted_at IS NULL
 		WHERE g.org_id = $1 AND g.external_id = $2
 		GROUP BY g.id`,
 		orgId, externalId,
@@ -126,9 +132,10 @@ func (d *databaser) ListScimGroups(ctx context.Context, optionalTx Tx, orgId str
 	if rs, err := optionalTx.QueryContext(
 		ctx,
 		`SELECT g.id, g.org_id, g.display_name, g.external_id, g.created_at, g.updated_at,
-			COALESCE(ARRAY_AGG(m.scim_user_id::text ORDER BY m.scim_user_id) FILTER (WHERE m.scim_user_id IS NOT NULL), '{}')
+			COALESCE(ARRAY_AGG(su.id::text ORDER BY su.id) FILTER (WHERE su.id IS NOT NULL), '{}')
 		FROM scim_groups g
 		LEFT JOIN scim_group_members m ON g.id = m.group_id
+		LEFT JOIN scim_users su ON su.id = m.scim_user_id AND su.deleted_at IS NULL
 		WHERE g.org_id = $1
 		GROUP BY g.id
 		ORDER BY g.created_at ASC
@@ -209,10 +216,11 @@ func (d *databaser) DeleteScimGroup(ctx context.Context, optionalTx Tx, orgId st
 	return nil
 }
 
-// insertScimGroupMembers adds members to a group, accepting only SCIM users of
-// the same organization. Selecting the members through scim_users means a
-// foreign or stale id is reported as a bad request instead of surfacing as a
-// constraint violation. Duplicate ids in the input are collapsed.
+// insertScimGroupMembers adds members to a group, accepting only live SCIM
+// users of the same organization (a tombstoned user is a stale id, not a
+// member). Selecting the members through scim_users means a foreign or stale
+// id is reported as a bad request instead of surfacing as a constraint
+// violation. Duplicate ids in the input are collapsed.
 func insertScimGroupMembers(ctx context.Context, tx Tx, orgId string, groupId uuid.UUID, memberIds []uuid.UUID) error {
 	seen := make(map[uuid.UUID]struct{}, len(memberIds))
 	memberStrings := make([]string, 0, len(memberIds))
@@ -229,7 +237,7 @@ func insertScimGroupMembers(ctx context.Context, tx Tx, orgId string, groupId uu
 	rs, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO scim_group_members (group_id, org_id, scim_user_id)
-		SELECT $1, $2, u.id FROM scim_users u WHERE u.org_id = $2 AND u.id = ANY($3::uuid[])`,
+		SELECT $1, $2, u.id FROM scim_users u WHERE u.org_id = $2 AND u.id = ANY($3::uuid[]) AND u.deleted_at IS NULL`,
 		groupId, orgId, pq.Array(memberStrings),
 	)
 	if err != nil {

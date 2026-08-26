@@ -21,6 +21,8 @@ import (
 // Reason.
 type scimUserEventEnvelope struct {
 	SpecVersion string                              `json:"specversion"`
+	Id          string                              `json:"id"`
+	Source      string                              `json:"source"`
 	Type        string                              `json:"type"`
 	Time        time.Time                           `json:"time"`
 	Data        genevents.ScimUserDeprovisionedData `json:"data"`
@@ -130,6 +132,10 @@ func TestScimProvisioningEventsReachNats(t *testing.T) {
 			}
 			e := matches[0]
 			assert.Equal(c, "1.0", e.SpecVersion)
+			// CloudEvents 1.0 REQUIRED attributes must survive the outbox round trip.
+			_, idErr := uuid.Parse(e.Id)
+			assert.NoError(c, idErr, "event id must be a uuid, got %q", e.Id)
+			assert.Equal(c, "/platform-orchestrator/iam", e.Source)
 			assert.Equal(c, w.subject, e.Type, "CloudEvent type must match the NATS subject")
 			assert.False(c, e.Time.IsZero(), "event time must be set")
 			assert.Equal(c, w.userId, e.Data.UserId)

@@ -372,3 +372,41 @@ func TestNormalizePatchOps_EmailsMalformedRejected(t *testing.T) {
 	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "invalidValue", pe.ScimType)
 }
+
+// ------------------------------------------------------------------ PatchOp body validation (RFC 7644 §3.5.2)
+
+// A body whose schemas does not carry the PatchOp URN is not a PATCH request.
+func TestNormalizePatchOps_MissingPatchOpSchemaRejected(t *testing.T) {
+	req := scimPatchRequest{
+		Schemas:    []string{scimSchemaUser},
+		Operations: []scimPatchOp{{Op: "replace", Path: "active", Value: json.RawMessage(`true`)}},
+	}
+	_, err := normalizePatchOps(req)
+	var pe *scimPatchError
+	require.ErrorAs(t, err, &pe)
+	assert.Equal(t, scimTypeInvalidSyntax, pe.ScimType)
+}
+
+func TestNormalizePatchOps_AbsentSchemasRejected(t *testing.T) {
+	req := scimPatchRequest{
+		Operations: []scimPatchOp{{Op: "replace", Path: "active", Value: json.RawMessage(`true`)}},
+	}
+	_, err := normalizePatchOps(req)
+	var pe *scimPatchError
+	require.ErrorAs(t, err, &pe)
+	assert.Equal(t, scimTypeInvalidSyntax, pe.ScimType)
+}
+
+func TestNormalizePatchOps_EmptyOperationsRejected(t *testing.T) {
+	for name, ops := range map[string][]scimPatchOp{
+		"absent": nil,
+		"empty":  {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := normalizePatchOps(makePatchRequest(ops))
+			var pe *scimPatchError
+			require.ErrorAs(t, err, &pe)
+			assert.Equal(t, scimTypeInvalidValue, pe.ScimType)
+		})
+	}
+}

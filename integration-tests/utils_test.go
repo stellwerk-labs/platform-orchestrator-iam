@@ -69,6 +69,14 @@ func mustInternalServerURL(t *testing.T) string {
 	return u.String()
 }
 
+func mustSelfHostedIamURL(t *testing.T) string {
+	t.Helper()
+	u, err := url.Parse(os.Getenv("SELF_HOSTED_IAM_URL"))
+	require.NoError(t, err)
+	require.NotEmpty(t, u.Host, "SELF_HOSTED_IAM_URL must be set")
+	return u.String()
+}
+
 func MustInternalControlPlaneClient(t *testing.T) cpclient.ClientWithResponsesInterface {
 	u, err := url.Parse(os.Getenv("INTERNAL_CP_URL"))
 	require.NoError(t, err)

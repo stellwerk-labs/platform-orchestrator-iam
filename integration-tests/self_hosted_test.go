@@ -19,9 +19,9 @@ import (
 )
 
 // keycloakLogin programmatically authenticates with Keycloak by simulating a browser login.
-// It rewrites Docker-internal URLs to localhost, fetches the login page, submits credentials,
-// and captures the authorization code from the redirect.
-func keycloakLogin(t *testing.T, authURL string) string {
+// It rewrites Docker-internal URLs to localhost, fetches the login page, submits the given
+// user's credentials, and captures the authorization code from the redirect.
+func keycloakLogin(t *testing.T, authURL, username, password string) string {
 	t.Helper()
 
 	// Rewrite keycloak:8080 (Docker internal) to localhost:8180 (host-accessible)
@@ -61,8 +61,8 @@ func keycloakLogin(t *testing.T, authURL string) string {
 
 	// POST username/password to the form action, forwarding all collected cookies
 	formData := url.Values{
-		"username": {"testuser"},
-		"password": {"testpassword"},
+		"username": {username},
+		"password": {password},
 	}
 	postReq, err := http.NewRequest("POST", formAction, strings.NewReader(formData.Encode()))
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestKeycloakSso(t *testing.T) {
 	})
 
 	t.Run("full sso login success (new user)", func(t *testing.T) {
-		code := keycloakLogin(t, redirectUrl)
+		code := keycloakLogin(t, redirectUrl, "testuser", "testpassword")
 
 		r, err := client.GetSsoCallbackWithResponse(t.Context(), &serverclient.GetSsoCallbackParams{Code: &code, State: &state})
 		require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestKeycloakSso(t *testing.T) {
 		require.NoError(t, err)
 		newState := parsedUrl.Query().Get("state")
 
-		code := keycloakLogin(t, newRedirectUrl)
+		code := keycloakLogin(t, newRedirectUrl, "testuser", "testpassword")
 
 		cbResp, err := client.GetSsoCallbackWithResponse(t.Context(), &serverclient.GetSsoCallbackParams{Code: &code, State: &newState})
 		require.NoError(t, err)

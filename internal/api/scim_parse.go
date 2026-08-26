@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -75,6 +76,15 @@ type normalizedScimPatchOp struct {
 //   - Entra: `members[value eq "id"]` bracket filter path → IsBracketMemberRemove.
 //   - Okta: pathless `{op:"replace", value:{attr:val,...}}` → per-attribute entries.
 func normalizePatchOps(req scimPatchRequest) ([]normalizedScimPatchOp, error) {
+	// RFC 7644 §3.5.2: a PatchOp body MUST carry the PatchOp schema URN and at
+	// least one operation. A body without either is not a PATCH request at all.
+	if !slices.Contains(req.Schemas, scimPatchOpSchema) {
+		return nil, &scimPatchError{ScimType: scimTypeInvalidSyntax, Detail: fmt.Sprintf("PATCH body schemas must contain %s", scimPatchOpSchema)}
+	}
+	if len(req.Operations) == 0 {
+		return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: "PATCH body must contain at least one operation in Operations"}
+	}
+
 	out := make([]normalizedScimPatchOp, 0, len(req.Operations))
 	for _, raw := range req.Operations {
 		op := raw.normalizedOp()

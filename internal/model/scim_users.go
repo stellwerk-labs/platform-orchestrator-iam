@@ -23,6 +23,18 @@ type ScimUser struct {
 	Active     bool
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// DeletedAt marks a tombstone: the IDP deleted the user via SCIM. The row
+	// survives so an SSO login cannot pass for never-provisioned and JIT its
+	// way back in. All SCIM read paths treat tombstones as absent; only
+	// FindScimUserByUserId surfaces them, for the SSO gate.
+	DeletedAt opt.Opt[time.Time]
+}
+
+// Deprovisioned reports whether this org's IDP has withdrawn the user's
+// access: either deactivated (active=false) or deleted (tombstoned). An SSO
+// login for a deprovisioned user must be rejected outright.
+func (u ScimUser) Deprovisioned() bool {
+	return u.DeletedAt.IsSet() || !u.Active
 }
 
 func (d *databaser) CreateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error {
@@ -51,9 +63,9 @@ func (d *databaser) GetScimUser(ctx context.Context, optionalTx Tx, orgId string
 	var out ScimUser
 	if err := optionalTx.QueryRowContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at FROM scim_users WHERE org_id = $1 AND id = $2`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
 		orgId, id,
-	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt, opt.Scan(&out.DeletedAt)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("scim user not found")
 		}
@@ -62,14 +74,17 @@ func (d *databaser) GetScimUser(ctx context.Context, optionalTx Tx, orgId string
 	return &out, nil
 }
 
+// FindScimUserByUserName matches case-insensitively: /Schemas advertises
+// userName with caseExact=false, and migration 000035 enforces uniqueness on
+// LOWER(user_name), so at most one live row can match.
 func (d *databaser) FindScimUserByUserName(ctx context.Context, optionalTx Tx, orgId string, userName string) (*ScimUser, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var out ScimUser
 	if err := optionalTx.QueryRowContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at FROM scim_users WHERE org_id = $1 AND user_name = $2`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND LOWER(user_name) = LOWER($2) AND deleted_at IS NULL`,
 		orgId, userName,
-	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt, opt.Scan(&out.DeletedAt)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("scim user not found")
 		}
@@ -83,9 +98,9 @@ func (d *databaser) FindScimUserByExternalId(ctx context.Context, optionalTx Tx,
 	var out ScimUser
 	if err := optionalTx.QueryRowContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at FROM scim_users WHERE org_id = $1 AND external_id = $2`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND external_id = $2 AND deleted_at IS NULL`,
 		orgId, externalId,
-	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt, opt.Scan(&out.DeletedAt)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("scim user not found")
 		}
@@ -99,7 +114,7 @@ func (d *databaser) ListScimUsers(ctx context.Context, optionalTx Tx, orgId stri
 	optionalTx = d.txOrDb(optionalTx)
 	if rs, err := optionalTx.QueryContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at FROM scim_users WHERE org_id = $1 ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
 		orgId, limit, offset,
 	); err != nil {
 		return nil, errors.Wrap(err, "failed to list scim users")
@@ -112,7 +127,7 @@ func (d *databaser) ListScimUsers(ctx context.Context, optionalTx Tx, orgId stri
 		out := make([]ScimUser, 0)
 		for rs.Next() {
 			var item ScimUser
-			if err := rs.Scan(&item.Id, &item.OrgId, &item.UserId, &item.UserName, opt.Scan(&item.ExternalId), &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			if err := rs.Scan(&item.Id, &item.OrgId, &item.UserId, &item.UserName, opt.Scan(&item.ExternalId), &item.Active, &item.CreatedAt, &item.UpdatedAt, opt.Scan(&item.DeletedAt)); err != nil {
 				return nil, errors.Wrap(err, "failed to scan scim user")
 			}
 			out = append(out, item)
@@ -124,10 +139,23 @@ func (d *databaser) ListScimUsers(ctx context.Context, optionalTx Tx, orgId stri
 	}
 }
 
+// CountLiveScimUsersForUser counts how many organizations currently hold a
+// live (non-tombstoned) SCIM record for the given global user. The multi-org
+// profile ownership rule keys off it: an IDP may only write to the shared
+// global profile while its organization is the sole SCIM governor of the user.
+func (d *databaser) CountLiveScimUsersForUser(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	var count int
+	if err := optionalTx.QueryRowContext(ctx, `SELECT COUNT(*) FROM scim_users WHERE user_id = $1 AND deleted_at IS NULL`, userId).Scan(&count); err != nil {
+		return 0, errors.Wrap(err, "failed to count live scim users for user")
+	}
+	return count, nil
+}
+
 func (d *databaser) CountScimUsers(ctx context.Context, optionalTx Tx, orgId string) (int, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var count int
-	if err := optionalTx.QueryRowContext(ctx, `SELECT COUNT(*) FROM scim_users WHERE org_id = $1`, orgId).Scan(&count); err != nil {
+	if err := optionalTx.QueryRowContext(ctx, `SELECT COUNT(*) FROM scim_users WHERE org_id = $1 AND deleted_at IS NULL`, orgId).Scan(&count); err != nil {
 		return 0, errors.Wrap(err, "failed to count scim users")
 	}
 	return count, nil
@@ -137,7 +165,7 @@ func (d *databaser) UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUse
 	optionalTx = d.txOrDb(optionalTx)
 	if rs, err := optionalTx.ExecContext(
 		ctx,
-		`UPDATE scim_users SET user_name = $3, external_id = $4, active = $5, updated_at = $6 WHERE org_id = $1 AND id = $2`,
+		`UPDATE scim_users SET user_name = $3, external_id = $4, active = $5, updated_at = $6 WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
 		u.OrgId, u.Id, u.UserName, u.ExternalId.Ref(), u.Active, u.UpdatedAt,
 	); err != nil {
 		var pqErr *pq.Error
@@ -151,24 +179,51 @@ func (d *databaser) UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUse
 	return nil
 }
 
-func (d *databaser) DeleteScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error {
+// TombstoneScimUser implements SCIM DELETE: the row is kept with deleted_at
+// set (and active forced false) so the SSO gate keeps rejecting the user, and
+// its group membership rows are removed — they used to cascade away with the
+// hard delete. The caller must supply a non-nil Tx so both statements land
+// together with the membership removal and audit event.
+func (d *databaser) TombstoneScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error {
 	optionalTx = d.txOrDb(optionalTx)
-	if rs, err := optionalTx.ExecContext(ctx, `DELETE FROM scim_users WHERE org_id = $1 AND id = $2`, orgId, id); err != nil {
-		return errors.Wrap(err, "failed to delete scim user")
+	now := time.Now().UTC()
+	if rs, err := optionalTx.ExecContext(
+		ctx,
+		`UPDATE scim_users SET active = false, deleted_at = $3, updated_at = $3 WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		orgId, id, now,
+	); err != nil {
+		return errors.Wrap(err, "failed to tombstone scim user")
 	} else if rc, _ := rs.RowsAffected(); rc == 0 {
 		return NewErrNotFound("scim user not found")
+	}
+	if _, err := optionalTx.ExecContext(
+		ctx,
+		`DELETE FROM scim_group_members WHERE org_id = $1 AND scim_user_id = $2`,
+		orgId, id,
+	); err != nil {
+		return errors.Wrap(err, "failed to remove tombstoned scim user from groups")
 	}
 	return nil
 }
 
+// FindScimUserByUserId is the SSO gate's lookup and deliberately sees through
+// tombstones. It returns the live row if one exists, otherwise the most
+// recently tombstoned row (DeletedAt set), otherwise not-found. That lets the
+// caller distinguish the three governance states: never SCIM-provisioned in
+// this org (not found), currently provisioned (live row, Active decides), and
+// provisioned-then-deleted (tombstone → access must stay revoked).
 func (d *databaser) FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var out ScimUser
 	if err := optionalTx.QueryRowContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at FROM scim_users WHERE org_id = $1 AND user_id = $2`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at
+		FROM scim_users
+		WHERE org_id = $1 AND user_id = $2
+		ORDER BY (deleted_at IS NULL) DESC, deleted_at DESC
+		LIMIT 1`,
 		orgId, userId,
-	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt, opt.Scan(&out.DeletedAt)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("scim user not found")
 		}

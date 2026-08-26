@@ -11,17 +11,20 @@ import (
 )
 
 // SCIM group→role mappings decide which role a synced IDP group grants. They
-// are guarded by role_read/role_write — NOT the provisioning permissions — on
-// purpose: the provisioning permissions belong to the SCIM client (the IDP's
-// service user), and if that client could redefine what a group grants, an
-// IDP-side actor could self-escalate by mapping a group it controls to Admin.
-// Deciding what a group grants is role administration, so it takes the same
-// permission as editing roles themselves.
+// are guarded by membership_read/membership_write — NOT the provisioning
+// permissions — on purpose: the provisioning permissions belong to the SCIM
+// client (the IDP's service user), and if that client could redefine what a
+// group grants, an IDP-side actor could self-escalate by mapping a group it
+// controls to Admin. Mapping a populated group to a role assigns that role to
+// its members, so it is membership administration and takes the same
+// permission as granting memberships directly. role_write (managing role
+// definitions) is deliberately NOT enough: being allowed to shape what a role
+// can do does not mean being allowed to hand it to people.
 
 func (s *Server) ListScimGroupMappings(ctx context.Context, request ListScimGroupMappingsRequestObject) (ListScimGroupMappingsResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionRoleRead); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipRead); err != nil {
 		return nil, err
 	}
 
@@ -44,7 +47,7 @@ func (s *Server) ListScimGroupMappings(ctx context.Context, request ListScimGrou
 func (s *Server) UpsertScimGroupMapping(ctx context.Context, request UpsertScimGroupMappingRequestObject) (UpsertScimGroupMappingResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipWrite); err != nil {
 		return nil, err
 	}
 
@@ -111,7 +114,7 @@ func (s *Server) UpsertScimGroupMapping(ctx context.Context, request UpsertScimG
 func (s *Server) DeleteScimGroupMapping(ctx context.Context, request DeleteScimGroupMappingRequestObject) (DeleteScimGroupMappingResponseObject, error) {
 	if uid, err := GetAuthenticatedUserIdOr401(ctx); err != nil {
 		return nil, err
-	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
+	} else if err := s.checkOrgAuthorization(ctx, uid, request.OrgId, sharedauthz.PermissionMembershipWrite); err != nil {
 		return nil, err
 	}
 

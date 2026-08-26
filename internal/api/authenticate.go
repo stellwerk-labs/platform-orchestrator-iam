@@ -48,6 +48,17 @@ var skipAuthenticationRegex = regexp.MustCompile(
 		// TODO: remove these once we have a different domain for the runners to hit
 		`|(/orgs/[^/]+/deployments/[^/]+/results)` +
 		`|(/orgs/[^/]+/deployments/[^/]+/bundle)` +
+
+		// SCIM discovery documents are static and tenant-free, and RFC 7644 §4
+		// allows them unauthenticated. Entra's SCIM validator probes them
+		// without a token, so they have to clear ext-auth too — the handlers
+		// being outside the SCIM auth middleware is not enough on its own,
+		// because Envoy's ext-auth runs before the route.
+		//
+		// Enumerated deliberately: /Users and /Groups must never match here.
+		`|(/scim/v2/orgs/[^/]+/ServiceProviderConfig)` +
+		`|(/scim/v2/orgs/[^/]+/Schemas(/[^/]+)?)` +
+		`|(/scim/v2/orgs/[^/]+/ResourceTypes(/[^/]+)?)` +
 		`)$`,
 )
 

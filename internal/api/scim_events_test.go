@@ -36,6 +36,11 @@ func expectScimUserEvent[T any](t *testing.T, db *mockmodel.MockDatabaser, event
 			require.NoError(t, json.Unmarshal(messages[0].Payload, captured))
 			assert.Equal(t, eventType, captured.Type)
 			assert.False(t, captured.Time.IsZero(), "event time must be set")
+			// CloudEvents 1.0 REQUIRED attributes: a unique id and this
+			// service's source must ride along on every event.
+			_, idErr := uuid.Parse(captured.Id)
+			require.NoError(t, idErr, "event id must be a uuid, got %q", captured.Id)
+			assert.Equal(t, events.Source, captured.Source)
 			return messages, nil
 		}).Times(1)
 	return captured
@@ -226,7 +231,7 @@ func TestScimUserEvents_DeleteEmitsDeprovisionedDeleted(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &scimUser.UserId}).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
-	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).Return(nil)
+	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).Return(nil)
 	captured := expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
 
 	require.NoError(t, s.scimDeleteUser(t.Context(), zaptest.NewLogger(t), &scimUser))
@@ -248,7 +253,7 @@ func TestScimUserEvents_DeleteFailureEmitsNothing(t *testing.T) {
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]model.MembershipWithUserMetadata{}, nil)
 	db.EXPECT().DeleteSessionTokensByUserId(gomock.Any(), gomock.Any(), scimUser.UserId).Return(int64(0), nil)
-	db.EXPECT().DeleteScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).
+	db.EXPECT().TombstoneScimUser(gomock.Any(), gomock.Any(), orgId, scimUser.Id).
 		Return(assert.AnError)
 
 	require.Error(t, s.scimDeleteUser(t.Context(), zaptest.NewLogger(t), &scimUser))

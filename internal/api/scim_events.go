@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hstandardoutbox"
@@ -54,11 +53,7 @@ func (s *Server) insertScimUserDeprovisionedEvent(ctx context.Context, tx model.
 // insertScimEventMessage wraps the payload in a CloudEvent envelope and hands
 // it to the outbox. A plain function because methods cannot have type params.
 func insertScimEventMessage[T any](ctx context.Context, db model.Databaser, tx model.Tx, eventType genevents.EventType, data T) error {
-	payload, err := json.Marshal(events.CloudEvent[T]{
-		Type: eventType,
-		Time: time.Now().UTC(),
-		Data: data,
-	})
+	payload, err := json.Marshal(events.New(eventType, data))
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal %s event", eventType)
 	}
