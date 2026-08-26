@@ -284,3 +284,26 @@ func (d *databaser) LockScimGroup(ctx context.Context, optionalTx Tx, orgId stri
 	}
 	return nil
 }
+
+// LockScimGroupByDisplayName is LockScimGroup for callers addressing the group
+// the way the mapping table does: by case-insensitive display name. The
+// group→role mapping handlers reconcile the group's members and must serialise
+// with a concurrent SCIM group PATCH, which holds this same row lock. A
+// mapping may legitimately exist for a group that has not been provisioned
+// yet, so not-found is the caller's signal that there is nothing to serialise
+// with (and nothing to reconcile).
+func (d *databaser) LockScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) error {
+	optionalTx = d.txOrDb(optionalTx)
+	var found uuid.UUID
+	if err := optionalTx.QueryRowContext(
+		ctx,
+		`SELECT id FROM scim_groups WHERE org_id = $1 AND LOWER(display_name) = LOWER($2) FOR UPDATE`,
+		orgId, displayName,
+	).Scan(&found); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NewErrNotFound("scim group not found")
+		}
+		return errors.Wrap(err, "failed to lock scim group by display name")
+	}
+	return nil
+}

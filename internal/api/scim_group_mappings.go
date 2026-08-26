@@ -76,7 +76,22 @@ func (s *Server) UpsertScimGroupMapping(ctx context.Context, request UpsertScimG
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := s.Database.UpsertScimGroupRoleMapping(ctx, tx, request.OrgId, groupDisplayName, request.Body.RoleId); err != nil {
+	// Serialise with concurrent SCIM group PATCHes: they hold the group row
+	// lock while rewriting the member set, and the reconcile below reads that
+	// same member set. Not-found is fine — the mapping may be configured before
+	// the group is provisioned, and then there is no member set to race on.
+	if err := s.Database.LockScimGroupByDisplayName(ctx, tx, request.OrgId, groupDisplayName); err != nil {
+		if _, ok := model.IsErrNotFound(err); !ok {
+			return nil, errors.Wrap(err, "failed to lock scim group for mapping upsert")
+		}
+	}
+
+	// The upsert RETURNs the row exactly as stored: the authoritative
+	// created_at (an upsert onto an existing mapping keeps the original
+	// creation time) and the display name matched by the database's own
+	// LOWER() uniqueness, which a Go-side case fold can disagree with.
+	mapping, err := s.Database.UpsertScimGroupRoleMapping(ctx, tx, request.OrgId, groupDisplayName, request.Body.RoleId)
+	if err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
 			return UpsertScimGroupMapping404JSONResponse{N404NotFoundJSONResponse: Generate404Response("role not found")}, nil
 		}
@@ -87,28 +102,17 @@ func (s *Server) UpsertScimGroupMapping(ctx context.Context, request UpsertScimG
 		return nil, err
 	}
 
-	// Read the row back for its authoritative created_at (an upsert onto an
-	// existing mapping keeps the original creation time).
-	mappings, err := s.Database.ListScimGroupRoleMappings(ctx, tx, request.OrgId)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to read back scim group role mapping")
+	if err := tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "failed to commit scim group mapping transaction")
 	}
-	for _, m := range mappings {
-		if strings.EqualFold(m.GroupDisplayName, groupDisplayName) {
-			if err := tx.Commit(); err != nil {
-				return nil, errors.Wrap(err, "failed to commit scim group mapping transaction")
-			}
-			if err := s.reloadAuthorizationPolicy(); err != nil {
-				return nil, err
-			}
-			return UpsertScimGroupMapping200JSONResponse{
-				GroupDisplayName: m.GroupDisplayName,
-				RoleId:           m.RoleId,
-				CreatedAt:        m.CreatedAt,
-			}, nil
-		}
+	if err := s.reloadAuthorizationPolicy(); err != nil {
+		return nil, err
 	}
-	return nil, errors.New("scim group role mapping vanished after upsert")
+	return UpsertScimGroupMapping200JSONResponse{
+		GroupDisplayName: mapping.GroupDisplayName,
+		RoleId:           mapping.RoleId,
+		CreatedAt:        mapping.CreatedAt,
+	}, nil
 }
 
 func (s *Server) DeleteScimGroupMapping(ctx context.Context, request DeleteScimGroupMappingRequestObject) (DeleteScimGroupMappingResponseObject, error) {
@@ -126,6 +130,15 @@ func (s *Server) DeleteScimGroupMapping(ctx context.Context, request DeleteScimG
 		return nil, errors.Wrap(err, "failed to begin scim group mapping transaction")
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Same locking rule as the upsert: the reconcile reads the group's member
+	// set, so it must serialise with a concurrent group PATCH holding the group
+	// row lock. Not-found means no group is provisioned under that name yet.
+	if err := s.Database.LockScimGroupByDisplayName(ctx, tx, request.OrgId, request.GroupDisplayName); err != nil {
+		if _, ok := model.IsErrNotFound(err); !ok {
+			return nil, errors.Wrap(err, "failed to lock scim group for mapping delete")
+		}
+	}
 
 	if err := s.Database.DeleteScimGroupRoleMapping(ctx, tx, request.OrgId, request.GroupDisplayName); err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {

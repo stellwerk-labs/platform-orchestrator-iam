@@ -296,8 +296,11 @@ func (d *databaser) ListRoleMembershipIdsByUser(ctx context.Context, optionalTx 
 // DeleteMembershipsByIds deletes the given memberships in one statement. Ids
 // that no longer exist are ignored — the bulk SCIM reconciler computes its
 // delete set inside the same transaction, so a miss can only mean the row was
-// already gone.
-func (d *databaser) DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, ids []uuid.UUID) error {
+// already gone. The org_id predicate is defense in depth: the callers only
+// pass ids they resolved within orgId, but a bare delete-by-id whose id set is
+// computed elsewhere is exactly the shape that turns a future refactor into a
+// cross-tenant delete.
+func (d *databaser) DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) error {
 	optionalTx = d.txOrDb(optionalTx)
 	if len(ids) == 0 {
 		return nil
@@ -308,8 +311,8 @@ func (d *databaser) DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, i
 	}
 	if _, err := optionalTx.ExecContext(
 		ctx,
-		`DELETE FROM memberships WHERE id = ANY($1::uuid[])`,
-		pq.Array(idStrings),
+		`DELETE FROM memberships WHERE org_id = $1 AND id = ANY($2::uuid[])`,
+		orgId, pq.Array(idStrings),
 	); err != nil {
 		return errors.Wrap(err, "failed to delete memberships by ids")
 	}

@@ -75,10 +75,13 @@ func (s *Server) scimProvisionUser(ctx context.Context, logger *zap.Logger, inpu
 	// reconciler joins group memberships and records managed memberships
 	// against it. The provisioned audit event follows the same rule: a staged
 	// user emits it at activation (scimUpdateUser), not here.
+	deletedMemberships := 0
 	if input.Active {
-		if err := s.reconcileScimUserRoles(ctx, logger, tx, scimUser); err != nil {
+		deleted, err := s.reconcileScimUserRoles(ctx, logger, tx, scimUser)
+		if err != nil {
 			return nil, err
 		}
+		deletedMemberships = deleted
 		if err := s.insertScimUserProvisionedEvent(ctx, tx, scimUser); err != nil {
 			return nil, err
 		}
@@ -87,10 +90,17 @@ func (s *Server) scimProvisionUser(ctx context.Context, logger *zap.Logger, inpu
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit scim provision transaction")
 	}
-	// Provisioning only grants access (a fresh scim_users row has no managed
-	// memberships to lose), so the reload may be coalesced: an IDP syncing a
-	// thousand users must not trigger a thousand full policy reloads.
-	if err := s.scheduleAuthorizationPolicyReload(); err != nil {
+	// Provisioning normally only grants access (a fresh scim_users row has no
+	// managed memberships to lose), so the reload may be coalesced: an IDP
+	// syncing a thousand users must not trigger a thousand full policy reloads.
+	// The classification follows what the reconcile actually DID, not what this
+	// code path expects: should it ever delete a membership, that is a
+	// revocation and must reload synchronously.
+	if deletedMemberships > 0 {
+		if err := s.reloadAuthorizationPolicy(); err != nil {
+			return nil, err
+		}
+	} else if err := s.scheduleAuthorizationPolicyReload(); err != nil {
 		return nil, err
 	}
 	return &scimUser, nil
@@ -187,15 +197,19 @@ func (s *Server) resolveOrCreateGlobalUser(ctx context.Context, logger *zap.Logg
 //   - If a human already granted a role that is also in the target set, the
 //     CreateMembership conflict is swallowed and the grant stays human-owned,
 //     so a later group removal cannot revoke it.
-func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, scimUser model.ScimUser) error {
+//
+// Returns the number of memberships it deleted so the caller can classify the
+// post-commit policy reload: any deletion is a revocation and must reload
+// synchronously, regardless of which operation triggered the reconcile.
+func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, scimUser model.ScimUser) (int, error) {
 	mappedRoleIds, err := s.Database.ListRoleIdsForScimUserGroups(ctx, tx, scimUser.OrgId, scimUser.Id)
 	if err != nil {
-		return errors.Wrap(err, "failed to list mapped roles for scim user")
+		return 0, errors.Wrap(err, "failed to list mapped roles for scim user")
 	}
 
 	managedIds, err := s.Database.ListScimManagedMembershipIds(ctx, tx, scimUser.Id)
 	if err != nil {
-		return errors.Wrap(err, "failed to list scim managed memberships")
+		return 0, errors.Wrap(err, "failed to list scim managed memberships")
 	}
 	managedIdSet := make(map[uuid.UUID]struct{}, len(managedIds))
 	for _, id := range managedIds {
@@ -214,7 +228,7 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 			SubjectType: ref.Ref(subjectType),
 		})
 		if err != nil {
-			return errors.Wrap(err, "failed to check existing memberships")
+			return 0, errors.Wrap(err, "failed to check existing memberships")
 		}
 		manualExists := false
 		for _, m := range existing {
@@ -226,11 +240,11 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 		if !manualExists {
 			roles, err := s.listOrSeedRoles(ctx, logger, tx, scimUser.OrgId)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			viewerRole := getRoleByDisplayName(roles, RoleViewer)
 			if viewerRole == nil {
-				return fmt.Errorf("org %s is missing the Viewer system role", scimUser.OrgId)
+				return 0, fmt.Errorf("org %s is missing the Viewer system role", scimUser.OrgId)
 			}
 			targetRoleIds = []uuid.UUID{viewerRole.Id}
 		}
@@ -242,11 +256,12 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 
 	// Drop managed memberships whose role fell out of the target set; keep the
 	// rest and note which target roles they already cover.
+	deletedMemberships := 0
 	covered := make(map[uuid.UUID]struct{}, len(targetRoleIds))
 	for _, membershipId := range managedIds {
 		membership, err := s.Database.GetMembership(ctx, tx, membershipId)
 		if err != nil {
-			return errors.Wrap(err, "failed to get scim managed membership")
+			return deletedMemberships, errors.Wrap(err, "failed to get scim managed membership")
 		}
 		if membership.Role.IsSet() {
 			roleId := membership.Role.Must()
@@ -257,8 +272,9 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 		}
 		// The scim_managed_memberships row cascades away with the membership.
 		if err := s.Database.DeleteMembership(ctx, tx, membershipId); err != nil {
-			return errors.Wrap(err, "failed to delete stale scim managed membership")
+			return deletedMemberships, errors.Wrap(err, "failed to delete stale scim managed membership")
 		}
+		deletedMemberships++
 	}
 
 	// Create what is missing, recording each new membership as SCIM-managed.
@@ -281,17 +297,18 @@ func (s *Server) reconcileScimUserRoles(ctx context.Context, logger *zap.Logger,
 				// adopting it as managed would let a group removal revoke it.
 				continue
 			}
-			return errors.Wrap(err, "failed to create scim managed membership")
+			return deletedMemberships, errors.Wrap(err, "failed to create scim managed membership")
 		}
 		if err := s.Database.CreateScimManagedMembership(ctx, tx, membership.Id, scimUser.Id); err != nil {
-			return err
+			return deletedMemberships, err
 		}
 	}
 
 	logger.Debug("reconciled scim user roles",
 		zap.String("scim_user_id", scimUser.Id.String()),
-		zap.Int("target_roles", len(targetRoleIds)))
-	return nil
+		zap.Int("target_roles", len(targetRoleIds)),
+		zap.Int("deleted_memberships", deletedMemberships))
+	return deletedMemberships, nil
 }
 
 // reconcileScimUsersById reconciles the given SCIM users (deduplicated) after
@@ -347,7 +364,7 @@ func (s *Server) reconcileScimUsersById(ctx context.Context, logger *zap.Logger,
 	if err != nil {
 		return errors.Wrap(err, "failed to list mapped roles for scim users")
 	}
-	managedMemberships, err := s.Database.ListScimManagedMembershipsForScimUsers(ctx, tx, activeIds)
+	managedMemberships, err := s.Database.ListScimManagedMembershipsForScimUsers(ctx, tx, orgId, activeIds)
 	if err != nil {
 		return errors.Wrap(err, "failed to list scim managed memberships")
 	}
@@ -463,7 +480,7 @@ func (s *Server) reconcileScimUsersById(ctx context.Context, logger *zap.Logger,
 	}
 
 	if len(staleMembershipIds) > 0 {
-		if err := s.Database.DeleteMembershipsByIds(ctx, tx, staleMembershipIds); err != nil {
+		if err := s.Database.DeleteMembershipsByIds(ctx, tx, orgId, staleMembershipIds); err != nil {
 			return errors.Wrap(err, "failed to delete stale scim managed memberships")
 		}
 	}
@@ -496,7 +513,7 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 		}
 	}()
 
-	if err := s.removeOrgMembershipsAndMaybeSessions(ctx, tx, scimUser.OrgId, scimUser.UserId); err != nil {
+	if err := s.removeOrgMembershipsAndMaybeSessions(ctx, logger, tx, *scimUser); err != nil {
 		return err
 	}
 
@@ -518,12 +535,40 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 // removeOrgMembershipsAndMaybeSessions bulk-deletes all memberships for the user in
 // the given org, then checks whether the user still has memberships in any org.
 // If not, all session tokens are revoked.
-func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, tx model.TxWithCommit, orgId string, userId uuid.UUID) error {
-	if _, err := s.Database.BulkDeleteMemberships(ctx, tx, model.BulkDeleteMembershipsParams{
+//
+// Deprovisioning deliberately removes EVERY membership the user holds in the
+// org, including roles a human granted through the console: an IDP deactivate
+// or delete means "this person has no access here", and letting a manual grant
+// survive would be a resurrection hole. Reactivation later restores only the
+// SCIM-managed roles (or the Viewer fallback) because the platform cannot
+// infer the human's original intent — not restoring is the safe outcome. The
+// withdrawal of a manual grant is therefore correct but surprising, so it is
+// logged for the operator instead of happening silently.
+func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, logger *zap.Logger, tx model.TxWithCommit, scimUser model.ScimUser) error {
+	orgId := scimUser.OrgId
+	userId := scimUser.UserId
+
+	// Counted before the delete: the scim_managed_memberships rows cascade away
+	// with their memberships. Managed rows always reference live memberships of
+	// this user in this org, so deleted - managed = human-made grants removed.
+	managedIds, err := s.Database.ListScimManagedMembershipIds(ctx, tx, scimUser.Id)
+	if err != nil {
+		return errors.Wrap(err, "failed to list scim managed memberships before deprovisioning")
+	}
+
+	deleted, err := s.Database.BulkDeleteMemberships(ctx, tx, model.BulkDeleteMembershipsParams{
 		OrgId:  opt.Of(orgId),
 		UserId: opt.Of(userId),
-	}); err != nil {
+	})
+	if err != nil {
 		return errors.Wrap(err, "failed to remove org memberships")
+	}
+	if unmanaged := deleted - int64(len(managedIds)); unmanaged > 0 {
+		logger.Info("scim deprovisioning removed memberships that were granted manually, not by scim; they will not be restored on reactivation",
+			zap.String("org_id", orgId),
+			zap.String("user_id", userId.String()),
+			zap.String("scim_user_id", scimUser.Id.String()),
+			zap.Int64("manual_memberships_removed", unmanaged))
 	}
 
 	remaining, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{UserId: &userId})
@@ -587,9 +632,16 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 	}()
 
 	now := time.Now().UTC()
+	// revokedAccess decides the post-commit reload: synchronous for anything
+	// that took access away, coalesced otherwise. It follows what actually
+	// happened in this transaction, not which state transition ran — a
+	// reactivation is nominally a grant, but its reconcile CAN delete stale
+	// managed memberships, and a delete is a revocation no matter the branch.
+	revokedAccess := false
 	switch {
 	case existing.Active && !updated.Active:
-		if err := s.removeOrgMembershipsAndMaybeSessions(ctx, tx, existing.OrgId, existing.UserId); err != nil {
+		revokedAccess = true
+		if err := s.removeOrgMembershipsAndMaybeSessions(ctx, logger, tx, *existing); err != nil {
 			return nil, err
 		}
 		// Audited with the updated row: a PATCH that renames and deactivates in
@@ -600,9 +652,11 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 	case !existing.Active && updated.Active:
 		// Reactivation restores the roles the user's current groups map to
 		// (or the Viewer fallback when nothing is mapped).
-		if err := s.reconcileScimUserRoles(ctx, logger, tx, *existing); err != nil {
+		deleted, err := s.reconcileScimUserRoles(ctx, logger, tx, *existing)
+		if err != nil {
 			return nil, err
 		}
+		revokedAccess = deleted > 0
 		if err := s.insertScimUserProvisionedEvent(ctx, tx, updated); err != nil {
 			return nil, err
 		}
@@ -633,10 +687,11 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 	if err := tx.Commit(); err != nil {
 		return nil, errors.Wrap(err, "failed to commit scim update transaction")
 	}
-	// Deactivation REVOKES access: reload synchronously so the stripped
-	// memberships stop working before the response goes out. Everything else
-	// (reactivation, renames) at most grants, so those reloads are coalesced.
-	if existing.Active && !updated.Active {
+	// Anything that revoked access (deactivation, or a reconcile that deleted a
+	// stale membership) must reload synchronously so the stripped memberships
+	// stop working before the response goes out. Pure grants (reactivation
+	// without deletions, renames) may be coalesced.
+	if revokedAccess {
 		return &updated, s.reloadAuthorizationPolicy()
 	}
 	return &updated, s.scheduleAuthorizationPolicyReload()

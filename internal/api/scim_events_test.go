@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/events"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
@@ -143,6 +145,8 @@ func TestScimUserEvents_DeactivationEmitsDeprovisionedDeactivated(t *testing.T) 
 	updated := existing
 	updated.Active = false
 
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), existing.Id).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
 		OrgId: opt.Of(orgId), UserId: opt.Of(existing.UserId),
 	}).Return(int64(1), nil)
@@ -194,6 +198,8 @@ func TestScimUserEvents_DeactivationFailureEmitsNothing(t *testing.T) {
 	updated := existing
 	updated.Active = false
 
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), existing.Id).
+		Return([]uuid.UUID{}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(int64(0), assert.AnError)
 
@@ -226,6 +232,8 @@ func TestScimUserEvents_DeleteEmitsDeprovisionedDeleted(t *testing.T) {
 	db := s.Database.(*mockmodel.MockDatabaser)
 
 	scimUser := testActiveScimUser()
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), scimUser.Id).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
 		OrgId: opt.Of(orgId), UserId: opt.Of(scimUser.UserId),
 	}).Return(int64(1), nil)
@@ -251,6 +259,8 @@ func TestScimUserEvents_DeleteFailureEmitsNothing(t *testing.T) {
 	db := s.Database.(*mockmodel.MockDatabaser)
 
 	scimUser := testActiveScimUser()
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), scimUser.Id).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(1), nil)
 	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return([]model.MembershipWithUserMetadata{}, nil)
@@ -260,4 +270,75 @@ func TestScimUserEvents_DeleteFailureEmitsNothing(t *testing.T) {
 		Return(assert.AnError)
 
 	require.Error(t, s.scimDeleteUser(t.Context(), zaptest.NewLogger(t), &scimUser))
+}
+
+// ------------------------------------------------------------------ manual grant withdrawal visibility
+
+// Deprovisioning removes EVERY membership in the org, including human-granted
+// ones (deliberately — see removeOrgMembershipsAndMaybeSessions). What must
+// not happen is that a manual grant vanishes silently: the operator gets a log
+// line naming the org, user, and count.
+func TestScimDeactivation_LogsManualMembershipWithdrawal(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+	db := s.Database.(*mockmodel.MockDatabaser)
+
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	existing := testActiveScimUser()
+	updated := existing
+	updated.Active = false
+
+	// One SCIM-managed membership, three deleted in total → two were manual.
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), existing.Id).
+		Return([]uuid.UUID{uuid.New()}, nil)
+	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
+		OrgId: opt.Of(orgId), UserId: opt.Of(existing.UserId),
+	}).Return(int64(3), nil)
+	// A membership elsewhere keeps the sessions alive; not this test's concern.
+	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &existing.UserId}).
+		Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{Id: uuid.New(), OrgId: "other-org"}}}, nil)
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
+
+	_, err := s.scimUpdateUser(t.Context(), logger, &existing, updated, scimGlobalUserFields{})
+	require.NoError(t, err)
+
+	entries := logs.FilterMessageSnippet("removed memberships that were granted manually").All()
+	require.Len(t, entries, 1, "the withdrawal of manual grants must be logged")
+	fields := entries[0].ContextMap()
+	assert.Equal(t, orgId, fields["org_id"])
+	assert.Equal(t, existing.UserId.String(), fields["user_id"])
+	assert.Equal(t, int64(2), fields["manual_memberships_removed"])
+}
+
+// The counterpart: when everything removed was SCIM-managed, deprovisioning is
+// business as usual and must not cry wolf.
+func TestScimDeactivation_NoLogWhenOnlyManagedMembershipsRemoved(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+	db := s.Database.(*mockmodel.MockDatabaser)
+
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	existing := testActiveScimUser()
+	updated := existing
+	updated.Active = false
+
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), existing.Id).
+		Return([]uuid.UUID{uuid.New()}, nil)
+	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
+		OrgId: opt.Of(orgId), UserId: opt.Of(existing.UserId),
+	}).Return(int64(1), nil)
+	db.EXPECT().ListMemberships(gomock.Any(), gomock.Any(), model.ListMembershipsParams{UserId: &existing.UserId}).
+		Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{Id: uuid.New(), OrgId: "other-org"}}}, nil)
+	db.EXPECT().UpdateScimUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	expectScimUserEvent[genevents.ScimUserDeprovisionedData](t, db, genevents.IoPlatformOrchestratorScimUserDeprovisioned)
+
+	_, err := s.scimUpdateUser(t.Context(), logger, &existing, updated, scimGlobalUserFields{})
+	require.NoError(t, err)
+
+	assert.Empty(t, logs.FilterMessageSnippet("removed memberships that were granted manually").All())
 }

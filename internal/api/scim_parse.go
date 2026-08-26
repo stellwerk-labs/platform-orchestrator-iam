@@ -84,6 +84,12 @@ func normalizePatchOps(req scimPatchRequest) ([]normalizedScimPatchOp, error) {
 	if len(req.Operations) == 0 {
 		return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: "PATCH body must contain at least one operation in Operations"}
 	}
+	// Every operation is applied inside one transaction (groups: while holding
+	// the group row lock), so the operation count must be bounded. See the
+	// scimMaxPatchOperations comment for why no real IDP hits this.
+	if len(req.Operations) > scimMaxPatchOperations {
+		return nil, &scimPatchError{ScimType: scimTypeInvalidValue, Detail: fmt.Sprintf("PATCH body contains %d operations, exceeding the maximum of %d per request", len(req.Operations), scimMaxPatchOperations)}
+	}
 
 	out := make([]normalizedScimPatchOp, 0, len(req.Operations))
 	for _, raw := range req.Operations {
@@ -250,6 +256,9 @@ func parseMemberValueList(raw json.RawMessage) ([]uuid.UUID, error) {
 			return nil, err
 		}
 		entries = append(entries, single)
+	}
+	if len(entries) > scimMaxMembersPerRequest {
+		return nil, fmt.Errorf("members value contains %d entries, exceeding the maximum of %d per request", len(entries), scimMaxMembersPerRequest)
 	}
 	ids := make([]uuid.UUID, 0, len(entries))
 	for _, e := range entries {

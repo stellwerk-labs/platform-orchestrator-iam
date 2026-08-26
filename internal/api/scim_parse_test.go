@@ -410,3 +410,60 @@ func TestNormalizePatchOps_EmptyOperationsRejected(t *testing.T) {
 		})
 	}
 }
+
+// ------------------------------------------------------------------ input bounds
+
+// Every PATCH operation is applied inside one transaction, so the operation
+// count is bounded; past the bound the request is a 400 invalidValue, not a
+// slow death holding the group row lock.
+func TestNormalizePatchOps_TooManyOperationsRejected(t *testing.T) {
+	ops := make([]scimPatchOp, scimMaxPatchOperations+1)
+	for i := range ops {
+		ops[i] = scimPatchOp{Op: "replace", Path: "displayName", Value: json.RawMessage(`"x"`)}
+	}
+	_, err := normalizePatchOps(scimPatchRequest{Schemas: []string{scimPatchOpSchema}, Operations: ops})
+	require.Error(t, err)
+	var pe *scimPatchError
+	require.ErrorAs(t, err, &pe)
+	assert.Equal(t, scimTypeInvalidValue, pe.ScimType)
+	assert.Contains(t, pe.Detail, "exceeding the maximum")
+
+	// Exactly at the bound is fine.
+	_, err = normalizePatchOps(scimPatchRequest{Schemas: []string{scimPatchOpSchema}, Operations: ops[:scimMaxPatchOperations]})
+	require.NoError(t, err)
+}
+
+// A single members op cannot smuggle an unbounded member list either.
+func TestNormalizePatchOps_TooManyMembersInOpRejected(t *testing.T) {
+	entries := make([]map[string]string, scimMaxMembersPerRequest+1)
+	for i := range entries {
+		entries[i] = map[string]string{"value": uuid.New().String()}
+	}
+	raw, err := json.Marshal(entries)
+	require.NoError(t, err)
+
+	_, err = normalizePatchOps(scimPatchRequest{
+		Schemas:    []string{scimPatchOpSchema},
+		Operations: []scimPatchOp{{Op: "add", Path: "members", Value: raw}},
+	})
+	require.Error(t, err)
+	var pe *scimPatchError
+	require.ErrorAs(t, err, &pe)
+	assert.Equal(t, scimTypeInvalidValue, pe.ScimType)
+	assert.Contains(t, pe.Detail, "exceeding the maximum")
+}
+
+// The group create/replace member array shares the same bound.
+func TestParseMemberResourceIds_TooManyMembersRejected(t *testing.T) {
+	members := make([]scimGroupMember, scimMaxMembersPerRequest+1)
+	for i := range members {
+		members[i] = scimGroupMember{Value: uuid.New().String()}
+	}
+	_, err := parseMemberResourceIds(members)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeding the maximum")
+
+	ids, err := parseMemberResourceIds(members[:2])
+	require.NoError(t, err)
+	assert.Len(t, ids, 2)
+}

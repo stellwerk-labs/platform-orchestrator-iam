@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hecho"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
@@ -19,10 +21,33 @@ import (
 	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
+// Bounds on SCIM request input. Every SCIM write runs in one transaction (the
+// group writes while holding the group row lock), so unbounded input is a
+// denial-of-service lever for anyone holding provisioning_write. The bounds
+// are picked so no real IDP ever hits them:
+//
+//   - scimMaxBodySize (1MB): legitimate SCIM payloads are tiny; the largest
+//     real one is Okta's full-group PUT carrying the whole member list, and
+//     even scimMaxMembersPerRequest member entries serialise to well under
+//     half of this.
+//   - scimMaxMembersPerRequest (10k): Entra pages membership changes in small
+//     batches; Okta group push PUTs the full list, so the bound must cover a
+//     large group outright — 10k members in one org is far beyond the
+//     directory sizes this platform serves.
+//   - scimMaxPatchOperations (1k): Entra, the chattiest IDP we support, sends
+//     at most a few hundred operations per PATCH.
+const (
+	scimMaxBodySize          = "1M"
+	scimMaxMembersPerRequest = 10_000
+	scimMaxPatchOperations   = 1_000
+)
+
 // registerScimRoutes attaches SCIM routes to the given Echo group.
 // It is called from MapRoutes after RegisterHandlers.
 func (s *Server) registerScimRoutes(e *echo.Echo) {
-	base := e.Group("/scim/v2/orgs/:orgId", scimErrorEnvelopeMiddleware)
+	// The error envelope wraps the body limit so the 413 goes out as a SCIM
+	// error document, not echo's default {"message":...}.
+	base := e.Group("/scim/v2/orgs/:orgId", scimErrorEnvelopeMiddleware, echomiddleware.BodyLimit(scimMaxBodySize))
 
 	// Discovery endpoints are static documents containing no tenant data.
 	// RFC 7644 §4 permits serving them unauthenticated, and Entra's SCIM
@@ -97,13 +122,25 @@ func (s *Server) scimCheckAuth(c echo.Context, permission string) (uuid.UUID, bo
 
 // scimErrorEnvelopeMiddleware converts errors bubbling out of SCIM handlers into
 // a SCIM Error envelope (RFC 7644 §3.12) instead of echo's default {"message":...}
-// body. The error is still returned so the server's error handler logs it as
-// usual (it skips writing once the response is committed).
+// body. Echo-generated *echo.HTTPErrors (the 413 from the body limit, 405s)
+// keep their status and curated message; anything else is an internal error
+// whose details must not reach the IDP. The error is still returned so the
+// server's error handler logs it as usual (it skips writing once the response
+// is committed).
 func scimErrorEnvelopeMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
 		if err != nil && !c.Response().Committed {
-			_ = scimErrorResp(c, http.StatusInternalServerError, "", "internal server error")
+			var httpErr *echo.HTTPError
+			if errors.As(err, &httpErr) {
+				detail := http.StatusText(httpErr.Code)
+				if message, ok := httpErr.Message.(string); ok && message != "" {
+					detail = message
+				}
+				_ = scimErrorResp(c, httpErr.Code, "", detail)
+			} else {
+				_ = scimErrorResp(c, http.StatusInternalServerError, "", "internal server error")
+			}
 		}
 		return err
 	}
@@ -227,7 +264,7 @@ func (s *Server) handleScimListUsers(c echo.Context) error {
 	}
 	resources := make([]ScimUserResource, 0, len(users))
 	for _, u := range users {
-		resources = append(resources, scimUserResource(c, orgId, u, globalUsers[u.UserId]))
+		resources = append(resources, s.scimUserResource(c, orgId, u, globalUsers[u.UserId]))
 	}
 	return scimJSON(c, http.StatusOK, scimListResponse{
 		Schemas:      []string{scimListResponseSchema},
@@ -303,8 +340,10 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 
 	scimUser, err := s.scimProvisionUser(c.Request().Context(), logger, input)
 	if err != nil {
-		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
+		// The curated conflict message, not err.Error(): the error chain carries
+		// internal wrap prefixes that must not be reflected back to the IDP.
+		if conflict, ok := model.IsErrConflict(err); ok {
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
 		}
 		return err
 	}
@@ -383,8 +422,8 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 
 	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, global)
 	if err != nil {
-		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
+		if conflict, ok := model.IsErrConflict(err); ok {
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
 		}
 		return err
 	}
@@ -469,8 +508,8 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 
 	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, scimGlobalUserFields{DisplayName: newDisplayName, Email: newEmail})
 	if err != nil {
-		if _, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, err.Error())
+		if conflict, ok := model.IsErrConflict(err); ok {
+			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
 		}
 		return err
 	}
@@ -532,7 +571,7 @@ func (s *Server) handleScimListGroups(c echo.Context) error {
 	}
 	resources := make([]ScimGroupResource, 0, len(groups))
 	for _, g := range groups {
-		resources = append(resources, scimGroupToResource(c, orgId, g))
+		resources = append(resources, s.scimGroupToResource(c, orgId, g))
 	}
 	return scimJSON(c, http.StatusOK, scimListResponse{
 		Schemas:      []string{scimListResponseSchema},
@@ -574,7 +613,7 @@ func (s *Server) handleScimListGroupsFiltered(c echo.Context, orgId string, f *s
 		TotalResults: 1,
 		StartIndex:   1,
 		ItemsPerPage: 1,
-		Resources:    []ScimGroupResource{scimGroupToResource(c, orgId, *group)},
+		Resources:    []ScimGroupResource{s.scimGroupToResource(c, orgId, *group)},
 	})
 }
 
@@ -640,7 +679,7 @@ func (s *Server) handleScimCreateGroup(c echo.Context) error {
 	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
-	return scimJSON(c, http.StatusCreated, scimGroupToResource(c, orgId, group))
+	return scimJSON(c, http.StatusCreated, s.scimGroupToResource(c, orgId, group))
 }
 
 func (s *Server) handleScimGetGroup(c echo.Context) error {
@@ -659,7 +698,7 @@ func (s *Server) handleScimGetGroup(c echo.Context) error {
 		}
 		return err
 	}
-	return scimJSON(c, http.StatusOK, scimGroupToResource(c, orgId, *group))
+	return scimJSON(c, http.StatusOK, s.scimGroupToResource(c, orgId, *group))
 }
 
 func (s *Server) handleScimReplaceGroup(c echo.Context) error {
@@ -728,7 +767,7 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
-	return scimJSON(c, http.StatusOK, scimGroupToResource(c, orgId, updated))
+	return scimJSON(c, http.StatusOK, s.scimGroupToResource(c, orgId, updated))
 }
 
 func (s *Server) handleScimPatchGroup(c echo.Context) error {
@@ -839,7 +878,7 @@ func (s *Server) handleScimPatchGroup(c echo.Context) error {
 	if err := s.reloadAuthorizationPolicy(); err != nil {
 		return err
 	}
-	return scimJSON(c, http.StatusOK, scimGroupToResource(c, orgId, updated))
+	return scimJSON(c, http.StatusOK, s.scimGroupToResource(c, orgId, updated))
 }
 
 func (s *Server) handleScimDeleteGroup(c echo.Context) error {
@@ -896,7 +935,7 @@ func (s *Server) scimUserToResource(c echo.Context, orgId string, u model.ScimUs
 	if err != nil {
 		globalUser = nil
 	}
-	return scimUserResource(c, orgId, u, globalUser)
+	return s.scimUserResource(c, orgId, u, globalUser)
 }
 
 // globalUsersForScimUsers batch-loads the global user records behind the given
@@ -928,8 +967,8 @@ func (s *Server) globalUsersForScimUsers(ctx context.Context, scimUsers []model.
 
 // scimUserResource renders the SCIM wire representation from already-loaded
 // records. A nil globalUser omits display name and email.
-func scimUserResource(c echo.Context, orgId string, u model.ScimUser, globalUser *model.User) ScimUserResource {
-	loc := scimResourceLocation(c, fmt.Sprintf("/scim/v2/orgs/%s/Users/%s", orgId, u.Id))
+func (s *Server) scimUserResource(c echo.Context, orgId string, u model.ScimUser, globalUser *model.User) ScimUserResource {
+	loc := s.scimResourceLocation(c, fmt.Sprintf("/scim/v2/orgs/%s/Users/%s", orgId, u.Id))
 	resource := ScimUserResource{
 		Schemas:  []string{scimSchemaUser},
 		Id:       u.Id,
@@ -956,8 +995,8 @@ func scimUserResource(c echo.Context, orgId string, u model.ScimUser, globalUser
 	return resource
 }
 
-func scimGroupToResource(c echo.Context, orgId string, g model.ScimGroup) ScimGroupResource {
-	loc := scimResourceLocation(c, fmt.Sprintf("/scim/v2/orgs/%s/Groups/%s", orgId, g.Id))
+func (s *Server) scimGroupToResource(c echo.Context, orgId string, g model.ScimGroup) ScimGroupResource {
+	loc := s.scimResourceLocation(c, fmt.Sprintf("/scim/v2/orgs/%s/Groups/%s", orgId, g.Id))
 	members := make([]scimGroupMember, 0, len(g.MemberIds))
 	for _, id := range g.MemberIds {
 		members = append(members, scimGroupMember{Value: id.String()})
@@ -981,10 +1020,38 @@ func scimGroupToResource(c echo.Context, orgId string, g model.ScimGroup) ScimGr
 }
 
 // scimResourceLocation builds the absolute URL for a SCIM resource.
+//
+// When ApiHostUrl is configured it wins outright: meta.location is a value we
+// hand to the IDP, and building it from the request would let anyone who can
+// set a Host header choose what we reflect there. Deployments without the
+// config fall back to the request Host — after validation, so a header
+// carrying a path, userinfo, or injection junk is refused — because breaking
+// every existing deployment over an optional nicety would be disproportionate.
 // c.Scheme() honors X-Forwarded-Proto, so TLS termination at Envoy still
-// yields https:// locations.
-func scimResourceLocation(c echo.Context, path string) string {
-	return fmt.Sprintf("%s://%s%s", c.Scheme(), c.Request().Host, path)
+// yields https:// locations. If the Host is unusable the path is returned as a
+// relative URI reference, which is still a valid location.
+func (s *Server) scimResourceLocation(c echo.Context, path string) string {
+	if s.ApiHostUrl != "" {
+		return strings.TrimRight(s.ApiHostUrl, "/") + path
+	}
+	host := c.Request().Host
+	if !validHostHeader(host) {
+		return path
+	}
+	return fmt.Sprintf("%s://%s%s", c.Scheme(), host, path)
+}
+
+// validHostHeader reports whether host is exactly an authority (host[:port])
+// with no userinfo, path, query, or control characters smuggled in. Parsing it
+// as the authority of a URL and requiring a byte-identical round trip rejects
+// anything that would change meaning when reflected into an absolute URL.
+func validHostHeader(host string) bool {
+	if host == "" {
+		return false
+	}
+	parsed, err := url.Parse("http://" + host)
+	return err == nil && parsed.Host == host && parsed.User == nil && parsed.Path == "" &&
+		parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 // scimPrimaryEmail extracts the primary (or first) email from a SCIM emails array.
@@ -1033,6 +1100,9 @@ func scimPageParams(c echo.Context) (startIndex, count int) {
 
 // parseMemberResourceIds converts a slice of scimGroupMember to a slice of UUIDs.
 func parseMemberResourceIds(members []scimGroupMember) ([]uuid.UUID, error) {
+	if len(members) > scimMaxMembersPerRequest {
+		return nil, fmt.Errorf("members contains %d entries, exceeding the maximum of %d per request", len(members), scimMaxMembersPerRequest)
+	}
 	ids := make([]uuid.UUID, 0, len(members))
 	for _, m := range members {
 		id, err := uuid.Parse(m.Value)

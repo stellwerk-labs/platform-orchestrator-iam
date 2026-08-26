@@ -57,7 +57,9 @@ func TestReconcile_AddsMappedRole(t *testing.T) {
 			return nil
 		})
 
-	require.NoError(t, s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser))
+	deleted, err := s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser)
+	require.NoError(t, err)
+	assert.Equal(t, 0, deleted, "a pure grant must not report deletions")
 }
 
 // A managed membership whose role is no longer mapped gets deleted, and with no
@@ -96,7 +98,9 @@ func TestReconcile_RemovesUnmappedManagedRoleAndFallsBackToViewer(t *testing.T) 
 		})
 	db.EXPECT().CreateScimManagedMembership(gomock.Any(), gomock.Any(), gomock.Any(), scimUser.Id).Return(nil)
 
-	require.NoError(t, s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser))
+	deleted, err := s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser)
+	require.NoError(t, err)
+	assert.Equal(t, 1, deleted, "the stale managed membership deletion must be reported so the caller reloads synchronously")
 }
 
 // A membership a human granted (not in scim_managed_memberships) is invisible
@@ -123,7 +127,9 @@ func TestReconcile_LeavesManualMembershipAlone(t *testing.T) {
 	// No DeleteMembership, no CreateMembership, no ListRoles: the manual grant
 	// stands and no Viewer gets piled on top. Enforced by the strict mock.
 
-	require.NoError(t, s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser))
+	deleted, err := s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser)
+	require.NoError(t, err)
+	assert.Equal(t, 0, deleted)
 }
 
 // A managed membership whose role is still mapped stays put: no delete, no
@@ -145,7 +151,9 @@ func TestReconcile_KeepsStillMappedManagedRole(t *testing.T) {
 		Return(&model.Membership{Id: managedMembershipId, OrgId: orgId, UserId: scimUser.UserId,
 			SubjectType: model.MembershipSubjectTypeRole, Subject: mappedRoleId.String(), Role: opt.Of(mappedRoleId)}, nil)
 
-	require.NoError(t, s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser))
+	deleted, err := s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser)
+	require.NoError(t, err)
+	assert.Equal(t, 0, deleted)
 }
 
 // When a human already granted the exact role a mapping targets, the conflict
@@ -168,5 +176,7 @@ func TestReconcile_ManualGrantOfMappedRoleStaysManual(t *testing.T) {
 	// No CreateScimManagedMembership: the strict mock fails the test if the
 	// reconciler tries to claim the human's membership.
 
-	require.NoError(t, s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser))
+	deleted, err := s.reconcileScimUserRoles(t.Context(), zaptest.NewLogger(t), nil, scimUser)
+	require.NoError(t, err)
+	assert.Equal(t, 0, deleted)
 }

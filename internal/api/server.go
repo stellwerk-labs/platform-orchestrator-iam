@@ -34,7 +34,12 @@ type Server struct {
 	UserIdentityProviders    map[model.UserIdentityProvider]identity.Provider
 	TokenByHashCache         *GetTokenByHashCache
 
-	UiHostUrl          string
+	UiHostUrl string
+	// ApiHostUrl is the externally reachable base URL of this API. When set,
+	// absolute URLs in responses (SCIM meta.location) are built from it instead
+	// of the client-controlled Host header. Optional; see scimResourceLocation
+	// for the fallback.
+	ApiHostUrl         string
 	EmailProvider      emailprovider.Provider
 	SsoProvider        ssoprovider.Provider
 	SsoCallbackUrlPath string

@@ -115,7 +115,7 @@ type Databaser interface {
 	ListMemberships(ctx context.Context, optionalTx Tx, params ListMembershipsParams) ([]MembershipWithUserMetadata, error)
 	ListMembersWithIdentities(ctx context.Context, optionalTx Tx, params ListMembershipsParams) ([]MembershipWithIdentityProvider, string, error)
 	DeleteMembership(ctx context.Context, optionalTx Tx, id uuid.UUID) error
-	DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, ids []uuid.UUID) error
+	DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) error
 	BulkDeleteMemberships(ctx context.Context, optionalTx Tx, params BulkDeleteMembershipsParams) (int64, error)
 	ListRoleMembershipIdsByUser(ctx context.Context, optionalTx Tx, orgId string, userIds []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 
@@ -173,7 +173,7 @@ type Databaser interface {
 	UpdateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
 	TombstoneScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 
-	UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) error
+	UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) (*ScimGroupRoleMapping, error)
 	DeleteScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) error
 	ListScimGroupRoleMappings(ctx context.Context, optionalTx Tx, orgId string) ([]ScimGroupRoleMapping, error)
 	ListRoleIdsForScimUserGroups(ctx context.Context, optionalTx Tx, orgId string, scimUserId uuid.UUID) ([]uuid.UUID, error)
@@ -181,12 +181,13 @@ type Databaser interface {
 	ListScimUserIdsInGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) ([]uuid.UUID, error)
 	CreateScimManagedMembership(ctx context.Context, optionalTx Tx, membershipId uuid.UUID, scimUserId uuid.UUID) error
 	ListScimManagedMembershipIds(ctx context.Context, optionalTx Tx, scimUserId uuid.UUID) ([]uuid.UUID, error)
-	ListScimManagedMembershipsForScimUsers(ctx context.Context, optionalTx Tx, scimUserIds []uuid.UUID) ([]ScimManagedMembership, error)
+	ListScimManagedMembershipsForScimUsers(ctx context.Context, optionalTx Tx, orgId string, scimUserIds []uuid.UUID) ([]ScimManagedMembership, error)
 	BulkCreateScimManagedMemberships(ctx context.Context, optionalTx Tx, items []NewScimManagedMembership) error
 
 	CreateScimGroup(ctx context.Context, optionalTx Tx, g ScimGroup) error
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
 	LockScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
+	LockScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) error
 	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)
 	FindScimGroupByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimGroup, error)
 	ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error)

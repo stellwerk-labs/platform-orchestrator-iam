@@ -23,23 +23,30 @@ type ScimGroupRoleMapping struct {
 	CreatedAt        time.Time
 }
 
-func (d *databaser) UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) error {
+// UpsertScimGroupRoleMapping writes the mapping and returns the row exactly as
+// stored (an upsert onto an existing mapping keeps the original created_at).
+// RETURNING is deliberate: uniqueness is on Postgres LOWER(group_display_name),
+// and re-deriving the row in Go with a different case fold (strings.EqualFold)
+// can disagree with the database under some locales.
+func (d *databaser) UpsertScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string, roleId uuid.UUID) (*ScimGroupRoleMapping, error) {
 	optionalTx = d.txOrDb(optionalTx)
-	if _, err := optionalTx.ExecContext(
+	var out ScimGroupRoleMapping
+	if err := optionalTx.QueryRowContext(
 		ctx,
 		`INSERT INTO scim_group_role_mappings (org_id, group_display_name, role_id, created_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (org_id, LOWER(group_display_name))
-		DO UPDATE SET group_display_name = EXCLUDED.group_display_name, role_id = EXCLUDED.role_id`,
+		DO UPDATE SET group_display_name = EXCLUDED.group_display_name, role_id = EXCLUDED.role_id
+		RETURNING org_id, group_display_name, role_id, created_at`,
 		orgId, groupDisplayName, roleId, time.Now().UTC(),
-	); err != nil {
+	).Scan(&out.OrgId, &out.GroupDisplayName, &out.RoleId, &out.CreatedAt); err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Constraint == "scim_group_role_mappings_role" {
-			return NewErrNotFound("role not found in the organization")
+			return nil, NewErrNotFound("role not found in the organization")
 		}
-		return errors.Wrap(err, "failed to upsert scim group role mapping")
+		return nil, errors.Wrap(err, "failed to upsert scim group role mapping")
 	}
-	return nil
+	return &out, nil
 }
 
 func (d *databaser) DeleteScimGroupRoleMapping(ctx context.Context, optionalTx Tx, orgId string, groupDisplayName string) error {
@@ -236,8 +243,11 @@ type ScimManagedMembership struct {
 
 // ListScimManagedMembershipsForScimUsers is the multi-user form of
 // ListScimManagedMembershipIds, with the membership's role joined in so the
-// bulk reconciler does not need a GetMembership per row.
-func (d *databaser) ListScimManagedMembershipsForScimUsers(ctx context.Context, optionalTx Tx, scimUserIds []uuid.UUID) ([]ScimManagedMembership, error) {
+// bulk reconciler does not need a GetMembership per row. The org_id predicate
+// is defense in depth: callers only pass scim user ids they resolved within
+// orgId, but the reconciler feeds these rows straight into a bulk delete, so
+// the query itself must not be able to return another tenant's memberships.
+func (d *databaser) ListScimManagedMembershipsForScimUsers(ctx context.Context, optionalTx Tx, orgId string, scimUserIds []uuid.UUID) ([]ScimManagedMembership, error) {
 	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
 	optionalTx = d.txOrDb(optionalTx)
 	if len(scimUserIds) == 0 {
@@ -252,8 +262,8 @@ func (d *databaser) ListScimManagedMembershipsForScimUsers(ctx context.Context, 
 		`SELECT smm.scim_user_id, smm.membership_id, m.role
 		FROM scim_managed_memberships smm
 		JOIN memberships m ON m.id = smm.membership_id
-		WHERE smm.scim_user_id = ANY($1::uuid[])`,
-		pq.Array(idStrings),
+		WHERE m.org_id = $1 AND smm.scim_user_id = ANY($2::uuid[])`,
+		orgId, pq.Array(idStrings),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list scim managed memberships for scim users")

@@ -68,7 +68,7 @@ func TestBulkReconcile_BatchesLookupsAndWrites(t *testing.T) {
 			userA.Id: {roleA},
 			userC.Id: {roleC},
 		}, nil)
-	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Any(), ids).
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Any(), orgId, ids).
 		Return([]model.ScimManagedMembership{
 			{ScimUserId: userB.Id, MembershipId: staleMembershipB, RoleId: opt.Of(staleRoleB)},
 			{ScimUserId: userC.Id, MembershipId: keptMembershipC, RoleId: opt.Of(roleC)},
@@ -80,7 +80,7 @@ func TestBulkReconcile_BatchesLookupsAndWrites(t *testing.T) {
 	db.EXPECT().ListRoles(gomock.Any(), gomock.Any(), orgId).
 		Return([]model.Role{{Id: viewerRoleId, OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
 
-	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Any(), []uuid.UUID{staleMembershipB}).Return(nil)
+	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Any(), orgId, []uuid.UUID{staleMembershipB}).Return(nil)
 	db.EXPECT().BulkCreateScimManagedMemberships(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, items []model.NewScimManagedMembership) error {
 			require.Len(t, items, 2)
@@ -144,7 +144,7 @@ func TestBulkReconcile_LeavesManualMembershipAlone(t *testing.T) {
 	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Any(), orgId, []uuid.UUID{user.Id}).Return(users, nil)
 	db.EXPECT().ListRoleIdsForScimUsersGroups(gomock.Any(), gomock.Any(), orgId, []uuid.UUID{user.Id}).
 		Return(map[uuid.UUID][]uuid.UUID{}, nil)
-	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Any(), []uuid.UUID{user.Id}).
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Any(), orgId, []uuid.UUID{user.Id}).
 		Return([]model.ScimManagedMembership{}, nil)
 	db.EXPECT().ListRoleMembershipIdsByUser(gomock.Any(), gomock.Any(), orgId, []uuid.UUID{user.UserId}).
 		Return(map[uuid.UUID][]uuid.UUID{user.UserId: {manualMembershipId}}, nil)

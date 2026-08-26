@@ -39,15 +39,13 @@ func TestUpsertScimGroupMapping_Success(t *testing.T) {
 	db := s.Database.(*mockmodel.MockDatabaser)
 	db.EXPECT().GetRole(gomock.Any(), nil, orgId, roleId).
 		Return(&model.Role{Id: roleId, OrgId: orgId, DisplayName: "Deployer"}, nil)
+	// No group with that name has synced yet → nothing to lock, nobody to reconcile.
+	db.EXPECT().LockScimGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Platform Engineers").
+		Return(model.NewErrNotFound("scim group not found"))
 	db.EXPECT().UpsertScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Platform Engineers", roleId).
-		Return(nil)
-	// No group with that name has synced yet → nobody to reconcile.
+		Return(&model.ScimGroupRoleMapping{OrgId: orgId, GroupDisplayName: "Platform Engineers", RoleId: roleId, CreatedAt: created}, nil)
 	db.EXPECT().ListScimUserIdsInGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Platform Engineers").
 		Return([]uuid.UUID{}, nil)
-	db.EXPECT().ListScimGroupRoleMappings(gomock.Any(), gomock.Not(nil), orgId).
-		Return([]model.ScimGroupRoleMapping{
-			{OrgId: orgId, GroupDisplayName: "Platform Engineers", RoleId: roleId, CreatedAt: created},
-		}, nil)
 
 	r, err := s.UpsertScimGroupMapping(ctxWithUser(t, userId), UpsertScimGroupMappingRequestObject{
 		OrgId:            orgId,
@@ -277,8 +275,10 @@ func TestDeleteScimGroupMapping_NotFound(t *testing.T) {
 
 	userId := userid.NewHumanUserId()
 	MockAuthorizationSuccess(s, userId, orgId, sharedauthz.PermissionMembershipWrite)
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		DeleteScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Ghosts").
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().LockScimGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Ghosts").
+		Return(model.NewErrNotFound("scim group not found"))
+	db.EXPECT().DeleteScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Ghosts").
 		Return(model.NewErrNotFound("scim group role mapping not found"))
 
 	r, err := s.DeleteScimGroupMapping(ctxWithUser(t, userId), DeleteScimGroupMappingRequestObject{
@@ -296,6 +296,8 @@ func TestDeleteScimGroupMapping_Success(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	MockAuthorizationSuccess(s, userId, orgId, sharedauthz.PermissionMembershipWrite)
 	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().LockScimGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Platform Engineers").
+		Return(nil)
 	db.EXPECT().
 		DeleteScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Platform Engineers").
 		Return(nil)
@@ -329,8 +331,12 @@ func TestUpsertScimGroupMapping_GrantsMappedRoleToExistingMember(t *testing.T) {
 	db := s.Database.(*mockmodel.MockDatabaser)
 	db.EXPECT().GetRole(gomock.Any(), nil, orgId, roleId).
 		Return(&model.Role{Id: roleId, OrgId: orgId, DisplayName: "Deployer"}, nil)
-	db.EXPECT().UpsertScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Engineers", roleId).
+	// The group exists, so the mapping upsert must take its row lock to
+	// serialise with concurrent SCIM group PATCHes.
+	db.EXPECT().LockScimGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
 		Return(nil)
+	db.EXPECT().UpsertScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Engineers", roleId).
+		Return(&model.ScimGroupRoleMapping{OrgId: orgId, GroupDisplayName: "Engineers", RoleId: roleId, CreatedAt: created}, nil)
 	db.EXPECT().ListScimUserIdsInGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
 		Return([]uuid.UUID{scimUserId}, nil)
 	db.EXPECT().GetScimUsersByIds(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
@@ -340,11 +346,11 @@ func TestUpsertScimGroupMapping_GrantsMappedRoleToExistingMember(t *testing.T) {
 	// and the mapped role comes.
 	db.EXPECT().ListRoleIdsForScimUsersGroups(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
 		Return(map[uuid.UUID][]uuid.UUID{scimUserId: {roleId}}, nil)
-	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), []uuid.UUID{scimUserId}).
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
 		Return([]model.ScimManagedMembership{
 			{ScimUserId: scimUserId, MembershipId: viewerMembershipId, RoleId: opt.Of(viewerRoleId)},
 		}, nil)
-	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), []uuid.UUID{viewerMembershipId}).Return(nil)
+	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{viewerMembershipId}).Return(nil)
 	db.EXPECT().BulkCreateScimManagedMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, items []model.NewScimManagedMembership) error {
 			require.Len(t, items, 1)
@@ -353,11 +359,6 @@ func TestUpsertScimGroupMapping_GrantsMappedRoleToExistingMember(t *testing.T) {
 			assert.Equal(t, scimUserId, items[0].ScimUserId, "the created membership must be recorded as SCIM-managed")
 			return nil
 		})
-
-	db.EXPECT().ListScimGroupRoleMappings(gomock.Any(), gomock.Not(nil), orgId).
-		Return([]model.ScimGroupRoleMapping{
-			{OrgId: orgId, GroupDisplayName: "Engineers", RoleId: roleId, CreatedAt: created},
-		}, nil)
 
 	r, err := s.UpsertScimGroupMapping(ctxWithUser(t, userId), UpsertScimGroupMappingRequestObject{
 		OrgId:            orgId,
@@ -387,6 +388,8 @@ func TestDeleteScimGroupMapping_RevokesRoleAndFallsBackToViewer(t *testing.T) {
 
 	MockAuthorizationSuccess(s, userId, orgId, sharedauthz.PermissionMembershipWrite)
 	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().LockScimGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
+		Return(nil)
 	db.EXPECT().DeleteScimGroupRoleMapping(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
 		Return(nil)
 	db.EXPECT().ListScimUserIdsInGroupByDisplayName(gomock.Any(), gomock.Not(nil), orgId, "Engineers").
@@ -398,7 +401,7 @@ func TestDeleteScimGroupMapping_RevokesRoleAndFallsBackToViewer(t *testing.T) {
 	// managed one → it goes, and the Viewer fallback comes.
 	db.EXPECT().ListRoleIdsForScimUsersGroups(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
 		Return(map[uuid.UUID][]uuid.UUID{}, nil)
-	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), []uuid.UUID{scimUserId}).
+	db.EXPECT().ListScimManagedMembershipsForScimUsers(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{scimUserId}).
 		Return([]model.ScimManagedMembership{
 			{ScimUserId: scimUserId, MembershipId: managedMembershipId, RoleId: opt.Of(mappedRoleId)},
 		}, nil)
@@ -406,7 +409,7 @@ func TestDeleteScimGroupMapping_RevokesRoleAndFallsBackToViewer(t *testing.T) {
 		Return(map[uuid.UUID][]uuid.UUID{globalUserId: {managedMembershipId}}, nil)
 	db.EXPECT().ListRoles(gomock.Any(), gomock.Not(nil), orgId).
 		Return([]model.Role{{Id: viewerRoleId, OrgId: orgId, DisplayName: RoleViewer, IsSystem: true}}, nil)
-	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), []uuid.UUID{managedMembershipId}).Return(nil)
+	db.EXPECT().DeleteMembershipsByIds(gomock.Any(), gomock.Not(nil), orgId, []uuid.UUID{managedMembershipId}).Return(nil)
 	db.EXPECT().BulkCreateScimManagedMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ model.Tx, items []model.NewScimManagedMembership) error {
 			require.Len(t, items, 1)

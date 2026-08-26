@@ -286,6 +286,16 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 	if requested == granted || granted == PermissionManageAll {
 		return true, nil
 	}
+	// The provisioning permissions are deliberately excluded from the level
+	// hierarchy below: provisioning_read exposes the org's ENTIRE SCIM
+	// directory (every member's userName, primary email, IdP externalId, and
+	// group memberships), so it is not "just another read" that the read_all /
+	// write_all wildcards on ordinary member roles (Viewer holds read_all)
+	// should sweep up. Only an exact grant or manage_all (an org Admin, handled
+	// above) satisfies them.
+	if requested == sharedauthz.PermissionProvisioningRead || requested == sharedauthz.PermissionProvisioningWrite {
+		return false, nil
+	}
 	level, known := permissionLevel(requested)
 	if !known {
 		return false, nil

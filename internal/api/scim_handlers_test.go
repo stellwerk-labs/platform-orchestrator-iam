@@ -359,6 +359,10 @@ func TestScimCreateUser_ConflictUserName(t *testing.T) {
 	var errBody scimError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
 	assert.Equal(t, "uniqueness", errBody.ScimType)
+	// The detail must be the curated conflict message, never the internal error
+	// chain with its Go wrap prefixes ("failed to create scim user: ...").
+	assert.Equal(t, "scim user name already exists in org", errBody.Detail)
+	assert.NotContains(t, errBody.Detail, "failed to")
 }
 
 // ------------------------------------------------------------------ PATCH /Users
@@ -385,6 +389,8 @@ func TestScimPatchUser_DeactivateEntraStringBool(t *testing.T) {
 	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).Return(existing, nil)
 
 	// deactivateUser path.
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), scimUserId).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
 		OrgId:  opt.Of(orgId),
 		UserId: opt.Of(globalUserId),
@@ -490,6 +496,8 @@ func TestScimDeleteUser_Success(t *testing.T) {
 	}
 
 	db.EXPECT().GetScimUser(gomock.Any(), nil, orgId, scimUserId).Return(existing, nil)
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), scimUserId).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
 		OrgId:  opt.Of(orgId),
 		UserId: opt.Of(globalUserId),
@@ -545,6 +553,8 @@ func TestScimDeleteUser_KeepsSessionsIfOtherMemberships(t *testing.T) {
 		UserName: "grace@example.com", Active: true, CreatedAt: now, UpdatedAt: now,
 	}, nil)
 	// Membership removal must stay scoped to THIS org.
+	db.EXPECT().ListScimManagedMembershipIds(gomock.Any(), gomock.Any(), scimUserId).
+		Return([]uuid.UUID{uuid.New()}, nil)
 	db.EXPECT().BulkDeleteMemberships(gomock.Any(), gomock.Any(), model.BulkDeleteMembershipsParams{
 		OrgId:  opt.Of(orgId),
 		UserId: opt.Of(globalUserId),
@@ -1303,8 +1313,52 @@ func TestScimResourceLocation_HonorsXForwardedProto(t *testing.T) {
 	req.Header.Set(echo.HeaderXForwardedProto, "https")
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	loc := scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
+	s := &Server{}
+	loc := s.scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
 	assert.Equal(t, "https://iam.example.com/scim/v2/orgs/o/Users/u", loc)
+}
+
+// A configured ApiHostUrl pins meta.location outright: the attacker-controlled
+// Host header must not appear in what we hand to the IDP.
+func TestScimResourceLocation_ConfiguredApiHostUrlWins(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "attacker.example.net"
+	req.Header.Set(echo.HeaderXForwardedProto, "https")
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	s := &Server{ApiHostUrl: "https://iam.example.com/"}
+	loc := s.scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
+	assert.Equal(t, "https://iam.example.com/scim/v2/orgs/o/Users/u", loc)
+}
+
+// Without a configured base URL the Host fallback must refuse anything that is
+// not a plain authority; the location degrades to a relative URI reference
+// instead of reflecting attacker-shaped input.
+func TestScimResourceLocation_RejectsMalformedHostHeader(t *testing.T) {
+	e := echo.New()
+	for _, host := range []string{
+		"",
+		"evil.example.net/phish",
+		"user:pass@evil.example.net",
+		"evil.example.net?q=1",
+		"evil.example.net#frag",
+		"evil example.net",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = host
+		c := e.NewContext(req, httptest.NewRecorder())
+
+		s := &Server{}
+		loc := s.scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
+		assert.Equal(t, "/scim/v2/orgs/o/Users/u", loc, "host %q must not be reflected", host)
+	}
+	// Sanity check: an honest host (with port) still passes.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "iam.example.com:8443"
+	c := e.NewContext(req, httptest.NewRecorder())
+	s := &Server{}
+	assert.Equal(t, "http://iam.example.com:8443/scim/v2/orgs/o/Users/u", s.scimResourceLocation(c, "/scim/v2/orgs/o/Users/u"))
 }
 
 // ------------------------------------------------------------------ blank scalar values
@@ -1556,4 +1610,50 @@ func TestScimPatchUser_EmailsBracketFormPropagates(t *testing.T) {
 	c, rec := scimRequest(t, e, http.MethodPatch, "/", body, callerUserId, map[string]string{"orgId": orgId, "userId": scimUserId.String()})
 	require.NoError(t, s.handleScimPatchUser(c))
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// ------------------------------------------------------------------ input bounds (item: unbounded SCIM input)
+
+// An oversized body is rejected by the route group's BodyLimit before any
+// handler runs, and the 413 still goes out as a SCIM error envelope. This goes
+// through the real router: the limit lives in middleware, not the handler.
+func TestScimBodyLimit_OversizedBodyGets413ScimEnvelope(t *testing.T) {
+	e, _, fin := MockServer(t)
+	defer fin()
+
+	oversized := bytes.Repeat([]byte("a"), 1<<20+1)
+	req := httptest.NewRequest(http.MethodPost, "/scim/v2/orgs/"+orgId+"/Users", bytes.NewReader(oversized))
+	req.Header.Set(echo.HeaderContentType, "application/scim+json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, "body: %s", rec.Body.String())
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Contains(t, errBody.Schemas, scimErrorSchema)
+	assert.Equal(t, "413", errBody.Status)
+}
+
+// A group create carrying more members than the bound is a clean 400
+// invalidValue, refused before the transaction (and its group row lock) opens.
+func TestScimCreateGroup_TooManyMembersRejected(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+
+	callerUserId := userid.NewServiceUserTokenId()
+	mockScimWriteAuth(s, callerUserId, orgId)
+
+	members := make([]scimGroupMember, scimMaxMembersPerRequest+1)
+	for i := range members {
+		members[i] = scimGroupMember{Value: uuid.New().String()}
+	}
+	body := ScimGroupResource{Schemas: []string{scimSchemaGroup}, DisplayName: "Everyone", Members: members}
+	c, rec := scimRequest(t, e, http.MethodPost, "/", body, callerUserId, map[string]string{"orgId": orgId})
+	require.NoError(t, s.handleScimCreateGroup(c))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var errBody scimError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	assert.Equal(t, scimTypeInvalidValue, errBody.ScimType)
+	assert.Contains(t, errBody.Detail, "exceeding the maximum")
 }

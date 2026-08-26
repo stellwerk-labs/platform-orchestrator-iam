@@ -259,6 +259,52 @@ func TestScimServiceUserTokenAuth(t *testing.T) {
 	})
 }
 
+// TestScimViewerCannotReadDirectory pins the authorization rule that keeps the
+// SCIM directory out of reach of ordinary members: the Viewer system role (the
+// default for SSO-provisioned users and the SCIM fallback) holds read_all, and
+// read_all must NOT satisfy provisioning_read — the directory exposes every
+// member's userName, email, IdP externalId, and group memberships, so it is
+// reachable only through an exact provisioning grant or manage_all.
+func TestScimViewerCannotReadDirectory(t *testing.T) {
+	t.Parallel()
+
+	client, err := serverclient.NewClientWithResponses(mustServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	internalClient, err := serverclient.NewClientWithResponses(mustInternalServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+
+	orgId, adminId := mustScimOrgWithAdmin(t, client, internalClient)
+
+	viewer := MustRegisterTestUser(client, t)
+	viewerRoleId := MustObtainRoleIdByName(t, client, orgId, DefaultViewerRoleName)
+	// The helper blocks until the viewer's read_all policy is live, so the 403s
+	// below prove the wildcard exclusion, not a policy that just isn't loaded yet.
+	_ = MustAddUserToOrgWithRoleAndEnsurePermissions(internalClient, t, orgId, viewer.Id, viewerRoleId)
+
+	t.Run("viewer gets 403 from the SCIM directory", func(t *testing.T) {
+		for _, res := range []string{"Users", "Groups"} {
+			status, body := scimDo(t, http.MethodGet, scimProxyBaseURL(t, orgId)+"/"+res, &viewer.Id, nil)
+			if assert.Equal(t, http.StatusForbidden, status, "a plain Viewer must not read /%s: %s", res, string(body)) {
+				mustAssertScimErrorEnvelope(t, body, http.StatusForbidden)
+			}
+		}
+	})
+
+	t.Run("viewer cannot provision either", func(t *testing.T) {
+		status, body := scimDo(t, http.MethodPost, scimProxyBaseURL(t, orgId)+"/Users", &viewer.Id, testScimUserBody{
+			Schemas:  []string{testScimUserSchema},
+			UserName: "viewer-escalation-" + uuid.New().String()[:8] + "@test.example",
+			Active:   true,
+		})
+		assert.Equal(t, http.StatusForbidden, status, "body: %s", string(body))
+	})
+
+	t.Run("org admin (manage_all) still reads the directory", func(t *testing.T) {
+		status, body := scimDo(t, http.MethodGet, scimProxyBaseURL(t, orgId)+"/Users", &adminId, nil)
+		assert.Equal(t, http.StatusOK, status, "manage_all must keep satisfying provisioning_read: %s", string(body))
+	})
+}
+
 // TestScimCrossOrgIsolation proves tenancy at the request level: a principal
 // authorized in one org can neither list nor read SCIM resources of another,
 // and a SCIM id never leaks across org boundaries.
