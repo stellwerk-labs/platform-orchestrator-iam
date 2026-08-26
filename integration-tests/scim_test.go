@@ -95,7 +95,7 @@ func scimDo(t *testing.T, method, rawURL string, fromUserId *uuid.UUID, body int
 	}
 	resp, err := testHttpClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, respBody
@@ -176,9 +176,9 @@ func TestScimProvisioning(t *testing.T) {
 		}, resp.JSON200.Items)
 	}, 30*time.Second, 500*time.Millisecond, "scimCaller did not get provisioning permissions in time")
 
-	// SCIM routes live on the IAM service itself. The nginx proxy at SERVER_URL
-	// only routes known paths (orgs/*, auth/*, etc.) and has no entry for /scim/v2.
-	// Use INTERNAL_SERVER_URL which is a direct TCP connection to the IAM container.
+	// This test hits the IAM container directly via INTERNAL_SERVER_URL. The
+	// proxied /scim/v2 path (SERVER_URL) is exercised by the tests in
+	// scim_auth_test.go.
 	baseURL := fmt.Sprintf("%s/scim/v2/orgs/%s", mustInternalServerURL(t), org.Id)
 	callerID := scimCaller.Id
 
