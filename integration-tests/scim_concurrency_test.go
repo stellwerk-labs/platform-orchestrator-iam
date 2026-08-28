@@ -276,4 +276,60 @@ func TestScimConcurrentProvisioning(t *testing.T) {
 		assert.Equal(t, map[string]bool{mappedRoleId.String(): true}, roles, "member must hold exactly the mapped role")
 		assert.Equal(t, 1, countMembershipsByEmail(t, client, orgId, adminId, memberEmail), "exactly one membership row must exist")
 	})
+
+	t.Run("deactivation serializes with group role reconciliation", func(t *testing.T) {
+		mappedRole, err := client.CreateRoleWithResponse(t.Context(), orgId, serverclient.CreateRoleJSONRequestBody{
+			DisplayName: "Deactivation Race Role", Permissions: []string{authz.PermissionRoleRead},
+		}, WithAuthenticatedUserId(adminId))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, mappedRole.StatusCode(), "create mapped role: %s", string(mappedRole.Body))
+
+		groupName := "Deactivation Race " + uuid.New().String()[:8]
+		mapping, err := client.UpsertScimGroupMappingWithResponse(t.Context(), orgId, groupName,
+			serverclient.UpsertScimGroupMappingJSONRequestBody{RoleId: mappedRole.JSON201.Id},
+			WithAuthenticatedUserId(adminId))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, mapping.StatusCode(), "upsert mapping: %s", string(mapping.Body))
+
+		memberEmail := "scim-deactivate-race-" + uuid.New().String()[:8] + "@test.example"
+		status, body := scimDo(t, http.MethodPost, baseURL+"/Users", &caller, testScimUserBody{
+			Schemas: []string{testScimUserSchema}, UserName: memberEmail, Active: true,
+			Emails: []testScimEmail{{Value: memberEmail, Primary: true, Type: "work"}},
+		})
+		require.Equal(t, http.StatusCreated, status, "provision member: %s", string(body))
+		memberId := uuid.MustParse(mustDecodeScimUser(t, body).Id)
+
+		status, body = scimDo(t, http.MethodPost, baseURL+"/Groups", &caller, testScimGroupBody{
+			Schemas: []string{testScimGroupSchema}, DisplayName: groupName,
+		})
+		require.Equal(t, http.StatusCreated, status, "create group: %s", string(body))
+		groupId := uuid.MustParse(mustDecodeScimGroup(t, body).Id)
+		groupURL := fmt.Sprintf("%s/Groups/%s", baseURL, groupId)
+		userURL := fmt.Sprintf("%s/Users/%s", baseURL, memberId)
+
+		const groupWriters = 12
+		results := fireConcurrently(groupWriters+1, func(i int) scimRaceResult {
+			if i == groupWriters {
+				patch := testScimPatch{Schemas: []string{testScimPatchSchema}, Operations: []testScimPatchOp{{Op: "replace", Path: "active", Value: false}}}
+				status, body, err := scimTryDo(t.Context(), http.MethodPatch, userURL, caller, patch)
+				return scimRaceResult{status: status, body: body, err: err}
+			}
+			patch := testScimPatch{Schemas: []string{testScimPatchSchema}, Operations: []testScimPatchOp{{
+				Op: "add", Path: "members", Value: []map[string]string{{"value": memberId.String()}},
+			}}}
+			status, body, err := scimTryDo(t.Context(), http.MethodPatch, groupURL, caller, patch)
+			return scimRaceResult{status: status, body: body, err: err}
+		})
+		for i, result := range results {
+			require.NoError(t, result.err, "request %d failed on the wire", i)
+			require.Equal(t, http.StatusOK, result.status, "request %d: %s", i, string(result.body))
+		}
+
+		status, body = scimDo(t, http.MethodGet, userURL, &caller, nil)
+		require.Equal(t, http.StatusOK, status, "get deactivated user: %s", string(body))
+		user := mustDecodeScimUser(t, body)
+		require.False(t, user.Active, "the SCIM resource must remain inactive")
+		require.Equal(t, 0, countMembershipsByEmail(t, client, orgId, adminId, memberEmail),
+			"group reconciliation must never grant a role after deactivation")
+	})
 }

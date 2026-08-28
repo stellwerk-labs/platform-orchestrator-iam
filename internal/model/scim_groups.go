@@ -307,3 +307,41 @@ func (d *databaser) LockScimGroupByDisplayName(ctx context.Context, optionalTx T
 	}
 	return nil
 }
+
+// LockScimGroupsForUser locks, in stable id order, every group whose member
+// set contains the SCIM user. DELETE uses this before locking the user row so
+// it follows the same group -> user lock order as group PATCH and mapping
+// reconciliation. Without it, deleting scim_group_members while another
+// transaction holds the group and waits for the user can deadlock.
+func (d *databaser) LockScimGroupsForUser(ctx context.Context, optionalTx Tx, orgId string, scimUserId uuid.UUID) error {
+	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
+	optionalTx = d.txOrDb(optionalTx)
+	rs, err := optionalTx.QueryContext(
+		ctx,
+		`SELECT g.id
+		FROM scim_groups g
+		JOIN scim_group_members gm ON gm.group_id = g.id AND gm.org_id = g.org_id
+		WHERE g.org_id = $1 AND gm.scim_user_id = $2
+		ORDER BY g.id
+		FOR UPDATE OF g`,
+		orgId, scimUserId,
+	)
+	if err != nil {
+		return errors.Wrap(err, "failed to lock scim groups for user")
+	}
+	defer func() {
+		if err := rs.Close(); err != nil {
+			logger.Error("failed to close row set", zap.Error(err))
+		}
+	}()
+	for rs.Next() {
+		var ignored uuid.UUID
+		if err := rs.Scan(&ignored); err != nil {
+			return errors.Wrap(err, "failed to scan locked scim group")
+		}
+	}
+	if err := rs.Err(); err != nil {
+		return errors.Wrap(err, "failed to iterate locked scim groups")
+	}
+	return nil
+}

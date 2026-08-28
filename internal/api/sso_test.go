@@ -146,10 +146,10 @@ func TestGetSsoCallback_Success_NewUser(t *testing.T) {
 				GetUserIdByIdentity(gomock.Any(), gomock.Not(nil), model.UserIdentityProviderSso, TestSsoProviderOrgId+":user-12345").
 				Return(nil, model.NewErrNotFound("not found"))
 
-			// SSO linking: email-first check before JIT-create (no existing user in this test path).
+			// SSO linking: governed-email check before JIT-create (no match in this test path).
 			s.Database.(*mockmodel.MockDatabaser).EXPECT().
-				FindUserByPrimaryEmail(gomock.Any(), gomock.Not(nil), "foo@example.com").
-				Return(nil, model.NewErrNotFound("not found"))
+				FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Not(nil), orgId, "foo@example.com").
+				Return([]model.ScimUser{}, nil)
 
 			var (
 				newUserId                 uuid.UUID
@@ -388,10 +388,10 @@ func TestGetSsoCallback_NonConfigurable_NewUser(t *testing.T) {
 				GetUserIdByIdentity(gomock.Any(), gomock.Not(nil), model.UserIdentityProviderSso, ":user-12345").
 				Return(nil, model.NewErrNotFound("not found"))
 
-			// SSO linking: email-first check before JIT-create (no existing user in this test path).
+			// SSO linking: governed-email check before JIT-create (no match in this test path).
 			s.Database.(*mockmodel.MockDatabaser).EXPECT().
-				FindUserByPrimaryEmail(gomock.Any(), gomock.Not(nil), "foo@example.com").
-				Return(nil, model.NewErrNotFound("not found"))
+				FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Not(nil), orgId, "foo@example.com").
+				Return([]model.ScimUser{}, nil)
 
 			var (
 				newUserId                 uuid.UUID

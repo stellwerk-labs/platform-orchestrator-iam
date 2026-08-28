@@ -206,9 +206,7 @@ func (d *databaser) DismissUserPrompt(ctx context.Context, optionalTx Tx, userId
 
 func (d *databaser) FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, email string) (*User, error) {
 	optionalTx = d.txOrDb(optionalTx)
-	out := User{UserIdentities: make(map[UserIdentityProvider]string), DismissedPrompts: make([]string, 0)}
-
-	row := optionalTx.QueryRowContext(
+	rows, err := optionalTx.QueryContext(
 		ctx,
 		`SELECT
 			u.id,
@@ -228,18 +226,34 @@ func (d *databaser) FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, e
 		LEFT JOIN identities p ON u.id = p.user_id
 		LEFT JOIN dismissed_prompts dp ON u.id = dp.user_id
 		WHERE LOWER(u.primary_email_address) = LOWER($1)
-		GROUP BY u.id`,
+		GROUP BY u.id
+		ORDER BY u.id
+		LIMIT 2`,
 		email,
 	)
-
-	if err := row.Scan(&out.Id, &out.DisplayName, &out.CreatedAt, &out.LastLoggedInAt, opt.Scan(&out.PrimaryEmailAddress), asJson(&out.UserIdentities), asJson(&out.DismissedPrompts)); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, NewErrNotFound("user not found")
-		}
-		return nil, errors.Wrap(err, "failed to scan user")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to find user by primary email")
 	}
+	defer func() { _ = rows.Close() }()
 
-	return &out, nil
+	var found *User
+	for rows.Next() {
+		if found != nil {
+			return nil, NewErrConflict("multiple users already have this primary email")
+		}
+		out := User{UserIdentities: make(map[UserIdentityProvider]string), DismissedPrompts: make([]string, 0)}
+		if err := rows.Scan(&out.Id, &out.DisplayName, &out.CreatedAt, &out.LastLoggedInAt, opt.Scan(&out.PrimaryEmailAddress), asJson(&out.UserIdentities), asJson(&out.DismissedPrompts)); err != nil {
+			return nil, errors.Wrap(err, "failed to scan user by primary email")
+		}
+		found = &out
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate users by primary email")
+	}
+	if found == nil {
+		return nil, NewErrNotFound("user not found")
+	}
+	return found, nil
 }
 
 // AddUserIdentity links an external identity to an existing user. It is
@@ -251,13 +265,19 @@ func (d *databaser) FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, e
 // User.UserIdentities, so mutating that map is not enough to attach an identity.
 func (d *databaser) AddUserIdentity(ctx context.Context, optionalTx Tx, userId uuid.UUID, provider UserIdentityProvider, providerUserId string) error {
 	optionalTx = d.txOrDb(optionalTx)
-	if _, err := optionalTx.ExecContext(
+	var owner uuid.UUID
+	if err := optionalTx.QueryRowContext(
 		ctx,
 		`INSERT INTO identities (provider, provider_user_id, user_id) VALUES ($1, $2, $3)
-		ON CONFLICT (provider, provider_user_id) DO NOTHING`,
+			ON CONFLICT (provider, provider_user_id) DO UPDATE
+			SET user_id = identities.user_id
+			RETURNING user_id`,
 		provider, providerUserId, userId,
-	); err != nil {
+	).Scan(&owner); err != nil {
 		return errors.Wrap(err, "failed to add user identity")
+	}
+	if owner != userId {
+		return NewErrConflict("external identity already belongs to another user")
 	}
 	return nil
 }

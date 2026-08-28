@@ -126,10 +126,14 @@ func (s *Server) authenticateSuperUser(c echo.Context) error {
 }
 
 func build401(wwwAuthenticate string) N401UnauthorizedJSONResponse {
+	return build401WithMessage(wwwAuthenticate, http.StatusText(http.StatusUnauthorized))
+}
+
+func build401WithMessage(wwwAuthenticate, message string) N401UnauthorizedJSONResponse {
 	return N401UnauthorizedJSONResponse{
 		Body: Error{
 			Error:   unauthorizedErrorCode,
-			Message: http.StatusText(http.StatusUnauthorized),
+			Message: message,
 		},
 		Headers: N401UnauthorizedResponseHeaders{WWWAuthenticate: wwwAuthenticate},
 	}
@@ -226,29 +230,58 @@ func NewGetTokenByHashCache(db model.Databaser) *GetTokenByHashCache {
 
 func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, isServiceUserToken bool, tokenHash []byte) (*WrappedToken, error) {
 	a.lookups.Add(1)
-	item, err := a.cache.Fetch(hex.EncodeToString(tokenHash), a.ttl, func() (interface{}, error) {
-		a.misses.Add(1)
-		if isServiceUserToken {
-			sut, err := a.inner.GetServiceUserTokenByHash(ctx, nil, tokenHash)
-			if err != nil {
-				if _, ok := model.IsErrNotFound(err); ok {
-					// record a negative cache entry
-					return &WrappedToken{}, nil
-				}
-				return nil, errors.Wrap(err, "failed to get service user token")
+	tokenKind := "session:"
+	if isServiceUserToken {
+		tokenKind = "service-user:"
+	}
+	cacheKey := tokenKind + hex.EncodeToString(tokenHash)
+
+	// A human session must stop authenticating as soon as its database row is
+	// deleted. Positive session caching made logout and SCIM deprovisioning
+	// continue to work for up to authenticationTokenCacheTTL, and a process-
+	// local eviction would still be unsafe with multiple IAM replicas. Keep
+	// negative entries to absorb random/expired-token traffic, but read every
+	// valid human session from the authoritative database.
+	//
+	// The token kind is part of the key deliberately. Service-user tokens use
+	// the same random payload with an SU- wire prefix; sharing a hash-only cache
+	// key let a warmed service-user entry authenticate the prefixless payload as
+	// a human session.
+	if !isServiceUserToken {
+		if item := a.cache.Get(cacheKey); item != nil && !item.Expired() {
+			if item.Value().(*WrappedToken).UserId == uuid.Nil {
+				item.Extend(a.ttl)
+				return nil, nil
 			}
-			return &WrappedToken{UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt}, nil
-		} else {
-			st, err := a.inner.GetSessionTokenByHash(ctx, nil, tokenHash)
-			if err != nil {
-				if _, ok := model.IsErrNotFound(err); ok {
-					// record a negative cache entry
-					return &WrappedToken{}, nil
-				}
-				return nil, errors.Wrap(err, "failed to get session token")
-			}
-			return &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt}, nil
 		}
+
+		a.misses.Add(1)
+		st, err := a.inner.GetSessionTokenByHash(ctx, nil, tokenHash)
+		if err != nil {
+			if _, ok := model.IsErrNotFound(err); ok {
+				a.cache.Set(cacheKey, &WrappedToken{}, a.ttl)
+				return nil, nil
+			}
+			return nil, errors.Wrap(err, "failed to get session token")
+		}
+		wrapped := &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt}
+		if time.Now().After(wrapped.ExpiresAt) {
+			a.cache.Set(cacheKey, &WrappedToken{}, a.ttl)
+		}
+		return wrapped, nil
+	}
+
+	item, err := a.cache.Fetch(cacheKey, a.ttl, func() (interface{}, error) {
+		a.misses.Add(1)
+		sut, err := a.inner.GetServiceUserTokenByHash(ctx, nil, tokenHash)
+		if err != nil {
+			if _, ok := model.IsErrNotFound(err); ok {
+				// record a negative cache entry
+				return &WrappedToken{}, nil
+			}
+			return nil, errors.Wrap(err, "failed to get service user token")
+		}
+		return &WrappedToken{UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt}, nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch and cache token")

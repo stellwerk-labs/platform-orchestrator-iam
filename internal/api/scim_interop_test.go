@@ -146,7 +146,8 @@ func TestScimReplaceGroup_OmittedExternalIdIsCleared(t *testing.T) {
 	mockScimWriteAuth(s, callerUserId, orgId)
 
 	db := s.Database.(*mockmodel.MockDatabaser)
-	db.EXPECT().GetScimGroup(gomock.Any(), nil, orgId, groupId).
+	db.EXPECT().LockScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).Return(nil)
+	db.EXPECT().GetScimGroup(gomock.Any(), gomock.Not(nil), orgId, groupId).
 		Return(&model.ScimGroup{
 			Id: groupId, OrgId: orgId, DisplayName: "Eng", ExternalId: opt.Of("grp-ext-1"),
 			CreatedAt: now, UpdatedAt: now,

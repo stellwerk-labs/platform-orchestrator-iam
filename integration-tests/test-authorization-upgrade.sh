@@ -196,17 +196,15 @@ authorize_on "$casbin_iam_name" 403 60000000-0000-4000-8000-000000000001 project
 docker stop "$casbin_iam_name" >/dev/null
 docker stop "$casbin_iam_second_name" >/dev/null
 
-docker exec "$postgres_name" psql -v ON_ERROR_STOP=1 -U iam -d iam -c \
-  "UPDATE roles SET permissions = ARRAY['audit_logs', 'temporary_change'] WHERE id = '20000000-0000-4000-8000-000000000004'" >/dev/null
-if run_migration_tool rollback --confirm-no-rbac-writes --policy-sha256 "$policy_sha256" >/dev/null 2>&1; then
-  echo "rollback unexpectedly accepted changed RBAC data" >&2
+# The current binary has feature migrations after the Casbin cutover. Its
+# guarded rollback must refuse to flatten the database to the legacy schema:
+# doing so would silently drop unrelated feature data (including SCIM). A
+# backup restore is the only safe rollback once the schema advances past 31.
+rollback_error="$temp_dir/rollback-error.log"
+if run_migration_tool rollback --confirm-no-rbac-writes --policy-sha256 "$policy_sha256" >/dev/null 2>"$rollback_error"; then
+  echo "rollback unexpectedly accepted a database with post-Casbin feature migrations" >&2
   exit 1
 fi
-docker exec "$postgres_name" psql -v ON_ERROR_STOP=1 -U iam -d iam -c \
-  "UPDATE roles SET permissions = ARRAY['audit_logs'] WHERE id = '20000000-0000-4000-8000-000000000004'" >/dev/null
+grep -q 'rollback requires schema version 31, found ' "$rollback_error"
 
-run_migration_tool rollback --confirm-no-rbac-writes --policy-sha256 "$policy_sha256" >"$temp_dir/rollback.json"
-grep -q '"schema_version": 29' "$temp_dir/rollback.json"
-grep -q '"ready": true' "$temp_dir/rollback.json"
-
-echo "SpiceDB-to-Casbin upgrade, authorization, verification, and guarded rollback passed."
+echo "SpiceDB-to-Casbin upgrade, authorization, verification, and guarded refusal to destroy later feature data passed."

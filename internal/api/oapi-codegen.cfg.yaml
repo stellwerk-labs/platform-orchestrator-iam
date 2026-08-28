@@ -5,6 +5,9 @@ generate:
   echo-server: true
   strict-server: true
   embedded-spec: true
+compatibility:
+  headers-implicitly-required: true
+  enable-auth-scopes-on-context: true
 output: server.gen.go
 output-options:
   skip-prune: true

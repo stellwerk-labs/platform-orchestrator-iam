@@ -6,17 +6,22 @@ package integrationtests
 // attributes, and the multi-org global profile ownership rule.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
 	serverclient "github.com/stellwerk-labs/platform-orchestrator-iam/shared/genclient"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
 // scimListTotal runs a filtered list request and returns totalResults.
@@ -282,4 +287,97 @@ func TestScimExternalIdRekeyKeepsIdentityLookupWorking(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, originalGlobalUserId, newRow.UserId,
 		"re-provisioning under the rebound externalId must resolve to the same global user, not mint a new one")
+}
+
+func TestScimExternalIdCannotBeReboundAcrossUsers(t *testing.T) {
+	t.Parallel()
+
+	client, err := serverclient.NewClientWithResponses(mustServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	internalClient, err := serverclient.NewClientWithResponses(mustInternalServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+
+	orgId, adminId := mustScimOrgWithAdmin(t, client, internalClient)
+	caller := mustProvisioningCaller(t, client, internalClient, orgId, adminId)
+	baseURL := scimProxyBaseURL(t, orgId)
+	suffix := uuid.NewString()
+
+	create := func(userName, externalId string) testScimUserResp {
+		status, body := scimDo(t, http.MethodPost, baseURL+"/Users", &caller, testScimUserBody{
+			Schemas: []string{testScimUserSchema}, UserName: userName, ExternalId: externalId, Active: true,
+			Emails: []testScimEmail{{Value: userName, Primary: true, Type: "work"}},
+		})
+		require.Equal(t, http.StatusCreated, status, "create %s: %s", userName, string(body))
+		return mustDecodeScimUser(t, body)
+	}
+
+	firstExternalId := "external-owner-a-" + suffix
+	secondExternalId := "external-owner-b-" + suffix
+	first := create("external-owner-a-"+suffix+"@example.com", firstExternalId)
+	_ = create("external-owner-b-"+suffix+"@example.com", secondExternalId)
+
+	status, body := scimDo(t, http.MethodPatch, baseURL+"/Users/"+first.Id, &caller, testScimPatch{
+		Schemas:    []string{testScimPatchSchema},
+		Operations: []testScimPatchOp{{Op: "replace", Path: "externalId", Value: secondExternalId}},
+	})
+	require.Equal(t, http.StatusConflict, status, "an external identity must have one owner: %s", string(body))
+	var conflict struct {
+		ScimType string `json:"scimType"`
+	}
+	require.NoError(t, json.Unmarshal(body, &conflict))
+	require.Equal(t, "uniqueness", conflict.ScimType)
+
+	status, body = scimDo(t, http.MethodGet, baseURL+"/Users/"+first.Id, &caller, nil)
+	require.Equal(t, http.StatusOK, status, "get first user: %s", string(body))
+	require.Equal(t, firstExternalId, mustDecodeScimUser(t, body).ExternalId,
+		"the rejected rebind must roll back the SCIM row update")
+}
+
+func TestScimProvisioningRejectsAmbiguousGlobalEmail(t *testing.T) {
+	t.Parallel()
+
+	client, err := serverclient.NewClientWithResponses(mustServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	internalClient, err := serverclient.NewClientWithResponses(mustInternalServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	db := MustDatabase(t)
+	defer func() { _ = db.Close() }()
+
+	orgId, adminId := mustScimOrgWithAdmin(t, client, internalClient)
+	caller := mustProvisioningCaller(t, client, internalClient, orgId, adminId)
+	baseURL := fmt.Sprintf("%s/scim/v2/orgs/%s", mustInternalServerURL(t), orgId)
+
+	email := "ambiguous-" + uuid.NewString()[:8] + "@example.com"
+	firstId := userid.NewHumanUserId()
+	secondId := userid.NewHumanUserId()
+	tx, err := db.BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	for _, id := range []uuid.UUID{firstId, secondId} {
+		_, err := db.CreateUser(t.Context(), tx, &model.User{
+			Id:                  id,
+			DisplayName:         "Duplicate email owner",
+			CreatedAt:           time.Now().UTC(),
+			PrimaryEmailAddress: opt.Of(email),
+			UserIdentities:      map[model.UserIdentityProvider]string{},
+		})
+		require.NoError(t, err)
+	}
+	require.NoError(t, tx.Commit())
+	t.Cleanup(func() {
+		_ = db.DeleteUser(context.Background(), nil, firstId)
+		_ = db.DeleteUser(context.Background(), nil, secondId)
+	})
+
+	status, body := scimDo(t, http.MethodPost, baseURL+"/Users", &caller, testScimUserBody{
+		Schemas:  []string{testScimUserSchema},
+		UserName: email,
+		Active:   true,
+		Emails:   []testScimEmail{{Value: email, Primary: true, Type: "work"}},
+	})
+	require.Equal(t, http.StatusConflict, status, "ambiguous email must fail closed: %s", string(body))
+	var conflict struct {
+		ScimType string `json:"scimType"`
+	}
+	require.NoError(t, json.Unmarshal(body, &conflict))
+	assert.Equal(t, "uniqueness", conflict.ScimType)
 }

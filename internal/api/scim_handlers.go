@@ -175,6 +175,14 @@ func scimPatchErrorResp(c echo.Context, err error) error {
 	return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, err.Error())
 }
 
+func scimConflictResp(c echo.Context, conflict model.ErrConflict) error {
+	scimType := ""
+	if strings.Contains(conflict.Message, "already") {
+		scimType = scimTypeUniqueness
+	}
+	return scimErrorResp(c, http.StatusConflict, scimType, conflict.Message)
+}
+
 // ------------------------------------------------------------------ static
 //
 // The discovery handlers below deliberately perform NO authentication or
@@ -343,7 +351,7 @@ func (s *Server) handleScimCreateUser(c echo.Context) error {
 		// The curated conflict message, not err.Error(): the error chain carries
 		// internal wrap prefixes that must not be reflected back to the IDP.
 		if conflict, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
+			return scimConflictResp(c, conflict)
 		}
 		return err
 	}
@@ -423,7 +431,7 @@ func (s *Server) handleScimReplaceUser(c echo.Context) error {
 	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, global)
 	if err != nil {
 		if conflict, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
+			return scimConflictResp(c, conflict)
 		}
 		return err
 	}
@@ -509,7 +517,7 @@ func (s *Server) handleScimPatchUser(c echo.Context) error {
 	result, err := s.scimUpdateUser(c.Request().Context(), logger, existing, updated, scimGlobalUserFields{DisplayName: newDisplayName, Email: newEmail})
 	if err != nil {
 		if conflict, ok := model.IsErrConflict(err); ok {
-			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, conflict.Message)
+			return scimConflictResp(c, conflict)
 		}
 		return err
 	}
@@ -536,6 +544,9 @@ func (s *Server) handleScimDeleteUser(c echo.Context) error {
 	}
 
 	if err := s.scimDeleteUser(c.Request().Context(), logger, scimUser); err != nil {
+		if conflict, ok := model.IsErrConflict(err); ok {
+			return scimConflictResp(c, conflict)
+		}
 		return err
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -710,14 +721,6 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	if err != nil {
 		return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 	}
-	existing, err := s.Database.GetScimGroup(c.Request().Context(), nil, orgId, id)
-	if err != nil {
-		if _, ok := model.IsErrNotFound(err); ok {
-			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
-		}
-		return err
-	}
-
 	var body ScimGroupResource
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidSyntax, "invalid JSON body")
@@ -731,8 +734,29 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 		return scimErrorResp(c, http.StatusBadRequest, scimTypeInvalidValue, err.Error())
 	}
 
+	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.Database.LockScimGroup(c.Request().Context(), tx, orgId, id); err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
+	}
+	existing, err := s.Database.GetScimGroup(c.Request().Context(), tx, orgId, id)
+	if err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
+	}
+
 	// PUT is a full replace (RFC 7644 §3.5.1): an externalId the IDP omits is
-	// cleared, not preserved.
+	// cleared, not preserved. The row was read only after taking the lock, so a
+	// concurrent PATCH cannot have its member changes silently overwritten from
+	// a stale snapshot.
 	updated := *existing
 	updated.DisplayName = body.DisplayName
 	updated.MemberIds = memberIds
@@ -741,12 +765,6 @@ func (s *Server) handleScimReplaceGroup(c echo.Context) error {
 	if body.ExternalId != "" {
 		updated.ExternalId = opt.Of(body.ExternalId)
 	}
-
-	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.UpdateScimGroup(c.Request().Context(), tx, updated); err != nil {
 		if _, ok := model.IsErrConflict(err); ok {
 			return scimErrorResp(c, http.StatusConflict, scimTypeUniqueness, "group displayName already exists in org")
@@ -890,21 +908,28 @@ func (s *Server) handleScimDeleteGroup(c echo.Context) error {
 	if err != nil {
 		return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 	}
+	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.Database.LockScimGroup(c.Request().Context(), tx, orgId, id); err != nil {
+		if _, ok := model.IsErrNotFound(err); ok {
+			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
+		}
+		return err
+	}
 	// Deleting a group removes every member from it, so the former members'
-	// mapped roles must be reconciled away — same rule as any other membership
-	// change. Fetch the member list before the cascade wipes it.
-	existing, err := s.Database.GetScimGroup(c.Request().Context(), nil, orgId, id)
+	// mapped roles must be reconciled away. Read the member list under the same
+	// lock as the delete so a concurrent PATCH cannot add a member whose mapped
+	// role would survive the group.
+	existing, err := s.Database.GetScimGroup(c.Request().Context(), tx, orgId, id)
 	if err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
 			return scimErrorResp(c, http.StatusNotFound, "", "group not found")
 		}
 		return err
 	}
-	tx, err := s.Database.BeginTx(c.Request().Context(), nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if err := s.Database.DeleteScimGroup(c.Request().Context(), tx, orgId, id); err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
 			return scimErrorResp(c, http.StatusNotFound, "", "group not found")

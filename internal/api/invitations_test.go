@@ -418,6 +418,7 @@ func TestRedeemInvitation_nominal(t *testing.T) {
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetInvitation(gomock.Any(), gomock.Not(nil), inviteId).Return(&model.Invitation{
 		Id: inviteId, OrgId: orgId, ExpiresAt: time.Now().Add(time.Hour), RedemptionTokenSha256Hash: h[:], MembershipSubjectType: model.MembershipSubjectTypeRole, MembershipSubject: roleId.String(),
 	}, nil)
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().FindScimUserByUserId(gomock.Any(), gomock.Not(nil), orgId, humanUser).Return(nil, model.NewErrNotFound("scim user not found"))
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).Return([]model.MembershipWithUserMetadata{}, nil)
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().CreateMembership(gomock.Any(), gomock.Not(nil), gomock.Any()).DoAndReturn(func(_ context.Context, optionalTx model.Tx, in *model.Membership) (*model.Membership, error) {
 		assert.NotEmpty(t, in.CreatedAt)
@@ -459,6 +460,7 @@ func TestRedeemInvitation_already_a_member(t *testing.T) {
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetInvitation(gomock.Any(), gomock.Not(nil), inviteId).Return(&model.Invitation{
 		Id: inviteId, OrgId: orgId, ExpiresAt: time.Now().Add(time.Hour), RedemptionTokenSha256Hash: h[:], MembershipSubjectType: model.MembershipSubjectTypeRole, MembershipSubject: roleId.String(),
 	}, nil)
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().FindScimUserByUserId(gomock.Any(), gomock.Not(nil), orgId, humanUser).Return(nil, model.NewErrNotFound("scim user not found"))
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListMemberships(gomock.Any(), gomock.Not(nil), gomock.Any()).Return([]model.MembershipWithUserMetadata{{Membership: model.Membership{
 		Id: membershipId, UserId: humanUser, OrgId: orgId, SubjectType: model.MembershipSubjectTypeRole, Subject: roleId.String(), CreatedAt: time.Unix(1, 0),
 	}}}, nil)
@@ -476,4 +478,27 @@ func TestRedeemInvitation_already_a_member(t *testing.T) {
 		Subject:     roleId.String(),
 		SubjectType: SubjectTypeRole,
 	}), r)
+}
+
+func TestRedeemInvitation_SCIMDeprovisionedUserRejected(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+	humanUser := userid.NewHumanUserId()
+	inviteId := uuid.New()
+	h := sha256.Sum256([]byte("token"))
+
+	db := s.Database.(*mockmodel.MockDatabaser)
+	db.EXPECT().GetInvitation(gomock.Any(), gomock.Not(nil), inviteId).Return(&model.Invitation{
+		Id: inviteId, OrgId: orgId, ExpiresAt: time.Now().Add(time.Hour), RedemptionTokenSha256Hash: h[:],
+	}, nil)
+	db.EXPECT().FindScimUserByUserId(gomock.Any(), gomock.Not(nil), orgId, humanUser).Return(&model.ScimUser{
+		Id: uuid.New(), OrgId: orgId, UserId: humanUser, Active: false,
+	}, nil)
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, humanUser.String())
+	r, err := s.RedeemInvitation(ctx, RedeemInvitationRequestObject{
+		OrgId: orgId, InvitationId: inviteId, Params: RedeemInvitationParams{RedemptionToken: base64.RawURLEncoding.EncodeToString([]byte("token"))},
+	})
+	require.NoError(t, err)
+	require.Equal(t, RedeemInvitation409JSONResponse{N409ConflictJSONResponse: Generate409Response("user was deprovisioned via SCIM")}, r)
 }

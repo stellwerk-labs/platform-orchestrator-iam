@@ -74,6 +74,30 @@ func (d *databaser) GetScimUser(ctx context.Context, optionalTx Tx, orgId string
 	return &out, nil
 }
 
+// LockScimUser serializes every operation that can change a user's access.
+// expectedUpdatedAt turns a stale read into a clean conflict instead of letting
+// two PATCH/PUT requests apply membership side effects from different versions
+// of the resource. The lock also composes with bulk group reconciliation, which
+// locks the same rows before granting or revoking mapped roles.
+func (d *databaser) LockScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID, expectedUpdatedAt time.Time) error {
+	optionalTx = d.txOrDb(optionalTx)
+	var currentUpdatedAt time.Time
+	if err := optionalTx.QueryRowContext(
+		ctx,
+		`SELECT updated_at FROM scim_users WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
+		orgId, id,
+	).Scan(&currentUpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return NewErrNotFound("scim user not found")
+		}
+		return errors.Wrap(err, "failed to lock scim user")
+	}
+	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
+		return NewErrConflict("scim user was modified concurrently")
+	}
+	return nil
+}
+
 // GetScimUsersByIds returns the live (non-tombstoned) SCIM users among the
 // given ids in one query. Ids that are missing, tombstoned, or foreign to the
 // org are simply absent from the result — the bulk reconciler treats them the
@@ -90,7 +114,11 @@ func (d *databaser) GetScimUsersByIds(ctx context.Context, optionalTx Tx, orgId 
 	}
 	rs, err := optionalTx.QueryContext(
 		ctx,
-		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at FROM scim_users WHERE org_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+		`SELECT id, org_id, user_id, user_name, external_id, active, created_at, updated_at, deleted_at
+		FROM scim_users
+		WHERE org_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+		ORDER BY id
+		FOR UPDATE`,
 		orgId, pq.Array(idStrings),
 	)
 	if err != nil {
@@ -247,12 +275,17 @@ func (d *databaser) TombstoneScimUser(ctx context.Context, optionalTx Tx, orgId 
 	return nil
 }
 
-// FindScimUserByUserId is the SSO gate's lookup and deliberately sees through
+// FindScimUserByUserId is the SSO/invitation gate's lookup and deliberately sees through
 // tombstones. It returns the live row if one exists, otherwise the most
 // recently tombstoned row (DeletedAt set), otherwise not-found. That lets the
 // caller distinguish the three governance states: never SCIM-provisioned in
 // this org (not found), currently provisioned (live row, Active decides), and
 // provisioned-then-deleted (tombstone → access must stay revoked).
+//
+// The selected governance row is locked for the caller's transaction. Access
+// restoration paths must serialize with SCIM deactivation: otherwise an SSO
+// callback or invitation redemption can observe active=true, wait while SCIM
+// removes access, and then commit a fresh session or membership afterwards.
 func (d *databaser) FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var out ScimUser
@@ -262,7 +295,8 @@ func (d *databaser) FindScimUserByUserId(ctx context.Context, optionalTx Tx, org
 		FROM scim_users
 		WHERE org_id = $1 AND user_id = $2
 		ORDER BY (deleted_at IS NULL) DESC, deleted_at DESC
-		LIMIT 1`,
+		LIMIT 1
+		FOR UPDATE`,
 		orgId, userId,
 	).Scan(&out.Id, &out.OrgId, &out.UserId, &out.UserName, opt.Scan(&out.ExternalId), &out.Active, &out.CreatedAt, &out.UpdatedAt, opt.Scan(&out.DeletedAt)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -271,4 +305,54 @@ func (d *databaser) FindScimUserByUserId(ctx context.Context, optionalTx Tx, org
 		return nil, errors.Wrap(err, "failed to find scim user by user id")
 	}
 	return &out, nil
+}
+
+// FindScimUsersByPrimaryEmail returns at most one governance record per global
+// user: the live SCIM row when present, otherwise that user's latest tombstone.
+// SSO linking uses the complete set to fail closed when duplicate global users
+// share an email and any of them was deprovisioned in this organization. Every
+// matching row is locked in stable order so the callback serializes with a
+// concurrent SCIM deactivation before it creates a session or membership.
+func (d *databaser) FindScimUsersByPrimaryEmail(ctx context.Context, optionalTx Tx, orgId string, email string) ([]ScimUser, error) {
+	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
+	optionalTx = d.txOrDb(optionalTx)
+	rs, err := optionalTx.QueryContext(
+		ctx,
+		`SELECT
+			su.id, su.org_id, su.user_id, su.user_name, su.external_id,
+			su.active, su.created_at, su.updated_at, su.deleted_at
+		FROM scim_users su
+		JOIN users u ON u.id = su.user_id
+		WHERE su.org_id = $1 AND LOWER(u.primary_email_address) = LOWER($2)
+		ORDER BY su.user_id, (su.deleted_at IS NULL) DESC, su.deleted_at DESC
+		FOR UPDATE OF su`,
+		orgId, email,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to find scim users by primary email")
+	}
+	defer func() {
+		if err := rs.Close(); err != nil {
+			logger.Error("failed to close row set", zap.Error(err))
+		}
+	}()
+	out := make([]ScimUser, 0)
+	var previousUserId uuid.UUID
+	for rs.Next() {
+		var item ScimUser
+		if err := rs.Scan(&item.Id, &item.OrgId, &item.UserId, &item.UserName, opt.Scan(&item.ExternalId), &item.Active, &item.CreatedAt, &item.UpdatedAt, opt.Scan(&item.DeletedAt)); err != nil {
+			return nil, errors.Wrap(err, "failed to scan scim user by primary email")
+		}
+		// Rows are ordered live-first per global user. Keep only the first, but
+		// consume every row so every historical governance record is locked.
+		if item.UserId == previousUserId {
+			continue
+		}
+		out = append(out, item)
+		previousUserId = item.UserId
+	}
+	if err := rs.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate scim users by primary email")
+	}
+	return out, nil
 }

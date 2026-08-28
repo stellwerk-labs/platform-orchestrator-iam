@@ -42,6 +42,7 @@ type testScimUserResp struct {
 	Id          string `json:"id"`
 	UserName    string `json:"userName"`
 	DisplayName string `json:"displayName,omitempty"`
+	ExternalId  string `json:"externalId,omitempty"`
 	Active      bool   `json:"active"`
 }
 

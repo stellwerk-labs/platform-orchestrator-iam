@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	strictecho "github.com/oapi-codegen/runtime/strictmiddleware/echo"
 	"go.uber.org/zap"
 
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
@@ -53,10 +54,10 @@ type Server struct {
 
 func (s *Server) MapRoutes(e *echo.Echo) {
 	apiHandler := NewStrictHandler(s, []StrictMiddlewareFunc{
-		hecho.OperationIdCollectorMiddleware,
-		hecho.BuildContextTimeoutMiddlewareWithDuration(time.Second * 30),
-		hecho.AuthMiddleware("userIdHeader.Scopes"),
-		middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`)),
+		adaptStrictMiddleware(hecho.OperationIdCollectorMiddleware),
+		adaptStrictMiddleware(hecho.BuildContextTimeoutMiddlewareWithDuration(time.Second * 30)),
+		adaptStrictMiddleware(hecho.AuthMiddleware("userIdHeader.Scopes")),
+		adaptStrictMiddleware(middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`))),
 	})
 	RegisterHandlers(e, apiHandler)
 
@@ -79,6 +80,16 @@ func (s *Server) MapRoutes(e *echo.Echo) {
 	// SCIM 2.0 routes are registered manually (not via oapi-codegen) because SCIM
 	// wire format conflicts with our OpenAPI codegen conventions.
 	s.registerScimRoutes(e)
+}
+
+// oapi-codegen v2.8 owns the strict middleware function type instead of
+// aliasing the runtime package's otherwise identical type. Keep the shared
+// hecho middleware reusable without baking generated API types into golib.
+func adaptStrictMiddleware(middleware strictecho.StrictEchoMiddlewareFunc) StrictMiddlewareFunc {
+	return func(next StrictHandlerFunc, operationID string) StrictHandlerFunc {
+		adapted := middleware(strictecho.StrictEchoHandlerFunc(next), operationID)
+		return StrictHandlerFunc(adapted)
+	}
 }
 
 func OpenApiValidatorSkipper(c echo.Context) bool {

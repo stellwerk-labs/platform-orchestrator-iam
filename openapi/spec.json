@@ -489,7 +489,7 @@
           "User"
         ],
         "operationId": "revokeUserSessionToken",
-        "summary": "Revoke the session token for this user. Due to internal caching, this may take up to a minute for authorized sessions to be revoked.",
+        "summary": "Revoke the session token for this user.",
         "parameters": [
           {
             "$ref": "#/components/parameters/userIdPathParam"

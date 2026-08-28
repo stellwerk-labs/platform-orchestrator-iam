@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -145,18 +144,11 @@ func TestScimDeprovisionRevokesDeviceLogin(t *testing.T) {
 		}
 	})
 
-	t.Run("session minted before deprovisioning dies within the auth cache TTL", func(t *testing.T) {
-		// The session_tokens row is deleted in the deprovision transaction, but
-		// GetTokenByHashCache (internal/api/authenticate.go) may keep serving a
-		// recently-used token for up to authenticationTokenCacheTTL (60s). That
-		// staleness is a deliberate, TTL-bounded property of EVERY revocation
-		// path (logout included), not something SCIM-specific — so this asserts
-		// what the system actually guarantees: the token converges to 401
-		// within the bound and never comes back.
-		require.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, http.StatusUnauthorized, authenticateWithToken(t, sessionToken),
-				"deprovisioning must revoke sessions minted through device login")
-		}, 90*time.Second, 2*time.Second,
-			"revoked session token must stop authenticating within the auth cache TTL")
+	t.Run("session minted before deprovisioning dies immediately", func(t *testing.T) {
+		// Positive human-session entries are deliberately not cached. A token
+		// deleted in the deprovision transaction must therefore fail on the very
+		// next authentication request, on every IAM replica.
+		assert.Equal(t, http.StatusUnauthorized, authenticateWithToken(t, sessionToken),
+			"deprovisioning must immediately revoke sessions minted through device login")
 	})
 }

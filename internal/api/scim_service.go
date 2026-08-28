@@ -512,6 +512,12 @@ func (s *Server) scimDeleteUser(ctx context.Context, logger *zap.Logger, scimUse
 			logger.Error("failed to rollback delete transaction", zap.Error(err))
 		}
 	}()
+	if err := s.Database.LockScimGroupsForUser(ctx, tx, scimUser.OrgId, scimUser.Id); err != nil {
+		return errors.Wrap(err, "failed to lock scim groups for user delete")
+	}
+	if err := s.Database.LockScimUser(ctx, tx, scimUser.OrgId, scimUser.Id, scimUser.UpdatedAt); err != nil {
+		return errors.Wrap(err, "failed to lock scim user for delete")
+	}
 
 	if err := s.removeOrgMembershipsAndMaybeSessions(ctx, logger, tx, *scimUser); err != nil {
 		return err
@@ -569,6 +575,14 @@ func (s *Server) removeOrgMembershipsAndMaybeSessions(ctx context.Context, logge
 			zap.String("user_id", userId.String()),
 			zap.String("scim_user_id", scimUser.Id.String()),
 			zap.Int64("manual_memberships_removed", unmanaged))
+	}
+
+	// Invitations are bearer credentials that create memberships. Revoke every
+	// pending invite addressed to this user's known org-facing email identities,
+	// otherwise the user can redeem an old invite immediately after SCIM removes
+	// their access.
+	if _, err := s.Database.DeleteInvitationsForScimUser(ctx, tx, orgId, userId, scimUser.UserName); err != nil {
+		return errors.Wrap(err, "failed to revoke invitations during scim deprovisioning")
 	}
 
 	remaining, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{UserId: &userId})
@@ -630,6 +644,12 @@ func (s *Server) scimUpdateUser(ctx context.Context, logger *zap.Logger, existin
 			logger.Error("failed to rollback scim update transaction", zap.Error(err))
 		}
 	}()
+	// Serialize against group reconciliation and reject stale user mutations.
+	// Without this lock, a group PATCH can grant a mapped role after
+	// deprovisioning deleted memberships but before active=false is stored.
+	if err := s.Database.LockScimUser(ctx, tx, existing.OrgId, existing.Id, existing.UpdatedAt); err != nil {
+		return nil, errors.Wrap(err, "failed to lock scim user for update")
+	}
 
 	now := time.Now().UTC()
 	// revokedAccess decides the post-commit reload: synchronous for anything

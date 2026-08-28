@@ -62,7 +62,7 @@ func TestSsoCallback_ScimProvisionedUserLinked(t *testing.T) {
 		GetUserIdByIdentity(gomock.Any(), gomock.Any(), model.UserIdentityProviderSso, identityId).
 		Return(nil, model.NewErrNotFound("not found"))
 
-	// FindUserByPrimaryEmail finds the SCIM-provisioned user.
+	// The complete governed-email lookup finds the SCIM-provisioned user.
 	scimProvisionedUserId := userid.NewHumanUserId()
 	now := time.Now().UTC()
 	existingUser := &model.User{
@@ -73,18 +73,14 @@ func TestSsoCallback_ScimProvisionedUserLinked(t *testing.T) {
 		UserIdentities:      map[model.UserIdentityProvider]string{model.UserIdentityProviderScim: orgId + ":ext-abc"},
 	}
 	db.EXPECT().
-		FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "scim-user@example.com").
-		Return(existingUser, nil)
-
-	// The user was SCIM-provisioned (and is active) in this org, so linking is allowed.
-	db.EXPECT().
-		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, scimProvisionedUserId).
-		Return(&model.ScimUser{
+		FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Any(), orgId, "scim-user@example.com").
+		Return([]model.ScimUser{{
 			Id:     uuid.New(),
 			OrgId:  orgId,
 			UserId: scimProvisionedUserId,
 			Active: true,
-		}, nil)
+		}}, nil)
+	db.EXPECT().GetUser(gomock.Any(), gomock.Any(), scimProvisionedUserId).Return(existingUser, nil)
 
 	// The SSO identity must be written to the identities table: UpdateUser
 	// deliberately does not persist them, so without this the account would be
@@ -163,22 +159,13 @@ func TestSsoCallback_ScimDeprovisionedUserRejected(t *testing.T) {
 
 	deprovisionedUserId := userid.NewHumanUserId()
 	db.EXPECT().
-		FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "deprovisioned@example.com").
-		Return(&model.User{
-			Id:                  deprovisionedUserId,
-			DisplayName:         "Gone User",
-			PrimaryEmailAddress: opt.Of("deprovisioned@example.com"),
-			UserIdentities:      map[model.UserIdentityProvider]string{},
-		}, nil)
-
-	db.EXPECT().
-		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, deprovisionedUserId).
-		Return(&model.ScimUser{
+		FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Any(), orgId, "deprovisioned@example.com").
+		Return([]model.ScimUser{{
 			Id:     uuid.New(),
 			OrgId:  orgId,
 			UserId: deprovisionedUserId,
 			Active: false,
-		}, nil)
+		}}, nil)
 
 	state := testSsoState(t)
 	authCode := TestSsoAuthCode
@@ -284,19 +271,10 @@ func TestSsoCallback_EmailCollisionWithoutScimIsNotLinked(t *testing.T) {
 		Return(nil, model.NewErrNotFound("not found"))
 
 	victimUserId := userid.NewHumanUserId()
-	db.EXPECT().
-		FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "victim@example.com").
-		Return(&model.User{
-			Id:                  victimUserId,
-			DisplayName:         "Victim",
-			PrimaryEmailAddress: opt.Of("victim@example.com"),
-			UserIdentities:      map[model.UserIdentityProvider]string{},
-		}, nil)
-
 	// Not SCIM-provisioned in this org: linking must NOT happen.
 	db.EXPECT().
-		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, victimUserId).
-		Return(nil, model.NewErrNotFound("scim user not found"))
+		FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Any(), orgId, "victim@example.com").
+		Return([]model.ScimUser{}, nil)
 
 	var newUserId uuid.UUID
 	db.EXPECT().
@@ -379,23 +357,14 @@ func TestSsoCallback_ScimDeletedUserRejected(t *testing.T) {
 
 	tombstonedUserId := userid.NewHumanUserId()
 	db.EXPECT().
-		FindUserByPrimaryEmail(gomock.Any(), gomock.Any(), "tombstoned@example.com").
-		Return(&model.User{
-			Id:                  tombstonedUserId,
-			DisplayName:         "Tombstoned User",
-			PrimaryEmailAddress: opt.Of("tombstoned@example.com"),
-			UserIdentities:      map[model.UserIdentityProvider]string{},
-		}, nil)
-
-	db.EXPECT().
-		FindScimUserByUserId(gomock.Any(), gomock.Any(), orgId, tombstonedUserId).
-		Return(&model.ScimUser{
+		FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Any(), orgId, "tombstoned@example.com").
+		Return([]model.ScimUser{{
 			Id:        uuid.New(),
 			OrgId:     orgId,
 			UserId:    tombstonedUserId,
 			Active:    true, // deliberately inconsistent: the tombstone must win regardless
 			DeletedAt: opt.Of(time.Now().UTC()),
-		}, nil)
+		}}, nil)
 
 	state := testSsoState(t)
 	authCode := TestSsoAuthCode

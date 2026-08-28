@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
@@ -131,6 +132,7 @@ type Databaser interface {
 	GetInvitation(ctx context.Context, optionalTx Tx, id uuid.UUID) (*Invitation, error)
 	ListInvitations(ctx context.Context, optionalTx Tx, orgId string) ([]Invitation, error)
 	DeleteInvitation(ctx context.Context, optionalTx Tx, id uuid.UUID) error
+	DeleteInvitationsForScimUser(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID, userName string) (int64, error)
 	DeleteExpiredInvitations(ctx context.Context, optionalTx Tx) (int64, error)
 
 	CreateDeviceLoginRequest(ctx context.Context, optionalTx Tx, request *DeviceLoginRequest) (*DeviceLoginRequest, error)
@@ -163,10 +165,12 @@ type Databaser interface {
 
 	CreateScimUser(ctx context.Context, optionalTx Tx, u ScimUser) error
 	GetScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimUser, error)
+	LockScimUser(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID, expectedUpdatedAt time.Time) error
 	GetScimUsersByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) ([]ScimUser, error)
 	FindScimUserByUserName(ctx context.Context, optionalTx Tx, orgId string, userName string) (*ScimUser, error)
 	FindScimUserByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimUser, error)
 	FindScimUserByUserId(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID) (*ScimUser, error)
+	FindScimUsersByPrimaryEmail(ctx context.Context, optionalTx Tx, orgId string, email string) ([]ScimUser, error)
 	ListScimUsers(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimUser, error)
 	CountScimUsers(ctx context.Context, optionalTx Tx, orgId string) (int, error)
 	CountLiveScimUsersForUser(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int, error)
@@ -188,6 +192,7 @@ type Databaser interface {
 	GetScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) (*ScimGroup, error)
 	LockScimGroup(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	LockScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) error
+	LockScimGroupsForUser(ctx context.Context, optionalTx Tx, orgId string, scimUserId uuid.UUID) error
 	FindScimGroupByDisplayName(ctx context.Context, optionalTx Tx, orgId string, displayName string) (*ScimGroup, error)
 	FindScimGroupByExternalId(ctx context.Context, optionalTx Tx, orgId string, externalId string) (*ScimGroup, error)
 	ListScimGroups(ctx context.Context, optionalTx Tx, orgId string, limit int, offset int) ([]ScimGroup, error)
