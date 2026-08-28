@@ -14,8 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hecho"
-	"github.com/stellwerk-labs/golib/hmessaging/reliableoutbox"
-	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -148,6 +146,11 @@ func TestGetSsoCallback_Success_NewUser(t *testing.T) {
 				GetUserIdByIdentity(gomock.Any(), gomock.Not(nil), model.UserIdentityProviderSso, TestSsoProviderOrgId+":user-12345").
 				Return(nil, model.NewErrNotFound("not found"))
 
+			// SSO linking: governed-email check before JIT-create (no match in this test path).
+			s.Database.(*mockmodel.MockDatabaser).EXPECT().
+				FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Not(nil), orgId, "foo@example.com").
+				Return([]model.ScimUser{}, nil)
+
 			var (
 				newUserId                 uuid.UUID
 				createdAt, lastLoggedInAt time.Time
@@ -189,14 +192,6 @@ func TestGetSsoCallback_Success_NewUser(t *testing.T) {
 					assert.Equal(t, expectedRoleId, in.Role.Must(), "expected role %s", tt.expectedRoleName)
 					return in, nil
 				})
-
-			store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-			s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-					store.Put(m)
-					return m, nil
-				})
-			s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 			now := time.Now()
 			s.Database.(*mockmodel.MockDatabaser).EXPECT().
@@ -258,6 +253,10 @@ func TestGetSsoCallback_Success_ExistingUser(t *testing.T) {
 		Return(&existingUserId, nil)
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
+		FindScimUserByUserId(gomock.Any(), gomock.Not(nil), orgId, existingUserId).
+		Return(nil, model.NewErrNotFound("scim user not found"))
+
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		GetUser(gomock.Any(), gomock.Not(nil), existingUserId).
 		Return(&model.User{
 			Id:                  existingUserId,
@@ -273,15 +272,9 @@ func TestGetSsoCallback_Success_ExistingUser(t *testing.T) {
 			PrimaryEmailAddress: opt.Of("foo@example.com"),
 		}, nil)
 
+	// The membership already exists, so no role seeding or membership creation
+	// may happen on this path.
 	roleId := uuid.New()
-	adminRoleId := uuid.New()
-	s.Database.(*mockmodel.MockDatabaser).EXPECT().
-		ListRoles(gomock.Any(), gomock.Not(nil), orgId).
-		Return([]model.Role{
-			{Id: roleId, OrgId: orgId, DisplayName: RoleViewer},
-			{Id: adminRoleId, OrgId: orgId, DisplayName: RoleAdmin},
-		}, nil)
-
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().
 		ListMemberships(gomock.Any(), gomock.Not(nil), model.ListMembershipsParams{OrgId: &orgId, UserId: &existingUserId, SubjectType: ref.Ref(model.MembershipSubjectTypeRole)}).
 		Return([]model.MembershipWithUserMetadata{
@@ -292,7 +285,7 @@ func TestGetSsoCallback_Success_ExistingUser(t *testing.T) {
 					UserId:      existingUserId,
 					Role:        opt.Of(roleId),
 					SubjectType: model.MembershipSubjectTypeRole,
-					Subject:     adminRoleId.String(),
+					Subject:     roleId.String(),
 				},
 			},
 		}, nil)
@@ -395,6 +388,11 @@ func TestGetSsoCallback_NonConfigurable_NewUser(t *testing.T) {
 				GetUserIdByIdentity(gomock.Any(), gomock.Not(nil), model.UserIdentityProviderSso, ":user-12345").
 				Return(nil, model.NewErrNotFound("not found"))
 
+			// SSO linking: governed-email check before JIT-create (no match in this test path).
+			s.Database.(*mockmodel.MockDatabaser).EXPECT().
+				FindScimUsersByPrimaryEmail(gomock.Any(), gomock.Not(nil), orgId, "foo@example.com").
+				Return([]model.ScimUser{}, nil)
+
 			var (
 				newUserId                 uuid.UUID
 				createdAt, lastLoggedInAt time.Time
@@ -436,14 +434,6 @@ func TestGetSsoCallback_NonConfigurable_NewUser(t *testing.T) {
 					assert.Equal(t, expectedRoleId, in.Role.Must(), "expected role %s", tt.expectedRoleName)
 					return in, nil
 				})
-
-			store := new(reliableoutbox.InMemoryStorage[*hstandardoutbox.PendingEventMessage])
-			s.Database.(*mockmodel.MockDatabaser).EXPECT().InsertPendingEventMessages(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(func(_ context.Context, _ model.Tx, m []*hstandardoutbox.PendingEventMessage) ([]*hstandardoutbox.PendingEventMessage, error) {
-					store.Put(m)
-					return m, nil
-				})
-			s.Database.(*mockmodel.MockDatabaser).EXPECT().AsReliableOutboxStore().Return(store)
 
 			now := time.Now()
 			s.Database.(*mockmodel.MockDatabaser).EXPECT().

@@ -307,6 +307,16 @@ func (s *Server) RedeemInvitation(ctx context.Context, request RedeemInvitationR
 		return RedeemInvitation400JSONResponse{N400BadRequestJSONResponse: Generate400Response("invalid redemption token")}, nil
 	}
 
+	// A valid invitation is still a route to a fresh membership. SCIM
+	// deprovisioning is authoritative, so a deactivated or deleted user may not
+	// use an invitation that survived elsewhere (for example, one sent to an
+	// alternate address that was not available to the cleanup query).
+	if scimUser, err := s.findScimUserForOrg(ctx, tx, invite.OrgId, uid); err != nil {
+		return nil, err
+	} else if scimUser != nil && scimUser.Deprovisioned() {
+		return RedeemInvitation409JSONResponse{N409ConflictJSONResponse: Generate409Response("user was deprovisioned via SCIM")}, nil
+	}
+
 	var membership *model.Membership
 	if p, err := s.Database.ListMemberships(ctx, tx, model.ListMembershipsParams{
 		OrgId:       &invite.OrgId,

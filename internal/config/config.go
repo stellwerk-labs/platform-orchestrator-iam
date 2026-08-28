@@ -18,6 +18,13 @@ type Configuration struct {
 	TestUserProviderAgeIdentity string `env:"TEST_USER_PROVIDER_AGE_IDENTITY"`
 	UiHostUrl                   string `env:"UI_HOST_URL" validate:"required"`
 
+	// ApiHostUrl is the externally reachable base URL of this API (scheme and
+	// host, e.g. https://api.example.com). It pins the absolute URLs the server
+	// emits (SCIM meta.location) instead of reflecting the client-controlled
+	// Host header. Optional: when unset, absolute URLs fall back to a validated
+	// request Host.
+	ApiHostUrl string `env:"API_HOST_URL" validate:"omitempty,url"`
+
 	// AllowedGoogleClientIds is used to restrict the oauth idtokens that can be used to login to an account backed
 	// by google oauth. See the google oauth identity provider.
 	AllowedGoogleClientIds string `env:"ALLOWED_GOOGLE_CLIENT_IDS"`

@@ -103,6 +103,34 @@ func (d *databaser) DeleteInvitation(ctx context.Context, optionalTx Tx, id uuid
 	return nil
 }
 
+// DeleteInvitationsForScimUser revokes pending invitations addressed to the
+// user's current primary email or an email-shaped SCIM userName. An invitation
+// is a bearer credential that creates a membership, so leaving it alive after
+// SCIM deprovisioning would provide a route straight back into the organization.
+func (d *databaser) DeleteInvitationsForScimUser(ctx context.Context, optionalTx Tx, orgId string, userId uuid.UUID, userName string) (int64, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	res, err := optionalTx.ExecContext(
+		ctx,
+		`DELETE FROM invitations i
+		USING users u
+		WHERE u.id = $2
+		  AND i.org_id = $1
+		  AND (
+			LOWER(i.email_address) = LOWER(u.primary_email_address)
+			OR (STRPOS($3, '@') > 1 AND LOWER(i.email_address) = LOWER($3))
+		  )`,
+		orgId, userId, userName,
+	)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to delete invitations for scim user")
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to get deleted invitation count")
+	}
+	return rowsAffected, nil
+}
+
 func (d *databaser) DeleteExpiredInvitations(ctx context.Context, optionalTx Tx) (int64, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	rs, err := optionalTx.ExecContext(ctx, `DELETE FROM invitations WHERE expires_at < $1`, time.Now().UTC())

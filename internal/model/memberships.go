@@ -251,6 +251,74 @@ func (d *databaser) ListMembersWithIdentities(ctx context.Context, optionalTx Tx
 	}
 }
 
+// ListRoleMembershipIdsByUser returns, per user, the ids of the user's
+// role-subject memberships in the org — one query for many users. The bulk
+// SCIM reconciler uses it to decide the Viewer fallback: a user with a
+// role membership that is NOT SCIM-managed has a human-made grant, and the
+// fallback must not pile Viewer on top of it.
+func (d *databaser) ListRoleMembershipIdsByUser(ctx context.Context, optionalTx Tx, orgId string, userIds []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
+	optionalTx = d.txOrDb(optionalTx)
+	out := make(map[uuid.UUID][]uuid.UUID, len(userIds))
+	if len(userIds) == 0 {
+		return out, nil
+	}
+	idStrings := make([]string, 0, len(userIds))
+	for _, id := range userIds {
+		idStrings = append(idStrings, id.String())
+	}
+	rs, err := optionalTx.QueryContext(
+		ctx,
+		`SELECT user_id, id FROM memberships WHERE org_id = $1 AND subject_type = $2 AND user_id = ANY($3::uuid[])`,
+		orgId, MembershipSubjectTypeRole, pq.Array(idStrings),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list role membership ids by user")
+	}
+	defer func() {
+		if err := rs.Close(); err != nil {
+			logger.Error("failed to close row set", zap.Error(err))
+		}
+	}()
+	for rs.Next() {
+		var userId, membershipId uuid.UUID
+		if err := rs.Scan(&userId, &membershipId); err != nil {
+			return nil, errors.Wrap(err, "failed to scan membership id")
+		}
+		out[userId] = append(out[userId], membershipId)
+	}
+	if err := rs.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate membership ids")
+	}
+	return out, nil
+}
+
+// DeleteMembershipsByIds deletes the given memberships in one statement. Ids
+// that no longer exist are ignored — the bulk SCIM reconciler computes its
+// delete set inside the same transaction, so a miss can only mean the row was
+// already gone. The org_id predicate is defense in depth: the callers only
+// pass ids they resolved within orgId, but a bare delete-by-id whose id set is
+// computed elsewhere is exactly the shape that turns a future refactor into a
+// cross-tenant delete.
+func (d *databaser) DeleteMembershipsByIds(ctx context.Context, optionalTx Tx, orgId string, ids []uuid.UUID) error {
+	optionalTx = d.txOrDb(optionalTx)
+	if len(ids) == 0 {
+		return nil
+	}
+	idStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idStrings = append(idStrings, id.String())
+	}
+	if _, err := optionalTx.ExecContext(
+		ctx,
+		`DELETE FROM memberships WHERE org_id = $1 AND id = ANY($2::uuid[])`,
+		orgId, pq.Array(idStrings),
+	); err != nil {
+		return errors.Wrap(err, "failed to delete memberships by ids")
+	}
+	return nil
+}
+
 func (d *databaser) DeleteMembership(ctx context.Context, optionalTx Tx, id uuid.UUID) error {
 	optionalTx = d.txOrDb(optionalTx)
 	if rs, err := optionalTx.ExecContext(

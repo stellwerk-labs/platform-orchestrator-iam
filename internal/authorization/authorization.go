@@ -50,6 +50,12 @@ const (
 
 	authorizationCacheSize = 10_000
 	authorizationCacheTTL  = 10 * time.Second
+
+	// deferredReloadDelay is the coalescing window for ScheduleReloadPolicy. It
+	// only ever delays GRANTS (revocations go through the synchronous
+	// ReloadPolicy), so its job is purely to turn a burst of N mutations (an
+	// IDP syncing hundreds of users) into a handful of policy loads.
+	deferredReloadDelay = 250 * time.Millisecond
 )
 
 type Check struct {
@@ -85,6 +91,7 @@ type CasbinAuthorizer struct {
 	invalidationSubscription PolicyInvalidationSubscription
 	instanceId               string
 	invalidationRequests     chan struct{}
+	deferredReloads          chan struct{}
 	stopInvalidations        chan struct{}
 	invalidationsStopped     chan struct{}
 	closeOnce                sync.Once
@@ -117,6 +124,7 @@ func New(ctx context.Context, store Store, invalidationBuses ...PolicyInvalidati
 		cache:                cache,
 		instanceId:           uuid.NewString(),
 		invalidationRequests: make(chan struct{}, 1),
+		deferredReloads:      make(chan struct{}, 1),
 		stopInvalidations:    make(chan struct{}),
 		invalidationsStopped: make(chan struct{}),
 	}
@@ -164,6 +172,22 @@ func (a *CasbinAuthorizer) ReloadPolicy() error {
 	return nil
 }
 
+// ScheduleReloadPolicy requests a policy reload without blocking the caller.
+// Requests within one deferredReloadDelay window are coalesced into a single
+// reload (which also publishes the cross-instance invalidation), never dropped:
+// the buffered signal guarantees at least one reload strictly after every call.
+//
+// Only use this for mutations that GRANT access — a short delay merely means
+// the new access works a moment later. Anything that revokes access must call
+// ReloadPolicy synchronously, otherwise the revoked permissions keep working
+// out of the old policy snapshot until the reload lands.
+func (a *CasbinAuthorizer) ScheduleReloadPolicy() {
+	select {
+	case a.deferredReloads <- struct{}{}:
+	default:
+	}
+}
+
 func (a *CasbinAuthorizer) reloadPolicy() error {
 	a.policyMutex.Lock()
 	defer a.policyMutex.Unlock()
@@ -195,6 +219,29 @@ func (a *CasbinAuthorizer) processInvalidations() {
 		case <-a.invalidationRequests:
 			if err := a.reloadPolicy(); err != nil {
 				zap.L().Error("failed to reload invalidated authorization policy", zap.Error(err))
+			}
+		case <-a.deferredReloads:
+			// Coalesce: sit out the debounce window, absorb every signal that
+			// arrived meanwhile, then do ONE reload for the whole burst. The
+			// reload also publishes the cross-instance invalidation, exactly
+			// like a synchronous ReloadPolicy would.
+			timer := time.NewTimer(deferredReloadDelay)
+			select {
+			case <-a.stopInvalidations:
+				timer.Stop()
+			case <-timer.C:
+			}
+			select {
+			case <-a.deferredReloads:
+			default:
+			}
+			if err := a.ReloadPolicy(); err != nil {
+				zap.L().Error("failed to run deferred authorization policy reload", zap.Error(err))
+			}
+			select {
+			case <-a.stopInvalidations:
+				return
+			default:
 			}
 		}
 	}
@@ -238,6 +285,16 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 	}
 	if requested == granted || granted == PermissionManageAll {
 		return true, nil
+	}
+	// The provisioning permissions are deliberately excluded from the level
+	// hierarchy below: provisioning_read exposes the org's ENTIRE SCIM
+	// directory (every member's userName, primary email, IdP externalId, and
+	// group memberships), so it is not "just another read" that the read_all /
+	// write_all wildcards on ordinary member roles (Viewer holds read_all)
+	// should sweep up. Only an exact grant or manage_all (an org Admin, handled
+	// above) satisfies them.
+	if requested == sharedauthz.PermissionProvisioningRead || requested == sharedauthz.PermissionProvisioningWrite {
+		return false, nil
 	}
 	level, known := permissionLevel(requested)
 	if !known {

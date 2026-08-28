@@ -137,15 +137,50 @@ func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
 		t.Run(permission.ID, func(t *testing.T) {
 			expectedRead := permission.Level == sharedauthz.PermissionLevelRead
 			expectedWrite := expectedRead || permission.Level == sharedauthz.PermissionLevelWrite
+			expectedManage := permission.Level == sharedauthz.PermissionLevelManage
+
+			// The provisioning permissions are the deliberate exception to the
+			// level hierarchy: they expose the whole SCIM directory, so no
+			// level wildcard may satisfy them — only an exact grant or
+			// manage_all. Every OTHER permission must keep its wildcard
+			// behavior; this loop over the full catalog is the guard.
+			if permission.ID == sharedauthz.PermissionProvisioningRead || permission.ID == sharedauthz.PermissionProvisioningWrite {
+				expectedRead = false
+				expectedWrite = false
+				expectedManage = false
+			}
 
 			assertPermissionMatch(t, permission.ID, PermissionReadAll, expectedRead)
 			assertPermissionMatch(t, permission.ID, PermissionWriteAll, expectedWrite)
 			assertPermissionMatch(t, permission.ID, PermissionManageAll, true)
 			assertPermissionMatch(t, permission.ID, PermissionRead, expectedRead)
-			assertPermissionMatch(t, permission.ID, PermissionWrite, permission.Level == sharedauthz.PermissionLevelWrite)
-			assertPermissionMatch(t, permission.ID, PermissionManage, permission.Level == sharedauthz.PermissionLevelManage)
+			assertPermissionMatch(t, permission.ID, PermissionWrite, permission.Level == sharedauthz.PermissionLevelWrite && expectedWrite)
+			assertPermissionMatch(t, permission.ID, PermissionManage, expectedManage)
 		})
 	}
+}
+
+// TestProvisioningPermissionsExcludedFromWildcards pins the deliberate rule in
+// permissionMatch: the SCIM provisioning permissions are reachable through an
+// exact grant or manage_all only, never through the read/write level wildcards.
+// Without this, every Viewer (read_all) could dump the org's SCIM directory.
+func TestProvisioningPermissionsExcludedFromWildcards(t *testing.T) {
+	for _, requested := range []string{sharedauthz.PermissionProvisioningRead, sharedauthz.PermissionProvisioningWrite} {
+		// No level wildcard may satisfy a provisioning permission.
+		for _, granted := range []string{PermissionReadAll, PermissionWriteAll, PermissionRead, PermissionWrite, PermissionManage} {
+			assertPermissionMatch(t, requested, granted, false)
+		}
+		// An exact grant and manage_all (org Admin) still work.
+		assertPermissionMatch(t, requested, requested, true)
+		assertPermissionMatch(t, requested, PermissionManageAll, true)
+	}
+	// provisioning_read and provisioning_write do not imply each other.
+	assertPermissionMatch(t, sharedauthz.PermissionProvisioningRead, sharedauthz.PermissionProvisioningWrite, false)
+	assertPermissionMatch(t, sharedauthz.PermissionProvisioningWrite, sharedauthz.PermissionProvisioningRead, false)
+	// Guard against over-fixing: an ordinary read permission must still be
+	// satisfied by read_all (the Viewer role's grant).
+	assertPermissionMatch(t, sharedauthz.PermissionOrganizationRead, PermissionReadAll, true)
+	assertPermissionMatch(t, sharedauthz.PermissionMembershipRead, PermissionReadAll, true)
 }
 
 func assertPermissionMatch(t *testing.T, requested, granted string, expected bool) {

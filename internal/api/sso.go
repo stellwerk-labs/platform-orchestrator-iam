@@ -145,7 +145,7 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	logger := hlogger.TraceScopedLoggerFromCtx(s.Logger, ctx).WithLazy(ids.AsLogField())
 
 	if request.Params.ErrorDescription != nil {
-		return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: *request.Params.ErrorDescription}}}, nil
+		return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", *request.Params.ErrorDescription)}, nil
 	} else if request.Params.Code == nil {
 		return nil, errors.New("missing required parameters from SSO parameters")
 	}
@@ -188,7 +188,7 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 				N400BadRequestJSONResponse{Error: badRequestErrorCode, Message: errBadRequest.Message},
 			}, nil
 		}
-		return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: err.Error()}}}, nil
+		return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", err.Error())}, nil
 	}
 
 	tx, err := s.Database.BeginTx(ctx, nil)
@@ -209,14 +209,14 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 		if err != nil {
 			if _, ok := model.IsErrNotFound(err); ok {
 				msg := fmt.Sprintf("No SSO configuration found for organization %s", orgId)
-				return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: msg}}}, nil
+				return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
 			}
 			return nil, err
 		}
 		// Sanity check: SSO provider organization ID must match the configured one
 		if config.ProviderOrgId != profile.ProviderOrgId {
 			msg := fmt.Sprintf("SSO configuration for organization %s doesn't match provider's configuration", orgId)
-			return GetSsoCallback401JSONResponse{N401UnauthorizedJSONResponse{Body: Error{Error: unauthorizedErrorCode, Message: msg}}}, nil
+			return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
 		}
 	}
 
@@ -231,20 +231,87 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	now := time.Now().UTC()
 	var user *model.User
 	if userId == nil {
-		newUser := model.User{
-			Id:                  userid.NewHumanUserId(),
-			DisplayName:         profile.DisplayName,
-			PrimaryEmailAddress: opt.Of(profile.Email),
-			CreatedAt:           now,
-			LastLoggedInAt:      &now,
-			UserIdentities: map[model.UserIdentityProvider]string{
-				model.UserIdentityProviderSso: identityId,
-			},
+		// A user with this email may already exist because this org's IDP
+		// provisioned them via SCIM. Linking by email is only safe in that case:
+		// the org's IDP is authoritative for both the SCIM record and the SSO
+		// assertion, so the match cannot be forged by an unrelated org asserting
+		// someone else's email. Without that SCIM anchor we keep the old
+		// JIT-create behavior.
+		var scimUser *model.ScimUser
+		var existingUser *model.User
+		governedMatches, err := s.Database.FindScimUsersByPrimaryEmail(ctx, tx, orgId, profile.Email)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to look up scim governance by email")
 		}
-		if user, err = s.Database.CreateUser(ctx, tx, &newUser); err != nil {
-			return nil, errors.Wrap(err, "failed to create user")
+		// Email is not globally unique in the legacy schema. Looking up one
+		// arbitrary row allowed an SSO assertion to miss a tombstoned duplicate
+		// and fall through to JIT. Examine every governed account and fail closed
+		// if any candidate was deprovisioned or the live match is ambiguous.
+		for i := range governedMatches {
+			candidate := &governedMatches[i]
+			if candidate.Deprovisioned() {
+				msg := fmt.Sprintf("User was deprovisioned via SCIM for organization %s", orgId)
+				return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
+			}
+			if scimUser != nil && scimUser.UserId != candidate.UserId {
+				msg := fmt.Sprintf("Multiple SCIM users match the SSO email for organization %s", orgId)
+				return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
+			}
+			scimUser = candidate
+		}
+		if scimUser != nil {
+			existingUser, err = s.Database.GetUser(ctx, tx, scimUser.UserId)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get scim-governed user by email")
+			}
+		}
+		// Deprovisioned covers both a deactivated live row and a tombstone left
+		// behind by a SCIM DELETE; either way this org's IDP has withdrawn the
+		// user and the login must not recreate access.
+		if scimUser != nil && scimUser.Deprovisioned() {
+			msg := fmt.Sprintf("User was deprovisioned via SCIM for organization %s", orgId)
+			return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
+		}
+		if scimUser != nil {
+			existingUser.UserIdentities[model.UserIdentityProviderSso] = identityId
+			existingUser.LastLoggedInAt = &now
+			existingUser.PrimaryEmailAddress = opt.Of(profile.Email)
+			existingUser.DisplayName = profile.DisplayName
+			if user, err = s.Database.UpdateUser(ctx, tx, existingUser); err != nil {
+				return nil, errors.Wrap(err, "failed to update user with sso identity")
+			}
+			// UpdateUser does not persist identities, so write the link explicitly;
+			// without this the account is re-matched by email on every login.
+			if err := s.Database.AddUserIdentity(ctx, tx, user.Id, model.UserIdentityProviderSso, identityId); err != nil {
+				return nil, errors.Wrap(err, "failed to persist sso identity")
+			}
+			userId = &user.Id
+		} else {
+			newUser := model.User{
+				Id:                  userid.NewHumanUserId(),
+				DisplayName:         profile.DisplayName,
+				PrimaryEmailAddress: opt.Of(profile.Email),
+				CreatedAt:           now,
+				LastLoggedInAt:      &now,
+				UserIdentities: map[model.UserIdentityProvider]string{
+					model.UserIdentityProviderSso: identityId,
+				},
+			}
+			if user, err = s.Database.CreateUser(ctx, tx, &newUser); err != nil {
+				return nil, errors.Wrap(err, "failed to create user")
+			}
 		}
 	} else {
+		// SCIM is authoritative for provisioned users: if this org's IDP
+		// deprovisioned the user (deactivated, or deleted → only a tombstone
+		// remains), an SSO login must not resurrect access via the membership
+		// integrity fallback below.
+		if scimUser, err := s.findScimUserForOrg(ctx, tx, orgId, *userId); err != nil {
+			return nil, err
+		} else if scimUser != nil && scimUser.Deprovisioned() {
+			msg := fmt.Sprintf("User was deprovisioned via SCIM for organization %s", orgId)
+			return GetSsoCallback401JSONResponse{build401WithMessage("Bearer", msg)}, nil
+		}
 		if user, err = s.Database.GetUser(ctx, tx, *userId); err != nil {
 			return nil, errors.Wrap(err, "failed to get user")
 		}

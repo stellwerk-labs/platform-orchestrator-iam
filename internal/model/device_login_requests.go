@@ -96,6 +96,24 @@ func (d *databaser) UpdateDeviceLoginRequest(ctx context.Context, optionalTx Tx,
 	return &out, nil
 }
 
+// DeleteDeviceLoginRequestsDecidedBy removes every device-login request the
+// given user has decided (accepted or rejected). An ACCEPTED request is a live
+// credential: its poll path mints a fresh session token for DecidedBy, so
+// deprovisioning must destroy it together with the user's session tokens or the
+// device can log in as a user who no longer has any access. Rejected rows are
+// just dead state and go with them. Pending rows are untouched — they carry no
+// user yet, and accepting one requires an authenticated session the
+// deprovisioned user no longer has.
+func (d *databaser) DeleteDeviceLoginRequestsDecidedBy(ctx context.Context, optionalTx Tx, userId uuid.UUID) (int64, error) {
+	optionalTx = d.txOrDb(optionalTx)
+	rs, err := optionalTx.ExecContext(ctx, `DELETE FROM device_login_requests WHERE decided_by = $1`, userId)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to delete device login requests decided by user")
+	}
+	rc, _ := rs.RowsAffected()
+	return rc, nil
+}
+
 func (d *databaser) DeleteDeviceLoginRequest(ctx context.Context, optionalTx Tx, requestId uuid.UUID) error {
 	optionalTx = d.txOrDb(optionalTx)
 	if r, err := optionalTx.ExecContext(ctx, `DELETE FROM device_login_requests WHERE id = $1`, requestId); err != nil {

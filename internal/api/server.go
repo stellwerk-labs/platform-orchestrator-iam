@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	strictecho "github.com/oapi-codegen/runtime/strictmiddleware/echo"
 	"go.uber.org/zap"
 
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
@@ -33,7 +35,12 @@ type Server struct {
 	UserIdentityProviders    map[model.UserIdentityProvider]identity.Provider
 	TokenByHashCache         *GetTokenByHashCache
 
-	UiHostUrl          string
+	UiHostUrl string
+	// ApiHostUrl is the externally reachable base URL of this API. When set,
+	// absolute URLs in responses (SCIM meta.location) are built from it instead
+	// of the client-controlled Host header. Optional; see scimResourceLocation
+	// for the fallback.
+	ApiHostUrl         string
 	EmailProvider      emailprovider.Provider
 	SsoProvider        ssoprovider.Provider
 	SsoCallbackUrlPath string
@@ -47,10 +54,10 @@ type Server struct {
 
 func (s *Server) MapRoutes(e *echo.Echo) {
 	apiHandler := NewStrictHandler(s, []StrictMiddlewareFunc{
-		hecho.OperationIdCollectorMiddleware,
-		hecho.BuildContextTimeoutMiddlewareWithDuration(time.Second * 30),
-		hecho.AuthMiddleware("userIdHeader.Scopes"),
-		middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`)),
+		adaptStrictMiddleware(hecho.OperationIdCollectorMiddleware),
+		adaptStrictMiddleware(hecho.BuildContextTimeoutMiddlewareWithDuration(time.Second * 30)),
+		adaptStrictMiddleware(hecho.AuthMiddleware("userIdHeader.Scopes")),
+		adaptStrictMiddleware(middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`))),
 	})
 	RegisterHandlers(e, apiHandler)
 
@@ -69,10 +76,26 @@ func (s *Server) MapRoutes(e *echo.Echo) {
 	// Internal wildcard auth handlers. We MUST still have this handler so that we can skip authN for login and device
 	// paths.
 	e.Any("/internal/authenticate/*", s.buildInternalAuthenticateWildcard(apiHandler))
+
+	// SCIM 2.0 routes are registered manually (not via oapi-codegen) because SCIM
+	// wire format conflicts with our OpenAPI codegen conventions.
+	s.registerScimRoutes(e)
+}
+
+// oapi-codegen v2.8 owns the strict middleware function type instead of
+// aliasing the runtime package's otherwise identical type. Keep the shared
+// hecho middleware reusable without baking generated API types into golib.
+func adaptStrictMiddleware(middleware strictecho.StrictEchoMiddlewareFunc) StrictMiddlewareFunc {
+	return func(next StrictHandlerFunc, operationID string) StrictHandlerFunc {
+		adapted := middleware(strictecho.StrictEchoHandlerFunc(next), operationID)
+		return StrictHandlerFunc(adapted)
+	}
 }
 
 func OpenApiValidatorSkipper(c echo.Context) bool {
-	return hecho.DefaultOAIValidationSkipper(c) || c.Path() == "/internal/authenticate/*"
+	return hecho.DefaultOAIValidationSkipper(c) ||
+		c.Path() == "/internal/authenticate/*" ||
+		strings.HasPrefix(c.Path(), "/scim/v2")
 }
 
 // StrictServerInterface is the interface that your Server implementation should generate methods for.
@@ -91,6 +114,27 @@ func (s *Server) reloadAuthorizationPolicy() error {
 		}
 	}
 	return nil
+}
+
+type authorizationPolicyReloadScheduler interface {
+	ScheduleReloadPolicy()
+}
+
+// scheduleAuthorizationPolicyReload coalesces policy reloads for mutations that
+// only GRANT access: the user simply gains access a moment later, so a burst of
+// provisioning calls (an IDP sync) collapses into a handful of reloads instead
+// of one per user. Mutations that can REVOKE access must keep calling
+// reloadAuthorizationPolicy synchronously — a delayed reload there means the
+// revoked access keeps working out of the cached policy.
+//
+// Falls back to the synchronous reload when the authorizer does not support
+// scheduling; a reload is never silently skipped.
+func (s *Server) scheduleAuthorizationPolicyReload() error {
+	if scheduler, ok := s.Authorizer.(authorizationPolicyReloadScheduler); ok {
+		scheduler.ScheduleReloadPolicy()
+		return nil
+	}
+	return s.reloadAuthorizationPolicy()
 }
 
 // MustDecodeOpenApiSpec returns the value from decodeSpec via the cached value in rawSpec and panics if there was an error.

@@ -53,6 +53,8 @@ const (
 	PermissionMetadataKeyRead      = "metadata_key_read"
 	PermissionMetadataKeyWrite     = "metadata_key_write"
 	PermissionResourceGraphRead    = "resource_graph_read"
+	PermissionProvisioningRead     = "provisioning_read"
+	PermissionProvisioningWrite    = "provisioning_write"
 )
 
 type PermissionDefinition struct {
@@ -102,6 +104,8 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionMetadataKeyRead, DisplayName: "View metadata keys", Description: "View deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionMetadataKeyWrite, DisplayName: "Manage metadata keys", Description: "Create, update, and delete deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionResourceGraphRead, DisplayName: "View resource graphs", Description: "View resources produced by deployments.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
+	{ID: PermissionProvisioningRead, DisplayName: "View provisioning", Description: "Read SCIM provisioning resources (users and groups).", Category: "Provisioning", Level: PermissionLevelRead, Scopes: organizationScope},
+	{ID: PermissionProvisioningWrite, DisplayName: "Manage provisioning", Description: "Create, update, and delete SCIM-provisioned users and groups.", Category: "Provisioning", Level: PermissionLevelManage, Scopes: organizationScope},
 }
 
 var legacyRolePermissions = map[string]struct{}{

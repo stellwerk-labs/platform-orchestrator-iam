@@ -49,9 +49,7 @@ func (s *Server) LoginSession(ctx context.Context, request LoginSessionRequestOb
 	existingUserId, err := s.Database.GetUserIdByIdentity(ctx, tx, providerType, iu.ProviderId)
 	if err != nil {
 		if _, ok := model.IsErrNotFound(err); ok {
-			return LoginSession401JSONResponse{N401UnauthorizedJSONResponse: N401UnauthorizedJSONResponse{
-				Body: Error{Error: unauthorizedErrorCode, Message: "no such user"},
-			}}, nil
+			return LoginSession401JSONResponse{N401UnauthorizedJSONResponse: build401WithMessage("Bearer", "no such user")}, nil
 		}
 		return nil, errors.Wrap(err, "failed to get user id by identity")
 	}

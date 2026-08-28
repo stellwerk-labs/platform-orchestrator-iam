@@ -91,7 +91,7 @@ func TestInternalAuth_valid_session_token(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
 		Return(&model.SessionToken{Sha256Hash: egTokenHash, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour), UserId: userId}, nil).
-		Times(1)
+		Times(2)
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/internal/authenticate/some/route", nil)
@@ -112,7 +112,7 @@ func TestInternalAuth_valid_session_token_cookie(t *testing.T) {
 	userId := userid.NewHumanUserId()
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
 		Return(&model.SessionToken{Sha256Hash: egTokenHash, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour), UserId: userId}, nil).
-		Times(1)
+		Times(2)
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/internal/authenticate/some/route", nil)
@@ -182,6 +182,52 @@ func TestInternalAuth_valid_service_user_token(t *testing.T) {
 		assert.Equal(t, userId.String(), resp.Header().Get(authenticatedUserIdHeader))
 		assert.Equal(t, base64.URLEncoding.EncodeToString(egTokenHash), resp.Header().Get(authenticatedUserIdTokenHashHeader))
 	}
+}
+
+func TestInternalAuth_session_revocation_is_not_hidden_by_cache(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+	s.TokenByHashCache = NewGetTokenByHashCache(s.Database)
+
+	userId := userid.NewHumanUserId()
+	gomock.InOrder(
+		s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
+			Return(&model.SessionToken{Sha256Hash: egTokenHash, ExpiresAt: time.Now().Add(time.Hour), UserId: userId}, nil),
+		s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
+			Return(nil, model.NewErrNotFound("revoked")),
+	)
+
+	for i, want := range []int{http.StatusOK, http.StatusUnauthorized} {
+		req := httptest.NewRequest(http.MethodPost, "/internal/authenticate/some/route", nil)
+		req.Header.Set("Authorization", "Bearer "+egSessionToken)
+		resp := httptest.NewRecorder()
+		e.ServeHTTP(resp, req)
+		assert.Equal(t, want, resp.Code, "request %d", i+1)
+	}
+}
+
+func TestInternalAuth_service_user_cache_does_not_accept_prefixless_token(t *testing.T) {
+	e, s, fin := MockServer(t)
+	defer fin()
+	s.TokenByHashCache = NewGetTokenByHashCache(s.Database)
+
+	serviceUserId := userid.NewServiceUserTokenId()
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetServiceUserTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
+		Return(&model.ServiceUserToken{CurrentTokenExpiresAt: time.Now().Add(time.Hour), Id: serviceUserId}, nil)
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
+		Return(nil, model.NewErrNotFound("not a session token"))
+
+	serviceReq := httptest.NewRequest(http.MethodPost, "/internal/authenticate/some/route", nil)
+	serviceReq.Header.Set("Authorization", "Bearer "+egServiceUserToken)
+	serviceResp := httptest.NewRecorder()
+	e.ServeHTTP(serviceResp, serviceReq)
+	assert.Equal(t, http.StatusOK, serviceResp.Code)
+
+	prefixlessReq := httptest.NewRequest(http.MethodPost, "/internal/authenticate/some/route", nil)
+	prefixlessReq.Header.Set("Authorization", "Bearer "+egSessionToken)
+	prefixlessResp := httptest.NewRecorder()
+	e.ServeHTTP(prefixlessResp, prefixlessReq)
+	assert.Equal(t, http.StatusUnauthorized, prefixlessResp.Code)
 }
 
 const TestSuperUserToken = "test-super-user-secret"

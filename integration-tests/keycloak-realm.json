@@ -29,6 +29,36 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "scimgateuser",
+      "enabled": true,
+      "email": "scimgateuser@example.com",
+      "firstName": "Scim",
+      "lastName": "Gate",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "testpassword",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "jitonlyuser",
+      "enabled": true,
+      "email": "jitonlyuser@example.com",
+      "firstName": "Jit",
+      "lastName": "Only",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "testpassword",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

@@ -301,6 +301,7 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 		UserIdentityProviders:    identityProviders,
 		TokenByHashCache:         api.NewGetTokenByHashCache(deps.DB),
 		UiHostUrl:                cfg.UiHostUrl,
+		ApiHostUrl:               cfg.ApiHostUrl,
 		EmailProvider:            emailProvider,
 		SsoProvider:              ssoProvider,
 		SsoCallbackUrlPath:       cfg.SsoCallbackUrlPath,

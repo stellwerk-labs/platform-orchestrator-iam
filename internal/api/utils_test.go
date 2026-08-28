@@ -20,7 +20,6 @@ import (
 
 func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
 	e, _ := hecho.DefaultEchoServerWithValidation(&hecho.ValidatedServerConfig{
 		AppName:          "test",
 		Logger:           zaptest.NewLogger(t),
@@ -31,6 +30,13 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 	tx := mockmodel.NewMockTxWithCommit(ctrl)
 	db.EXPECT().BeginTx(gomock.Any(), gomock.Any()).Return(tx, nil).AnyTimes()
 	db.EXPECT().UpsertAuthorizationResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	// Row-locking and invitation cleanup are cross-cutting lifecycle plumbing.
+	// Their behavior is covered against real Postgres in the SCIM concurrency
+	// and deprovisioning integration tests; unrelated handler unit tests should
+	// not each repeat the same transport-shaped expectations.
+	db.EXPECT().LockScimUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	db.EXPECT().LockScimGroupsForUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	db.EXPECT().DeleteInvitationsForScimUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(int64(0), nil).AnyTimes()
 	tx.EXPECT().Rollback().Return(nil).AnyTimes()
 	tx.EXPECT().Commit().Return(nil).AnyTimes()
 	s := &Server{

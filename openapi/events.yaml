@@ -10,14 +10,16 @@ components:
       type: string
       enum:
         - io.platform-orchestrator.scope.sync
+        - io.platform-orchestrator.scim.user.provisioned
+        - io.platform-orchestrator.scim.user.deprovisioned
 
     OrgId:
       type: string
-    
+
     UserId:
       type: string
       format: uuid
-    
+
     Scope:
       type: string
       description: "The scope that needs to be synchronized."
@@ -32,3 +34,62 @@ components:
           $ref: "#/components/schemas/OrgId"
         scope:
           $ref: "#/components/schemas/Scope"
+
+    ScimUserId:
+      type: string
+      format: uuid
+      description: "The org-scoped SCIM resource id of the user."
+
+    ScimUserName:
+      type: string
+      description: "The SCIM userName as sent by the IDP."
+
+    ScimExternalId:
+      type: string
+      description: "The IDP-assigned externalId, when the IDP provided one."
+
+    ScimDeprovisionReason:
+      type: string
+      description: "Why the user was deprovisioned: 'deactivated' means the IDP set active=false, 'deleted' means the IDP removed the user resource."
+      enum:
+        - deactivated
+        - deleted
+
+    ScimUserProvisionedData:
+      required:
+        - org_id
+        - scim_user_id
+        - user_id
+        - user_name
+      properties:
+        org_id:
+          $ref: "#/components/schemas/OrgId"
+        scim_user_id:
+          $ref: "#/components/schemas/ScimUserId"
+        user_id:
+          $ref: "#/components/schemas/UserId"
+        user_name:
+          $ref: "#/components/schemas/ScimUserName"
+        external_id:
+          $ref: "#/components/schemas/ScimExternalId"
+
+    ScimUserDeprovisionedData:
+      required:
+        - org_id
+        - scim_user_id
+        - user_id
+        - user_name
+        - reason
+      properties:
+        org_id:
+          $ref: "#/components/schemas/OrgId"
+        scim_user_id:
+          $ref: "#/components/schemas/ScimUserId"
+        user_id:
+          $ref: "#/components/schemas/UserId"
+        user_name:
+          $ref: "#/components/schemas/ScimUserName"
+        external_id:
+          $ref: "#/components/schemas/ScimExternalId"
+        reason:
+          $ref: "#/components/schemas/ScimDeprovisionReason"
