@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -74,6 +75,33 @@ func TestListMembers(t *testing.T) {
 
 	secondUser := MustRegisterTestUser(client, t)
 	_ = MustAddUserToOrgWithRoleAndEnsurePermissions(internalClient, t, org.Id, secondUser.Id, viewerRoleId)
+
+	t.Run("pagination returns every member exactly once", func(t *testing.T) {
+		perPage := 1
+		var page *string
+		seen := make(map[uuid.UUID]int)
+		for {
+			r, err := client.ListMembersWithResponse(t.Context(), org.Id, &serverclient.ListMembersParams{
+				Page:    page,
+				PerPage: &perPage,
+			}, WithAuthenticatedUserId(user.Id))
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
+			require.NotNil(t, r.JSON200)
+			for _, member := range r.JSON200.Items {
+				seen[member.UserId]++
+			}
+			page = r.JSON200.NextPageToken
+			if page == nil {
+				break
+			}
+		}
+
+		require.Equal(t, map[uuid.UUID]int{
+			user.Id:       1,
+			secondUser.Id: 1,
+		}, seen)
+	})
 
 	cpClient := MustControlPlaneClient(t)
 	project := MustCreateProject(t, cpClient, org.Id, "proj-members-test")

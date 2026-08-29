@@ -2,6 +2,7 @@ package integrationtests
 
 import (
 	"crypto/rand"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -487,6 +488,64 @@ func TestServiceUserTokens(t *testing.T) {
 		}
 	})
 
+}
+
+func TestServiceUserPagination(t *testing.T) {
+	t.Parallel()
+
+	client, err := serverclient.NewClientWithResponses(mustServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+	internalClient, err := serverclient.NewClientWithResponses(mustInternalServerURL(t), serverclient.WithHTTPClient(testHttpClient))
+	require.NoError(t, err)
+
+	org := MustCreateTestOrg(MustInternalControlPlaneClient(t), t)
+	user := MustRegisterTestUser(client, t)
+	adminRoleId := MustObtainRoleIdByName(t, client, org.Id, DefaultAdminRoleName)
+	_ = MustAddUserToOrgWithRoleAndEnsurePermissions(internalClient, t, org.Id, user.Id, adminRoleId)
+
+	created := make(map[uuid.UUID]struct{}, 5)
+	for i := range 5 {
+		r, err := client.CreateServiceUserWithResponse(t.Context(), org.Id, serverclient.ServiceUserCreateBody{
+			DisplayName:  fmt.Sprintf("pagination-service-user-%d", i),
+			ExpiryInDays: 1,
+		}, WithAuthenticatedUserId(user.Id))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
+		require.NotNil(t, r.JSON201)
+		created[r.JSON201.Id] = struct{}{}
+	}
+
+	perPage := 2
+	var page *string
+	seen := make(map[uuid.UUID]int, len(created))
+	for {
+		r, err := client.ListServiceUsersWithResponse(t.Context(), org.Id, &serverclient.ListServiceUsersParams{
+			Page:    page,
+			PerPage: &perPage,
+		}, WithAuthenticatedUserId(user.Id))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
+		require.NotNil(t, r.JSON200)
+		for _, serviceUser := range r.JSON200.Items {
+			seen[serviceUser.Id]++
+		}
+		page = r.JSON200.NextPageToken
+		if page == nil {
+			break
+		}
+	}
+
+	require.Len(t, seen, len(created))
+	for id := range created {
+		require.Equal(t, 1, seen[id], "service user %s was skipped or repeated", id)
+	}
+
+	invalidPage := "not-a-uuid"
+	r, err := client.ListServiceUsersWithResponse(t.Context(), org.Id, &serverclient.ListServiceUsersParams{
+		Page: &invalidPage,
+	}, WithAuthenticatedUserId(user.Id))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, r.StatusCode(), "unexpected status %d %s", r.StatusCode(), string(r.Body))
 }
 
 func TestListUsersWithInvalidCursor(t *testing.T) {
