@@ -121,7 +121,7 @@ type Databaser interface {
 	ListRoleMembershipIdsByUser(ctx context.Context, optionalTx Tx, orgId string, userIds []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 
 	CreateServiceUserToken(ctx context.Context, optionalTx Tx, orgId string, request *ServiceUserToken) (*ServiceUserToken, error)
-	ListServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) ([]ServiceUserToken, error)
+	ListServiceUserTokens(ctx context.Context, optionalTx Tx, params ListServiceUserTokensParams) ([]ServiceUserToken, string, error)
 	GetServiceUserToken(ctx context.Context, optionalTx Tx, id uuid.UUID) (*ServiceUserToken, error)
 	GetServiceUserTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*ServiceUserToken, error)
 	UpdateServiceUserToken(ctx context.Context, optionalTx Tx, request *ServiceUserToken) (*ServiceUserToken, error)

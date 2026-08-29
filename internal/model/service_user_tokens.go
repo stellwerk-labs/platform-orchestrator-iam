@@ -10,7 +10,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/golib/hlogger"
 	"go.uber.org/zap"
+
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/pagination"
 )
+
+var serviceUsersPageTokenCodec = pagination.PageTokenCodec{Parts: 1}
+
+const defaultServiceUsersPerPage = 100
 
 type ServiceUserToken struct {
 	Id                     uuid.UUID
@@ -109,7 +115,32 @@ func (d *databaser) GetServiceUserTokenByHash(ctx context.Context, optionalTx Tx
 	return &out, nil
 }
 
-func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) ([]ServiceUserToken, error) {
+type ListServiceUserTokensParams struct {
+	OrgId     string
+	PageToken string
+	PerPage   int
+}
+
+func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, params ListServiceUserTokensParams) ([]ServiceUserToken, string, error) {
+	perPage := params.PerPage
+	if perPage <= 0 {
+		perPage = defaultServiceUsersPerPage
+	}
+
+	parts, err := serviceUsersPageTokenCodec.Parse(params.PageToken)
+	if err != nil {
+		return nil, "", NewErrBadRequest(err.Error())
+	}
+
+	var cursorId *uuid.UUID
+	if parts[0] != "" {
+		id, err := uuid.Parse(parts[0])
+		if err != nil {
+			return nil, "", NewErrBadRequest("invalid page token")
+		}
+		cursorId = &id
+	}
+
 	logger := hlogger.TraceScopedLoggerFromCtx(d.logger, ctx)
 	optionalTx = d.txOrDb(optionalTx)
 	if rows, err := optionalTx.QueryContext(ctx,
@@ -129,8 +160,11 @@ func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, or
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id 
 		WHERE sut.org_id = $1
-		GROUP BY sut.id, sut.display_name, sut.generated_at, sut.generated_by, sut.current_token_expires_at, sut.current_token_sha256_hash`, orgId); err != nil {
-		return nil, errors.Wrap(err, "failed to list service user tokens")
+		AND ($2::uuid IS NULL OR sut.id > $2)
+		GROUP BY sut.id, sut.display_name, sut.generated_at, sut.generated_by, sut.current_token_expires_at, sut.current_token_sha256_hash
+		ORDER BY sut.id ASC
+		LIMIT $3`, params.OrgId, cursorId, perPage+1); err != nil {
+		return nil, "", errors.Wrap(err, "failed to list service user tokens")
 	} else {
 		defer func() {
 			if err := rows.Close(); err != nil {
@@ -140,19 +174,26 @@ func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, or
 		out := make([]ServiceUserToken, 0)
 		for rows.Next() {
 			var roles json.RawMessage
-			token := ServiceUserToken{OrgId: orgId}
+			token := ServiceUserToken{OrgId: params.OrgId}
 			if err := rows.Scan(&token.Id, &token.DisplayName, &token.GeneratedAt, &token.GeneratedBy, &token.CurrentTokenExpiresAt, &token.CurrentTokenSha256Hash, &roles); err != nil {
-				return nil, errors.Wrap(err, "failed to scan service user token")
+				return nil, "", errors.Wrap(err, "failed to scan service user token")
 			}
 			if err := json.Unmarshal(roles, &token.ServiceUserRoles); err != nil {
-				return nil, errors.Wrap(err, "failed to unmarshal service token roles")
+				return nil, "", errors.Wrap(err, "failed to unmarshal service token roles")
 			}
 			out = append(out, token)
 		}
 		if err := rows.Err(); err != nil {
-			return nil, errors.Wrap(err, "failed to iterate rows")
+			return nil, "", errors.Wrap(err, "failed to iterate rows")
 		}
-		return out, nil
+
+		var nextPageToken string
+		if len(out) > perPage {
+			last := out[perPage-1]
+			nextPageToken = serviceUsersPageTokenCodec.Generate(last.Id.String())
+			out = out[:perPage]
+		}
+		return out, nextPageToken, nil
 	}
 }
 

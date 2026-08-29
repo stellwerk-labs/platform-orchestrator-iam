@@ -11,6 +11,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/opt"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
 
@@ -20,6 +21,84 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+func TestListServiceUsers_Paginates(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	serviceUserId := userid.NewServiceUserTokenId()
+	roleId := uuid.New()
+	now := time.Now().UTC()
+	perPage := 2
+	pageToken := uuid.NewString()
+	nextPageToken := uuid.NewString()
+
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_read")
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListServiceUserTokens(gomock.Any(), nil, model.ListServiceUserTokensParams{
+		OrgId:     orgId,
+		PageToken: pageToken,
+		PerPage:   perPage,
+	}).Return([]model.ServiceUserToken{{
+		Id:                    serviceUserId,
+		DisplayName:           "automation",
+		GeneratedAt:           now,
+		GeneratedBy:           userId,
+		CurrentTokenExpiresAt: now.Add(24 * time.Hour),
+		ServiceUserRoles: []model.ServiceUserRole{{
+			RoleId: roleId,
+			Scope:  "project:example",
+		}},
+	}}, nextPageToken, nil)
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.ListServiceUsers(ctx, ListServiceUsersRequestObject{
+		OrgId: orgId,
+		Params: ListServiceUsersParams{
+			PerPage: &perPage,
+			Page:    &pageToken,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ListServiceUsers200JSONResponse{
+		Items: []ServiceUserSummary{{
+			Id:                    serviceUserId,
+			DisplayName:           "automation",
+			GeneratedAt:           now,
+			GeneratedBy:           userId,
+			CurrentTokenExpiresAt: now.Add(24 * time.Hour),
+			Roles: []ServiceUserRole{{
+				Id:    roleId,
+				Scope: ref.Ref("project:example"),
+			}},
+		}},
+		NextPageToken: &nextPageToken,
+	}, response)
+}
+
+func TestListServiceUsers_InvalidPageToken(t *testing.T) {
+	_, s, fin := MockServer(t)
+	defer fin()
+
+	userId := userid.NewHumanUserId()
+	pageToken := "invalid"
+
+	MockAuthorizationSuccess(s, userId, orgId, "service_user_read")
+	s.Database.(*mockmodel.MockDatabaser).EXPECT().ListServiceUserTokens(gomock.Any(), nil, model.ListServiceUserTokensParams{
+		OrgId:     orgId,
+		PageToken: pageToken,
+	}).Return(nil, "", model.NewErrBadRequest("invalid page token"))
+
+	ctx := context.WithValue(t.Context(), hecho.ContextKeyUserID, userId.String())
+	response, err := s.ListServiceUsers(ctx, ListServiceUsersRequestObject{
+		OrgId: orgId,
+		Params: ListServiceUsersParams{
+			Page: &pageToken,
+		},
+	})
+	require.Error(t, err)
+	require.Nil(t, response)
+}
 
 func TestCreateServiceUser_NotOrgMember(t *testing.T) {
 	_, s, fin := MockServer(t)

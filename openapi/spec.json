@@ -941,6 +941,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
           }
         }
       },
@@ -2729,6 +2732,10 @@
             "items": {
               "$ref": "#/components/schemas/ServiceUserSummary"
             }
+          },
+          "next_page_token": {
+            "description": "The page token to use to request the next page of items",
+            "type": "string"
           }
         }
       },

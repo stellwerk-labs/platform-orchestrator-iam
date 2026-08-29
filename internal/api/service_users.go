@@ -7,11 +7,13 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/stellwerk-labs/golib/herrors"
 	"github.com/stellwerk-labs/golib/hlogger"
 	"go.uber.org/zap"
 
@@ -54,8 +56,24 @@ func (s *Server) ListServiceUsers(ctx context.Context, request ListServiceUsersR
 		return nil, err
 	}
 
-	page, err := s.Database.ListServiceUserTokens(ctx, nil, request.OrgId)
+	var pageToken string
+	if request.Params.Page != nil {
+		pageToken = *request.Params.Page
+	}
+	var perPage int
+	if request.Params.PerPage != nil {
+		perPage = *request.Params.PerPage
+	}
+
+	page, nextPageToken, err := s.Database.ListServiceUserTokens(ctx, nil, model.ListServiceUserTokensParams{
+		OrgId:     request.OrgId,
+		PageToken: pageToken,
+		PerPage:   perPage,
+	})
 	if err != nil {
+		if e, ok := model.IsErrBadRequest(err); ok {
+			return nil, herrors.NewWithStatus(http.StatusBadRequest, e.Message, nil)
+		}
 		return nil, errors.Wrap(err, "failed to list service user tokens")
 	}
 
@@ -78,7 +96,10 @@ func (s *Server) ListServiceUsers(ctx context.Context, request ListServiceUsersR
 		})
 	}
 
-	return ListServiceUsers200JSONResponse{Items: out}, nil
+	return ListServiceUsers200JSONResponse{
+		Items:         out,
+		NextPageToken: ref.RefStringEmptyNil(nextPageToken),
+	}, nil
 }
 
 func (s *Server) CreateServiceUser(ctx context.Context, request CreateServiceUserRequestObject) (CreateServiceUserResponseObject, error) {

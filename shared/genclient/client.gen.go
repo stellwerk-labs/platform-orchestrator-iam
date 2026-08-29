@@ -669,6 +669,9 @@ type ServiceUserCreateBody struct {
 // ServiceUserPage A page of service user summaries
 type ServiceUserPage struct {
 	Items []ServiceUserSummary `json:"items"`
+
+	// NextPageToken The page token to use to request the next page of items
+	NextPageToken *string `json:"next_page_token,omitempty"`
 }
 
 // ServiceUserRegenerateBody Details required to regenerate the service user
@@ -7746,11 +7749,18 @@ type ListServiceUsersResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *ServiceUserPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r ListServiceUsersResponse) GetJSON200() *ServiceUserPage {
 	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListServiceUsersResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
 }
 
 // GetBody returns the raw response body bytes
@@ -10495,6 +10505,13 @@ func ParseListServiceUsersResponse(rsp *http.Response) (*ListServiceUsersRespons
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	}
 

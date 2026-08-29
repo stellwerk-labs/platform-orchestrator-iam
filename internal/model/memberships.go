@@ -239,7 +239,7 @@ func (d *databaser) ListMembersWithIdentities(ctx context.Context, optionalTx Tx
 
 		var nextPageToken string
 		if len(out) > perPage {
-			next := out[perPage]
+			next := out[perPage-1]
 			nextPageToken = membersPageTokenCodec.Generate(
 				next.CreatedAt.UTC().Format(time.RFC3339Nano),
 				next.Id.String(),
