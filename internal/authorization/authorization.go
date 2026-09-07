@@ -286,6 +286,11 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 	if requested == granted || granted == PermissionManageAll {
 		return true, nil
 	}
+	// Preserve only the equivalent legacy Module operations at the grant's
+	// existing resource scope. New recovery and Pin powers require new grants.
+	if legacyModulePermissionMatch(requested, granted) {
+		return true, nil
+	}
 	// The provisioning permissions are deliberately excluded from the level
 	// hierarchy below: provisioning_read exposes the org's ENTIRE SCIM
 	// directory (every member's userName, primary email, IdP externalId, and
@@ -313,6 +318,19 @@ func permissionMatch(arguments ...interface{}) (interface{}, error) {
 		return level == sharedauthz.PermissionLevelManage, nil
 	default:
 		return false, nil
+	}
+}
+
+func legacyModulePermissionMatch(requested, granted string) bool {
+	switch granted {
+	case sharedauthz.PermissionModuleRead:
+		return requested == sharedauthz.PermissionModuleCoreRead || requested == sharedauthz.PermissionModuleVersionRead
+	case sharedauthz.PermissionModuleWrite:
+		return requested == sharedauthz.PermissionModuleVersionPublish ||
+			requested == sharedauthz.PermissionModuleVersionPromote ||
+			requested == sharedauthz.PermissionModuleArchive
+	default:
+		return false
 	}
 }
 

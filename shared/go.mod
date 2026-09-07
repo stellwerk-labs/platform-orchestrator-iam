@@ -3,9 +3,9 @@ module github.com/stellwerk-labs/platform-orchestrator-iam/shared
 go 1.26.2
 
 require (
-	github.com/google/uuid v1.5.0
-	github.com/oapi-codegen/runtime v1.1.1
-	github.com/stretchr/testify v1.8.4
+	github.com/google/uuid v1.6.0
+	github.com/oapi-codegen/runtime v1.6.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (

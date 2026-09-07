@@ -38,7 +38,7 @@ const (
 
 var AllowedScopesForRoles = []string{ScopeProject, ScopeEnvironment}
 
-var rolePermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}[a-z0-9]$`)
+var rolePermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$`)
 
 func fromModelToAPIRole(r *model.Role) Role {
 	return Role{

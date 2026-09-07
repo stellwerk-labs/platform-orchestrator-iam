@@ -19,42 +19,58 @@ const (
 )
 
 const (
-	PermissionOrganizationRead     = "organization_read"
-	PermissionInvitationRead       = "invitation_read"
-	PermissionInvitationWrite      = "invitation_write"
-	PermissionMembershipRead       = "membership_read"
-	PermissionMembershipWrite      = "membership_write"
-	PermissionRoleRead             = "role_read"
-	PermissionRoleWrite            = "role_write"
-	PermissionServiceUserRead      = "service_user_read"
-	PermissionServiceUserWrite     = "service_user_write"
-	PermissionProjectRead          = "project_read"
-	PermissionProjectWrite         = "project_write"
-	PermissionEnvironmentRead      = "environment_read"
-	PermissionEnvironmentWrite     = "environment_write"
-	PermissionEnvironmentTypeRead  = "environment_type_read"
-	PermissionEnvironmentTypeWrite = "environment_type_write"
-	PermissionModuleRead           = "module_read"
-	PermissionModuleWrite          = "module_write"
-	PermissionModuleProviderRead   = "module_provider_read"
-	PermissionModuleProviderWrite  = "module_provider_write"
-	PermissionModuleRuleRead       = "module_rule_read"
-	PermissionModuleRuleWrite      = "module_rule_write"
-	PermissionResourceTypeRead     = "resource_type_read"
-	PermissionResourceTypeWrite    = "resource_type_write"
-	PermissionRunnerRead           = "runner_read"
-	PermissionRunnerWrite          = "runner_write"
-	PermissionRunnerRuleRead       = "runner_rule_read"
-	PermissionRunnerRuleWrite      = "runner_rule_write"
-	PermissionActiveResourceRead   = "active_resource_read"
-	PermissionDeploymentRead       = "deployment_read"
-	PermissionDeploymentWrite      = "deployment_write"
-	PermissionDeploymentDebugRead  = "deployment_debug_read"
-	PermissionMetadataKeyRead      = "metadata_key_read"
-	PermissionMetadataKeyWrite     = "metadata_key_write"
-	PermissionResourceGraphRead    = "resource_graph_read"
-	PermissionProvisioningRead     = "provisioning_read"
-	PermissionProvisioningWrite    = "provisioning_write"
+	PermissionOrganizationRead         = "organization_read"
+	PermissionInvitationRead           = "invitation_read"
+	PermissionInvitationWrite          = "invitation_write"
+	PermissionMembershipRead           = "membership_read"
+	PermissionMembershipWrite          = "membership_write"
+	PermissionRoleRead                 = "role_read"
+	PermissionRoleWrite                = "role_write"
+	PermissionServiceUserRead          = "service_user_read"
+	PermissionServiceUserWrite         = "service_user_write"
+	PermissionProjectRead              = "project_read"
+	PermissionProjectWrite             = "project_write"
+	PermissionEnvironmentRead          = "environment_read"
+	PermissionEnvironmentWrite         = "environment_write"
+	PermissionEnvironmentTypeRead      = "environment_type_read"
+	PermissionEnvironmentTypeWrite     = "environment_type_write"
+	PermissionModuleRead               = "module_read"
+	PermissionModuleWrite              = "module_write"
+	PermissionModuleProviderRead       = "module_provider_read"
+	PermissionModuleProviderWrite      = "module_provider_write"
+	PermissionModuleRuleRead           = "module_rule_read"
+	PermissionModuleRuleWrite          = "module_rule_write"
+	PermissionModuleCoreRead           = "module.read"
+	PermissionModuleArchive            = "module.archive"
+	PermissionModuleVersionRead        = "module.version.read"
+	PermissionModuleVersionPublish     = "module.version.publish"
+	PermissionModuleVersionPromote     = "module.version.promote"
+	PermissionModuleVersionDeprecate   = "module.version.deprecate"
+	PermissionModuleVersionDefective   = "module.version.mark-defective"
+	PermissionModuleVersionRestore     = "module.version.restore"
+	PermissionModuleUseProposed        = "module.version.use-proposed"
+	PermissionModuleVersionPin         = "module.version.pin"
+	PermissionModuleVersionPinNote     = "module.version.pin-note"
+	PermissionModuleVersionUnpin       = "module.version.unpin"
+	PermissionModuleVersionPinOverride = "module.version.pin-override"
+	PermissionModuleVersionPinRestore  = "module.version.pin-restore"
+	PermissionModulePinDefective       = "module.version.pin-defective"
+	PermissionModuleRollbackRestricted = "module.version.rollback-restricted"
+	PermissionResourceTypeRead         = "resource_type_read"
+	PermissionResourceTypeWrite        = "resource_type_write"
+	PermissionRunnerRead               = "runner_read"
+	PermissionRunnerWrite              = "runner_write"
+	PermissionRunnerRuleRead           = "runner_rule_read"
+	PermissionRunnerRuleWrite          = "runner_rule_write"
+	PermissionActiveResourceRead       = "active_resource_read"
+	PermissionDeploymentRead           = "deployment_read"
+	PermissionDeploymentWrite          = "deployment_write"
+	PermissionDeploymentDebugRead      = "deployment_debug_read"
+	PermissionMetadataKeyRead          = "metadata_key_read"
+	PermissionMetadataKeyWrite         = "metadata_key_write"
+	PermissionResourceGraphRead        = "resource_graph_read"
+	PermissionProvisioningRead         = "provisioning_read"
+	PermissionProvisioningWrite        = "provisioning_write"
 )
 
 type PermissionDefinition struct {
@@ -91,6 +107,22 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionModuleProviderWrite, DisplayName: "Manage module providers", Description: "Create, update, and delete module providers.", Category: "Modules", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionModuleRuleRead, DisplayName: "View module rules", Description: "View module selection rules.", Category: "Modules", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionModuleRuleWrite, DisplayName: "Manage module rules", Description: "Create and delete module selection rules.", Category: "Modules", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleCoreRead, DisplayName: "View module catalogue", Description: "View stable module identities and catalogue metadata.", Category: "Module version management", Level: PermissionLevelRead, Scopes: organizationScope},
+	{ID: PermissionModuleArchive, DisplayName: "Archive modules", Description: "Archive and reactivate shared module catalogue entries.", Category: "Module version management", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleVersionRead, DisplayName: "View module versions", Description: "View immutable module versions, lifecycle history, usage, and adoption.", Category: "Module version management", Level: PermissionLevelRead, Scopes: organizationScope},
+	{ID: PermissionModuleVersionPublish, DisplayName: "Publish module versions", Description: "Publish immutable Proposed module versions.", Category: "Module version management", Level: PermissionLevelWrite, Scopes: organizationScope},
+	{ID: PermissionModuleVersionPromote, DisplayName: "Promote module versions", Description: "Promote an eligible Proposed module version to Default.", Category: "Module version management", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleVersionDeprecate, DisplayName: "Deprecate module versions", Description: "Stop new adoption of a Proposed or Default module version.", Category: "Module version management", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleVersionDefective, DisplayName: "Mark module versions defective", Description: "Mark an unsafe module version Defective.", Category: "Module version management", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleVersionRestore, DisplayName: "Restore module defaults", Description: "Restore the immediately preceding Deprecated Default version.", Category: "Module version management", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionModuleUseProposed, DisplayName: "Use Proposed module versions", Description: "Explicitly select a Proposed module version for a deployment.", Category: "Module version management", Level: PermissionLevelWrite, Scopes: allScopes},
+	{ID: PermissionModuleVersionPin, DisplayName: "Pin module versions", Description: "Pin the exact module version active in an environment.", Category: "Module version management", Level: PermissionLevelWrite, Scopes: allScopes},
+	{ID: PermissionModuleVersionPinNote, DisplayName: "Annotate module-version Pins", Description: "Append immutable notes to protected module-version Pins without changing their state.", Category: "Module version management", Level: PermissionLevelWrite, Scopes: allScopes},
+	{ID: PermissionModuleVersionUnpin, DisplayName: "Unpin module versions", Description: "Remove or permanently discard an environment module-version Pin.", Category: "Module version management", Level: PermissionLevelWrite, Scopes: allScopes},
+	{ID: PermissionModuleVersionPinOverride, DisplayName: "Override module-version Pins", Description: "Begin and reconcile an operation-bound Pin override without granting direct Unpin rights.", Category: "Module version management", Level: PermissionLevelManage, Scopes: allScopes},
+	{ID: PermissionModuleVersionPinRestore, DisplayName: "Restore module-version Pins", Description: "Restore an overridden Pin after an authorised operation completes or rolls back.", Category: "Module version management", Level: PermissionLevelManage, Scopes: allScopes},
+	{ID: PermissionModulePinDefective, DisplayName: "Pin Defective module versions", Description: "Explicitly preserve a Defective version with exact confirmation.", Category: "Module version management", Level: PermissionLevelManage, Scopes: allScopes},
+	{ID: PermissionModuleRollbackRestricted, DisplayName: "Use restricted rollback versions", Description: "Use Deprecated or Defective versions through an authorised rollback.", Category: "Module version management", Level: PermissionLevelManage, Scopes: allScopes},
 	{ID: PermissionResourceTypeRead, DisplayName: "View resource types", Description: "View available and configured resource types.", Category: "Resources", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionResourceTypeWrite, DisplayName: "Manage resource types", Description: "Create, update, and delete resource types.", Category: "Resources", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionRunnerRead, DisplayName: "View runners", Description: "View runners and their configuration.", Category: "Runners", Level: PermissionLevelRead, Scopes: organizationScope},

@@ -216,6 +216,13 @@ func TestCreateRoleRejectsUnknownPermission(t *testing.T) {
 	)}, response)
 }
 
+func TestRolePermissionPatternSupportsNamespacedPermissions(t *testing.T) {
+	require.True(t, rolePermissionPattern.MatchString("module.version.read"))
+	require.True(t, rolePermissionPattern.MatchString("module.version.pin-override"))
+	require.True(t, rolePermissionPattern.MatchString("deployment_write"))
+	require.False(t, rolePermissionPattern.MatchString("module/version/read"))
+}
+
 func TestUpdateSystemRoleIsRejected(t *testing.T) {
 	_, s, fin := MockServer(t)
 	defer fin()
