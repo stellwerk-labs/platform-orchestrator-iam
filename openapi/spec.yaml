@@ -1736,8 +1736,8 @@ components:
         permission:
           description: The permission string.
           type: string
-          pattern: ^[a-z][a-z0-9_]{1,62}[a-z0-9]$
-          x-pattern-error: "permission must match regex pattern: ^[a-z][a-z0-9_]{1,62}[a-z0-9]$"
+          pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$
+          x-pattern-error: "permission must match regex pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$"
 
     ResourcePermissionCheckResult:
       type: object
@@ -2162,7 +2162,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            pattern: ^[a-z][a-z0-9_]{1,62}[a-z0-9]$
+            pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$
 
     ScimGroupMappingPage:
       description: The SCIM group-to-role mappings configured for an organization.

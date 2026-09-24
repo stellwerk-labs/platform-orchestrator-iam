@@ -9,7 +9,7 @@ import (
 )
 
 func TestPermissionCatalog(t *testing.T) {
-	permissionPattern := regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}[a-z0-9]$`)
+	permissionPattern := regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$`)
 	known := make(map[string]struct{})
 
 	for _, permission := range PermissionCatalog() {
@@ -30,6 +30,39 @@ func TestPermissionCatalog(t *testing.T) {
 
 	_, ok := FindPermission("not_a_platform_permission")
 	assert.False(t, ok)
+}
+
+func TestModuleVersionManagementPermissionsHaveExpectedScopes(t *testing.T) {
+	organizationOnly := []string{
+		PermissionModuleCoreRead,
+		PermissionModuleArchive,
+		PermissionModuleVersionRead,
+		PermissionModuleVersionPublish,
+		PermissionModuleVersionPromote,
+		PermissionModuleVersionDeprecate,
+		PermissionModuleVersionDefective,
+		PermissionModuleVersionRestore,
+	}
+	for _, permission := range organizationOnly {
+		definition, found := FindPermission(permission)
+		require.True(t, found, permission)
+		assert.Equal(t, organizationScope, definition.Scopes, permission)
+	}
+
+	for _, permission := range []string{
+		PermissionModuleUseProposed,
+		PermissionModuleVersionPin,
+		PermissionModuleVersionPinNote,
+		PermissionModuleVersionUnpin,
+		PermissionModuleVersionPinOverride,
+		PermissionModuleVersionPinRestore,
+		PermissionModulePinDefective,
+		PermissionModuleRollbackRestricted,
+	} {
+		definition, found := FindPermission(permission)
+		require.True(t, found, permission)
+		assert.Equal(t, allScopes, definition.Scopes, permission)
+	}
 }
 
 func TestPermissionCatalogReturnsCopies(t *testing.T) {
