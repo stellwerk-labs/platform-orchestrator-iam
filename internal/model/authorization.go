@@ -45,6 +45,27 @@ type EffectiveRoleBinding struct {
 	Scope       string
 }
 
+// IsAuthorizationSubjectActive checks the authoritative identity tables rather
+// than the in-memory policy snapshot. Humans must still exist; service users
+// must still exist and their current token generation must not be expired.
+// Exactly one matching identity is required so an accidental cross-table UUID
+// collision fails closed.
+func (d *databaser) IsAuthorizationSubjectActive(ctx context.Context, optionalTx Tx, subjectID uuid.UUID) (bool, error) {
+	var active bool
+	if err := d.txOrDb(optionalTx).QueryRowContext(ctx, `
+		SELECT count(*) = 1 AND bool_and(subject.active)
+		FROM (
+			SELECT true AS active FROM users WHERE id = $1
+			UNION ALL
+			SELECT current_token_expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') AS active
+			FROM service_user_tokens WHERE id = $1
+		) subject
+	`, subjectID).Scan(&active); err != nil {
+		return false, errors.Wrap(err, "failed to check authorization subject liveness")
+	}
+	return active, nil
+}
+
 func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx) ([]AuthorizationPolicy, error) {
 	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, `
 		SELECT m.user_id,

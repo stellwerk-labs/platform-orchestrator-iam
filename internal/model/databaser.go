@@ -127,6 +127,7 @@ type Databaser interface {
 	UpdateServiceUserToken(ctx context.Context, optionalTx Tx, request *ServiceUserToken) (*ServiceUserToken, error)
 	DeleteServiceUserToken(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	BulkExpireAllServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) (int64, error)
+	IsAuthorizationSubjectActive(ctx context.Context, optionalTx Tx, subjectID uuid.UUID) (bool, error)
 
 	CreateInvitation(ctx context.Context, optionalTx Tx, request *Invitation) (*Invitation, error)
 	GetInvitation(ctx context.Context, optionalTx Tx, id uuid.UUID) (*Invitation, error)

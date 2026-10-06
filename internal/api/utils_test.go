@@ -27,6 +27,7 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 		OpenAPISkipperFn: OpenApiValidatorSkipper,
 	})
 	db := mockmodel.NewMockDatabaser(ctrl)
+	db.EXPECT().IsAuthorizationSubjectActive(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	tx := mockmodel.NewMockTxWithCommit(ctrl)
 	db.EXPECT().BeginTx(gomock.Any(), gomock.Any()).Return(tx, nil).AnyTimes()
 	db.EXPECT().UpsertAuthorizationResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()

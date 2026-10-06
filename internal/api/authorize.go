@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/herrors"
@@ -23,6 +24,16 @@ const (
 
 // InternalAuthorizeInner is the internal implementation of authorization
 func (s *Server) InternalAuthorizeInner(ctx context.Context, body InternalAuthorizeBody) (bool, []ResourcePermissionCheck, error) {
+	if body.UserId != userid.InternalSystemUuid {
+		active, err := s.Database.IsAuthorizationSubjectActive(ctx, nil, body.UserId)
+		if err != nil {
+			return false, nil, err
+		}
+		if !active {
+			return false, slices.Clone(body.Checks), nil
+		}
+	}
+
 	failedChecks := make([]ResourcePermissionCheck, 0, len(body.Checks))
 	validChecks := make([]authorization.Check, 0, len(body.Checks))
 	validOriginalChecks := make([]ResourcePermissionCheck, 0, len(body.Checks))
