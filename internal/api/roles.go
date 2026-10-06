@@ -38,7 +38,7 @@ const (
 
 var AllowedScopesForRoles = []string{ScopeProject, ScopeEnvironment}
 
-var rolePermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$`)
+var rolePermissionPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,253}[a-z0-9]$`)
 
 func fromModelToAPIRole(r *model.Role) Role {
 	return Role{
@@ -109,6 +109,10 @@ func (s *Server) ListRoles(ctx context.Context, request ListRolesRequestObject) 
 }
 
 func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
+	return validateRoleWriteWithPluginCapabilities(body, nil)
+}
+
+func validateRoleWriteWithPluginCapabilities(body *RoleWriteBody, capabilities []model.PluginCapability) (string, []string, error) {
 	if body == nil {
 		return "", nil, usererrors.NewUserError("role body is required")
 	}
@@ -123,11 +127,16 @@ func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
 		return "", nil, usererrors.NewUserError("at least one permission is required")
 	}
 	permissionSet := make(map[string]struct{}, len(body.Permissions))
+	pluginPermissions := make(map[string]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		pluginPermissions[capability.ID] = struct{}{}
+	}
 	for _, permission := range body.Permissions {
 		if !rolePermissionPattern.MatchString(permission) {
 			return "", nil, usererrors.NewUserError(fmt.Sprintf("invalid permission %q", permission))
 		}
-		if !sharedauthz.IsAssignableRolePermission(permission) {
+		_, registeredPluginPermission := pluginPermissions[permission]
+		if !sharedauthz.IsAssignableRolePermission(permission) && !registeredPluginPermission {
 			return "", nil, usererrors.NewUserError(fmt.Sprintf("unknown permission %q; use the permission catalog to list valid identifiers", permission))
 		}
 		permissionSet[permission] = struct{}{}
@@ -140,6 +149,23 @@ func validateRoleWrite(body *RoleWriteBody) (string, []string, error) {
 	return displayName, permissions, nil
 }
 
+type pluginCapabilityLister interface {
+	ListPluginCapabilities(context.Context, model.Tx, string) ([]model.PluginCapability, error)
+}
+
+func (s *Server) validateRoleWriteForOrg(ctx context.Context, orgID string, body *RoleWriteBody) (string, []string, error, error) {
+	var capabilities []model.PluginCapability
+	if lister, ok := s.Database.(pluginCapabilityLister); ok {
+		var err error
+		capabilities, err = lister.ListPluginCapabilities(ctx, nil, orgID)
+		if err != nil {
+			return "", nil, nil, err
+		}
+	}
+	displayName, permissions, validationErr := validateRoleWriteWithPluginCapabilities(body, capabilities)
+	return displayName, permissions, validationErr, nil
+}
+
 func (s *Server) CreateRole(ctx context.Context, request CreateRoleRequestObject) (CreateRoleResponseObject, error) {
 	userId, authErr := GetAuthenticatedUserIdOr401(ctx)
 	if authErr != nil {
@@ -148,7 +174,10 @@ func (s *Server) CreateRole(ctx context.Context, request CreateRoleRequestObject
 	if err := s.checkOrgAuthorization(ctx, userId, request.OrgId, sharedauthz.PermissionRoleWrite); err != nil {
 		return nil, err
 	}
-	displayName, permissions, validationErr := validateRoleWrite(request.Body)
+	displayName, permissions, validationErr, err := s.validateRoleWriteForOrg(ctx, request.OrgId, request.Body)
+	if err != nil {
+		return nil, err
+	}
 	if validationErr != nil {
 		return CreateRole400JSONResponse{N400BadRequestJSONResponse: Generate400Response(validationErr.Error())}, nil
 	}
@@ -186,7 +215,10 @@ func (s *Server) UpdateRole(ctx context.Context, request UpdateRoleRequestObject
 	if existing.IsSystem {
 		return UpdateRole409JSONResponse{N409ConflictJSONResponse: Generate409Response("built-in roles cannot be modified")}, nil
 	}
-	displayName, permissions, validationErr := validateRoleWrite(request.Body)
+	displayName, permissions, validationErr, err := s.validateRoleWriteForOrg(ctx, request.OrgId, request.Body)
+	if err != nil {
+		return nil, err
+	}
 	if validationErr != nil {
 		return UpdateRole400JSONResponse{N400BadRequestJSONResponse: Generate400Response(validationErr.Error())}, nil
 	}

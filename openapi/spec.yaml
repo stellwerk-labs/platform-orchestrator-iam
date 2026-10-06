@@ -2162,7 +2162,8 @@ components:
           uniqueItems: true
           items:
             type: string
-            pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$
+            maxLength: 255
+            pattern: ^[a-z][a-z0-9_.-]{1,253}[a-z0-9]$
 
     ScimGroupMappingPage:
       description: The SCIM group-to-role mappings configured for an organization.
