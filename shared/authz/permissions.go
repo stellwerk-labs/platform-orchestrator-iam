@@ -28,6 +28,7 @@ const (
 	PermissionRoleWrite                = "role_write"
 	PermissionServiceUserRead          = "service_user_read"
 	PermissionServiceUserWrite         = "service_user_write"
+	PermissionPluginRegistrationWrite  = "plugin_registration_write"
 	PermissionProjectRead              = "project_read"
 	PermissionProjectWrite             = "project_write"
 	PermissionEnvironmentRead          = "environment_read"
@@ -95,6 +96,7 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionRoleWrite, DisplayName: "Manage roles", Description: "Create, update, and delete configurable roles.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionServiceUserRead, DisplayName: "View service users", Description: "View service users and their role assignments.", Category: "Access", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionServiceUserWrite, DisplayName: "Manage service users", Description: "Create, update, delete, and rotate credentials for service users.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionPluginRegistrationWrite, DisplayName: "Register plugin capabilities", Description: "Replace the human-role capability catalog for installed plugins.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionProjectRead, DisplayName: "View projects", Description: "View projects and their configuration.", Category: "Projects and environments", Level: PermissionLevelRead, Scopes: allScopes[:2]},
 	{ID: PermissionProjectWrite, DisplayName: "Manage projects", Description: "Create, update, and delete projects.", Category: "Projects and environments", Level: PermissionLevelManage, Scopes: allScopes[:2]},
 	{ID: PermissionEnvironmentRead, DisplayName: "View environments", Description: "View environments and their configuration.", Category: "Projects and environments", Level: PermissionLevelRead, Scopes: allScopes},

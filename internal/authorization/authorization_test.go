@@ -132,6 +132,12 @@ func TestLegacyPermissionHierarchy(t *testing.T) {
 	}
 }
 
+func TestPluginCapabilityCannotGrantCorePluginRegistration(t *testing.T) {
+	matched, err := permissionMatch(sharedauthz.PermissionPluginRegistrationWrite, "plugin.dev.stellwerk.rollouts.install-manage")
+	require.NoError(t, err)
+	assert.Equal(t, false, matched)
+}
+
 func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
 	for _, permission := range sharedauthz.PermissionCatalog() {
 		t.Run(permission.ID, func(t *testing.T) {

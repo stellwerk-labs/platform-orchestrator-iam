@@ -39,6 +39,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/config"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/plugincapabilities"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker"
@@ -309,6 +310,11 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 		CpClient:                 deps.CpClient,
 		Authorizer:               deps.Authorizer,
 	}
+	policyReloader, ok := deps.Authorizer.(authorization.PolicyReloader)
+	if !ok {
+		zap.L().Fatal("plugin capability registration requires a synchronous authorization policy reloader")
+	}
+	server.PluginCapabilities = &plugincapabilities.Registry{Database: deps.DB, Reloader: policyReloader}
 	if cfg.SuperUserToken != "" {
 		h := sha256.Sum256([]byte(cfg.SuperUserToken))
 		server.SuperUserTokenHash = h[:]

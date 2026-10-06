@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"runtime/debug"
@@ -21,6 +22,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/emailprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/plugincapabilities"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 )
 
@@ -46,10 +48,15 @@ type Server struct {
 	SsoCallbackUrlPath string
 	SsoStateSecret     string
 
-	Authorizer authorization.Authorizer
-	Publisher  hmessaging.Publisher
+	Authorizer         authorization.Authorizer
+	Publisher          hmessaging.Publisher
+	PluginCapabilities PluginCapabilityRegistry
 
 	SuperUserTokenHash []byte
+}
+
+type PluginCapabilityRegistry interface {
+	Replace(ctx context.Context, orgID, pluginID string, definitions []plugincapabilities.Definition) error
 }
 
 func (s *Server) MapRoutes(e *echo.Echo) {

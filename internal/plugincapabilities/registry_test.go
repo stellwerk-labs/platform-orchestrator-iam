@@ -33,17 +33,30 @@ func TestValidateRejectsNamespaceAndDefinitionAmbiguity(t *testing.T) {
 		pluginID    string
 		definitions []Definition
 	}{
-		"invalid plugin": {pluginID: "Dev/Stellwerk", definitions: []Definition{valid}},
-		"path-like name": {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "rollout/read", DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
-		"dotted name":    {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "rollout.read", DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
-		"duplicate":      {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{valid, valid}},
-		"oversized":      {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "a" + strings.Repeat("b", 255), DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
+		"invalid plugin":  {pluginID: "Dev/Stellwerk", definitions: []Definition{valid}},
+		"path-like name":  {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "rollout/read", DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
+		"dotted name":     {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "rollout.read", DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
+		"duplicate":       {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{valid, valid}},
+		"oversized":       {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: "a" + strings.Repeat("b", 255), DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
+		"core permission": {pluginID: "dev.stellwerk.rollouts", definitions: []Definition{{Name: sharedauthz.PermissionPluginRegistrationWrite, DisplayName: valid.DisplayName, Description: valid.Description, Category: valid.Category, Level: valid.Level, Scopes: valid.Scopes}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := validate("org", testCase.pluginID, testCase.definitions)
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestValidateCannotEscapeInstalledPluginNamespace(t *testing.T) {
+	definition := Definition{
+		Name: "plugin-someone-else-manage", DisplayName: "Manage someone else", Description: "Still local.",
+		Category: "Plugin", Level: sharedauthz.PermissionLevelManage,
+		Scopes: []sharedauthz.PermissionScope{sharedauthz.PermissionScopeOrganization},
+	}
+	capabilities, err := validate("org", "dev.stellwerk.rollouts", []Definition{definition})
+	require.NoError(t, err)
+	require.Equal(t, "plugin.dev.stellwerk.rollouts.plugin-someone-else-manage", capabilities[0].ID)
+	require.NotEqual(t, "plugin.someone-else.manage", capabilities[0].ID)
 }
 
 func TestValidateCapabilityNamespaceIsUnambiguous(t *testing.T) {
@@ -53,7 +66,7 @@ func TestValidateCapabilityNamespaceIsUnambiguous(t *testing.T) {
 		Scopes: []sharedauthz.PermissionScope{sharedauthz.PermissionScopeOrganization},
 	}
 	_, err := validate("org", "dev.example", []Definition{definition})
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidDefinition)
 
 	definition.Name = "read"
 	capabilities, err := validate("org", "dev.example.reader", []Definition{definition})

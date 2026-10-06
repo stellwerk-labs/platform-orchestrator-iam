@@ -60,6 +60,48 @@ func (e PermissionDefinitionScopes) Valid() bool {
 	}
 }
 
+// Defines values for PluginCapabilityRegistrationLevel.
+const (
+	PluginCapabilityRegistrationLevelManage PluginCapabilityRegistrationLevel = "manage"
+	PluginCapabilityRegistrationLevelRead   PluginCapabilityRegistrationLevel = "read"
+	PluginCapabilityRegistrationLevelWrite  PluginCapabilityRegistrationLevel = "write"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationLevel enum.
+func (e PluginCapabilityRegistrationLevel) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationLevelManage:
+		return true
+	case PluginCapabilityRegistrationLevelRead:
+		return true
+	case PluginCapabilityRegistrationLevelWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginCapabilityRegistrationScopes.
+const (
+	PluginCapabilityRegistrationScopesEnvironment  PluginCapabilityRegistrationScopes = "environment"
+	PluginCapabilityRegistrationScopesOrganization PluginCapabilityRegistrationScopes = "organization"
+	PluginCapabilityRegistrationScopesProject      PluginCapabilityRegistrationScopes = "project"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationScopes enum.
+func (e PluginCapabilityRegistrationScopes) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationScopesEnvironment:
+		return true
+	case PluginCapabilityRegistrationScopesOrganization:
+		return true
+	case PluginCapabilityRegistrationScopesProject:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubjectType.
 const (
 	SubjectTypeRole         SubjectType = "role"
@@ -487,6 +529,27 @@ type PermissionDefinitionScopes string
 // PermissionDefinitionPage The authoritative catalog of granular permissions assignable to configurable roles.
 type PermissionDefinitionPage struct {
 	Items []PermissionDefinition `json:"items"`
+}
+
+// PluginCapabilityRegistration A plugin-owned permission definition. The name is a flat slug local to the plugin namespace; dots are forbidden so the full identifier has one unambiguous plugin/local boundary.
+type PluginCapabilityRegistration struct {
+	Category    string                               `json:"category"`
+	Description string                               `json:"description"`
+	DisplayName string                               `json:"display_name"`
+	Level       PluginCapabilityRegistrationLevel    `json:"level"`
+	Name        string                               `json:"name"`
+	Scopes      []PluginCapabilityRegistrationScopes `json:"scopes"`
+}
+
+// PluginCapabilityRegistrationLevel defines model for PluginCapabilityRegistration.Level.
+type PluginCapabilityRegistrationLevel string
+
+// PluginCapabilityRegistrationScopes defines model for PluginCapabilityRegistration.Scopes.
+type PluginCapabilityRegistrationScopes string
+
+// PluginCapabilityRegistrationBody The complete human-role capability catalog for one installed plugin. An empty array unregisters every capability for the plugin.
+type PluginCapabilityRegistrationBody struct {
+	Capabilities []PluginCapabilityRegistration `json:"capabilities"`
 }
 
 // RegisterUserBody A payload needed to register a user against an identity provider.
@@ -1155,6 +1218,9 @@ type InternalUpdateSsoConfigurationJSONRequestBody = SsoConfiguration
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreateBody
 
+// ReplacePluginCapabilitiesJSONRequestBody defines body for ReplacePluginCapabilities for application/json ContentType.
+type ReplacePluginCapabilitiesJSONRequestBody = PluginCapabilityRegistrationBody
+
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleWriteBody
 
@@ -1474,6 +1540,24 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 	ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplacePluginCapabilitiesWithBody Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithBody(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilities(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListEnvironmentUsers List the users and service users that have access to this environment.
 	//
@@ -2230,6 +2314,44 @@ func (c *Client) DeleteOrgMembership(ctx context.Context, orgId OrgIdPathParam, 
 // Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 func (c *Client) ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListPermissionsRequest(c.Server, orgId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplacePluginCapabilitiesWithBody Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *Client) ReplacePluginCapabilitiesWithBody(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplacePluginCapabilitiesRequestWithBody(c.Server, orgId, pluginId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *Client) ReplacePluginCapabilities(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplacePluginCapabilitiesRequest(c.Server, orgId, pluginId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4177,6 +4299,60 @@ func NewListPermissionsRequest(server string, orgId OrgIdPathParam) (*http.Reque
 	return req, nil
 }
 
+// NewReplacePluginCapabilitiesRequest calls the generic ReplacePluginCapabilities builder with application/json body
+func NewReplacePluginCapabilitiesRequest(server string, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplacePluginCapabilitiesRequestWithBody(server, orgId, pluginId, "application/json", bodyReader)
+}
+
+// NewReplacePluginCapabilitiesRequestWithBody constructs an http.Request for the ReplacePluginCapabilities method, with any body, and a specified content type
+func NewReplacePluginCapabilitiesRequestWithBody(server string, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "orgId", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "pluginId", pluginId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orgs/%s/plugins/%s/capabilities", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListEnvironmentUsersRequest constructs an http.Request for the ListEnvironmentUsers method
 func NewListEnvironmentUsersRequest(server string, orgId OrgIdPathParam, projectId ProjectIdPathParam, envId EnvIdPathParam, params *ListEnvironmentUsersParams) (*http.Request, error) {
 	var err error
@@ -5638,6 +5814,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 	ListPermissionsWithResponse(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*ListPermissionsResponse, error)
+
+	// ReplacePluginCapabilitiesWithBodyWithResponse Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error)
+
+	// ReplacePluginCapabilitiesWithResponse Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error)
 
 	// ListEnvironmentUsersWithResponse List the users and service users that have access to this environment.
 	//
@@ -7236,6 +7430,54 @@ func (r ListPermissionsResponse) ContentType() string {
 	return ""
 }
 
+type ReplacePluginCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReplacePluginCapabilitiesResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReplacePluginCapabilitiesResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r ReplacePluginCapabilitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplacePluginCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplacePluginCapabilitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReplacePluginCapabilitiesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListEnvironmentUsersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8723,6 +8965,36 @@ func (c *ClientWithResponses) ListPermissionsWithResponse(ctx context.Context, o
 	return ParseListPermissionsResponse(rsp)
 }
 
+// ReplacePluginCapabilitiesWithBodyWithResponse Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *ClientWithResponses) ReplacePluginCapabilitiesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error) {
+	rsp, err := c.ReplacePluginCapabilitiesWithBody(ctx, orgId, pluginId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplacePluginCapabilitiesResponse(rsp)
+}
+
+// ReplacePluginCapabilitiesWithResponse Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *ClientWithResponses) ReplacePluginCapabilitiesWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error) {
+	rsp, err := c.ReplacePluginCapabilities(ctx, orgId, pluginId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplacePluginCapabilitiesResponse(rsp)
+}
+
 // ListEnvironmentUsersWithResponse List the users and service users that have access to this environment.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -10115,6 +10387,42 @@ func ParseListPermissionsResponse(rsp *http.Response) (*ListPermissionsResponse,
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplacePluginCapabilitiesResponse parses an HTTP response from a ReplacePluginCapabilitiesWithResponse call
+func ParseReplacePluginCapabilitiesResponse(rsp *http.Response) (*ReplacePluginCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplacePluginCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
