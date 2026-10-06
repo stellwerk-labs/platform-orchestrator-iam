@@ -67,6 +67,7 @@ const (
 	PermissionDeploymentRead           = "deployment_read"
 	PermissionDeploymentWrite          = "deployment_write"
 	PermissionDeploymentDebugRead      = "deployment_debug_read"
+	PermissionDeploymentOutcomeAck     = "deployment.outcome.acknowledge"
 	PermissionMetadataKeyRead          = "metadata_key_read"
 	PermissionMetadataKeyWrite         = "metadata_key_write"
 	PermissionResourceGraphRead        = "resource_graph_read"
@@ -141,6 +142,7 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionDeploymentRead, DisplayName: "View deployments", Description: "View deployments, logs, outputs, and calculated differences.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
 	{ID: PermissionDeploymentWrite, DisplayName: "Create deployments", Description: "Create deployments and wait for their completion.", Category: "Deployments", Level: PermissionLevelWrite, Scopes: allScopes},
 	{ID: PermissionDeploymentDebugRead, DisplayName: "View deployment debug data", Description: "View generated deployment infrastructure code.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionDeploymentOutcomeAck, DisplayName: "Acknowledge deployment outcomes", Description: "Record, with a reason, that a failed plugin-dispatched deployment left no running work so the environment can deploy again.", Category: "Deployments", Level: PermissionLevelManage, Scopes: allScopes},
 	{ID: PermissionMetadataKeyRead, DisplayName: "View metadata keys", Description: "View deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionMetadataKeyWrite, DisplayName: "Manage metadata keys", Description: "Create, update, and delete deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionResourceGraphRead, DisplayName: "View resource graphs", Description: "View resources produced by deployments.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},

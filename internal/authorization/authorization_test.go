@@ -150,6 +150,20 @@ func TestPluginPermissionMatchingPreservesExplicitGrantsAndCoreBoundary(t *testi
 	assertPermissionMatch(t, "plugin.dev.stellwerk.progressive-rollouts.rollout-override-pin", permission, false)
 }
 
+func TestDeploymentOutcomeAcknowledgementFollowsManageLevelGrants(t *testing.T) {
+	const permission = sharedauthz.PermissionDeploymentOutcomeAck
+	for _, grant := range []string{PermissionManageAll, PermissionManage, permission} {
+		assertPermissionMatch(t, permission, grant, true)
+	}
+	for _, grant := range []string{
+		PermissionWriteAll, PermissionReadAll, PermissionWrite, PermissionRead,
+		sharedauthz.PermissionDeploymentWrite, sharedauthz.PermissionDeploymentDebugRead,
+		"plugin.dev.stellwerk.progressive-rollouts.rollout-control",
+	} {
+		assertPermissionMatch(t, permission, grant, false)
+	}
+}
+
 func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
 	for _, permission := range sharedauthz.PermissionCatalog() {
 		t.Run(permission.ID, func(t *testing.T) {
