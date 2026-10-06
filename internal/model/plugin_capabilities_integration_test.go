@@ -59,11 +59,14 @@ func TestPluginCapabilitiesAreDurableAndUnregistrationInvalidatesThem(t *testing
 	_, err = db.ExecContext(ctx, `INSERT INTO authorization_resources (resource, resource_type, resource_id, org_id)
 		VALUES ('organization:' || $1, 'organization', $1, $1)`, orgID)
 	require.NoError(t, err)
+	check := AuthorizationPermissionCheck{Resource: "organization:" + orgID, Permission: capability.ID}
+	known, err := store.ListKnownAuthorizationPermissions(ctx, nil, []AuthorizationPermissionCheck{check})
+	require.NoError(t, err)
+	require.Equal(t, []AuthorizationPermissionCheck{check}, known, "registration must establish a capability before any role assigns it")
 	_, err = db.ExecContext(ctx, `INSERT INTO roles (id, org_id, display_name, created_at, permissions)
 		VALUES ($2, $1, 'Plugin role', now(), ARRAY[$3])`, orgID, uuid.New(), capability.ID)
 	require.NoError(t, err)
-	check := AuthorizationPermissionCheck{Resource: "organization:" + orgID, Permission: capability.ID}
-	known, err := store.ListKnownAuthorizationPermissions(ctx, nil, []AuthorizationPermissionCheck{check})
+	known, err = store.ListKnownAuthorizationPermissions(ctx, nil, []AuthorizationPermissionCheck{check})
 	require.NoError(t, err)
 	require.Equal(t, []AuthorizationPermissionCheck{check}, known)
 

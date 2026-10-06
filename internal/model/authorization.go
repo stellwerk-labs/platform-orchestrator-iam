@@ -159,15 +159,20 @@ func (d *databaser) ListKnownAuthorizationPermissions(ctx context.Context, optio
 		SELECT DISTINCT requested.resource, requested.permission
 		FROM requested
 		JOIN authorization_resources resources ON resources.resource = requested.resource
-		JOIN roles ON roles.org_id = resources.org_id
-		WHERE requested.permission = ANY(roles.permissions)
-		  AND (
-			requested.permission NOT LIKE 'plugin.%'
-			OR EXISTS (
+		WHERE (
+			requested.permission LIKE 'plugin.%'
+			AND EXISTS (
 				SELECT 1 FROM plugin_capabilities capability
 				WHERE capability.org_id = resources.org_id AND capability.id = requested.permission
+				  AND CASE resources.resource_type WHEN 'env' THEN 'environment' ELSE resources.resource_type END = ANY(capability.scopes)
 			)
-		  )
+		) OR (
+			requested.permission NOT LIKE 'plugin.%'
+			AND EXISTS (
+				SELECT 1 FROM roles
+				WHERE roles.org_id = resources.org_id AND requested.permission = ANY(roles.permissions)
+			)
+		)
 	`, pq.Array(resources), pq.Array(permissions))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list known authorization permissions")
