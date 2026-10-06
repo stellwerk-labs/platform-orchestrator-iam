@@ -609,7 +609,7 @@ type ReplaceUserMembershipsBody struct {
 
 // ResourcePermissionCheck defines model for ResourcePermissionCheck.
 type ResourcePermissionCheck struct {
-	// Permission The permission string.
+	// Permission The complete permission ID, including the namespace for a registered plugin capability. Accepting an ID does not grant it; current scope and registration are checked by the authorizer.
 	Permission string `json:"permission"`
 
 	// Resource The resource to check permissions on.

@@ -1766,10 +1766,11 @@ components:
           pattern: ^(organization|project|env):[a-zA-Z0-9/_|\-=+]+$
           x-pattern-error: 'resource must be organization:<id>, project:<id>, or env:<id> where id matches regex pattern: ^[a-zA-Z0-9/_|\-=+]+$'
         permission:
-          description: The permission string.
+          description: The complete permission ID, including the namespace for a registered plugin capability. Accepting an ID does not grant it; current scope and registration are checked by the authorizer.
           type: string
-          pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$
-          x-pattern-error: "permission must match regex pattern: ^[a-z][a-z0-9_.-]{1,62}[a-z0-9]$"
+          maxLength: 255
+          pattern: ^[a-z][a-z0-9_.-]{1,253}[a-z0-9]$
+          x-pattern-error: "permission must be a lowercase permission ID of 3 to 255 characters"
 
     ResourcePermissionCheckResult:
       type: object
