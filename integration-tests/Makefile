@@ -30,20 +30,32 @@ compose.yaml: ../score.yaml Makefile compose-mixins.yaml score.provisioners.yaml
 build: compose.yaml
 	docker compose build --pull
 
-.PHONY: test
-test: compose.yaml
+# Key/value DSN of the compose PostgreSQL. The PostgreSQL-backed tests create
+# an isolated schema per test inside it.
+DATABASE_URL = host=localhost port=5432 user=$(shell score-compose resources get-outputs postgres.default\#platform-orchestrator-iam.postgres | jq -r .username) password=$(shell score-compose resources get-outputs postgres.default\#platform-orchestrator-iam.postgres | jq -r .password) dbname=$(shell score-compose resources get-outputs postgres.default\#platform-orchestrator-iam.postgres | jq -r .name) sslmode=disable
+
+.PHONY: up
+up: compose.yaml
 	mkdir -p ./mock-emails
 	chmod 0777 ./mock-emails
 	docker compose up --no-build -d platform-orchestrator-cp-platform-orchestrator-cp platform-orchestrator-iam-platform-orchestrator-iam platform-orchestrator-iam-self-hosted --wait
+
+.PHONY: test
+test: up
 	SERVER_URL=http://$(shell score-compose resources get-outputs dns.default\#api-dns | jq -r .host):8080 \
 	INTERNAL_SERVER_URL=http://localhost:8081 \
 	INTERNAL_CP_URL=http://localhost:8082 \
 	TEST_USER_IDENTITY_RECIPIENT=age10hmkvsqfxr5ha05ay6pqj9zdtal7pw7x2r3t4n00rzucc3en3u9q3cycqm \
-	DATABASE_URL="host=localhost port=5432 user=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .username) password=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .password) dbname=$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' | jq -r .name) sslmode=disable" \
+	DATABASE_URL="$(DATABASE_URL)" \
 	DB_CONNECTION_STRING="$(shell score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' -f 'host=localhost port=5432 dbname={{ .name }} user={{ .username }} password={{ .password }} connect_timeout=5 sslmode=disable')" \
 	NATS_URL=nats://localhost:4222 \
 	SELF_HOSTED_IAM_URL=http://localhost:8083 \
 	go tool gotestsum --format testname ./ -test.timeout 10m -test.parallel=2 -test.v $(TESTARGS)
+
+# Package tests tagged integration in ../internal run against the compose PostgreSQL.
+.PHONY: test-postgres
+test-postgres: up
+	cd .. && DATABASE_URL="$(DATABASE_URL)" go tool gotestsum --format testname -- -tags integration -count=1 ./internal/api ./internal/model
 
 .PHONY: clean
 clean:

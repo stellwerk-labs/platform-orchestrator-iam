@@ -57,6 +57,12 @@ clean:
 .PHONY: test-integration
 test-integration: build
 	$(MAKE) -C integration-tests test
+	$(MAKE) -C integration-tests test-postgres
+
+## Run the PostgreSQL-backed package tests (build tag integration), starting docker compose containers if necessary
+.PHONY: test-integration-postgres
+test-integration-postgres: build
+	$(MAKE) -C integration-tests test-postgres
 
 ## Exercise the supported SpiceDB-to-Casbin database cutover and rollback
 .PHONY: test-authorization-upgrade
