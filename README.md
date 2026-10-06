@@ -33,10 +33,12 @@ make test-unit
 go vet ./...
 ```
 
-Run the integration suite and clean up its containers with:
+Run the integration suite and the PostgreSQL-backed package tests, then clean up
+their containers with:
 
 ```bash
 make test-integration
+make test-integration-postgres
 make clean
 ```
 

@@ -57,6 +57,7 @@ jobs:
       - candidate-preflight
       - test-unit
       - test-integration
+      - test-integration-postgres
       - test-authorization-upgrade
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -239,6 +240,50 @@ jobs:
         if: always()
         run: make clean
 
+  test-integration-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.ref }}
+
+      - name: Disable Docker containerd snapshotter
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"features": {"containerd-snapshotter": false}}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Setup Score Compose
+        uses: score-spec/setup-score@888a7deafd396c3f3f05e00d2d9b0ab225799ac0 # v3.2.4
+        with:
+          file: score-compose
+          version: 0.17.0
+
+      - name: Setup Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+
+      - name: Build integration environment
+        run: make build
+
+      - name: Run PostgreSQL integration tests
+        run: make test-integration-postgres
+
+      - name: Show integration logs
+        if: failure()
+        run: make test-integration-logs
+
+      - name: Clean integration environment
+        if: always()
+        run: make clean
+
   test-authorization-upgrade:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -263,6 +308,7 @@ jobs:
     needs:
       - test-unit
       - test-integration
+      - test-integration-postgres
       - test-authorization-upgrade
     runs-on: ubuntu-latest
     timeout-minutes: 30

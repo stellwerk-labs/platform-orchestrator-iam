@@ -57,7 +57,6 @@ clean:
 .PHONY: test-integration
 test-integration: build
 	$(MAKE) -C integration-tests test
-	$(MAKE) -C integration-tests test-postgres
 
 ## Run the PostgreSQL-backed package tests (build tag integration), starting docker compose containers if necessary
 .PHONY: test-integration-postgres
@@ -69,12 +68,13 @@ test-integration-postgres: build
 test-authorization-upgrade:
 	$(MAKE) -C integration-tests test-authorization-upgrade
 
-TEST_PACKAGES = $$(go list ./internal/... | grep -v -E "(mocks|generated)")
+TEST_PACKAGES = $$(go list ./internal/... ./cmd/... | grep -v -E "(mocks|generated)")
 
 ## Run golang tests
 .PHONY: test-unit
 test-unit:
 	go tool gotestsum --format testname -- -coverprofile=cover.out $(TEST_PACKAGES)
+	cd shared && GOWORK=off go test -count=1 ./...
 
 ## Generate coverage badge
 .PHONY: coverage-badge
