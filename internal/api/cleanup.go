@@ -36,6 +36,7 @@ func ScheduleExpiredDataCleanup(ctx context.Context, interval time.Duration, log
 func cleanupExpiredData(ctx context.Context, logger *zap.Logger, db model.Databaser) {
 	performCleanupWithSpan(ctx, logger, "background:cleanup-expired-session-tokens", "expired session tokens", db.DeleteExpiredSessionTokens)
 	performCleanupWithSpan(ctx, logger, "background:cleanup-expired-invitations", "expired invitations", db.DeleteExpiredInvitations)
+	performCleanupWithSpan(ctx, logger, "background:cleanup-expired-plugin-workload-tokens", "expired plugin workload tokens", db.DeleteExpiredPluginWorkloadTokens)
 }
 
 func performCleanupWithSpan(ctx context.Context, logger *zap.Logger, spanName, entityName string, deleteFunc func(context.Context, model.Tx) (int64, error)) {

@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/workloadidentity"
 )
 
 const (
@@ -59,6 +60,10 @@ var skipAuthenticationRegex = regexp.MustCompile(
 		`|(/scim/v2/orgs/[^/]+/ServiceProviderConfig)` +
 		`|(/scim/v2/orgs/[^/]+/Schemas(/[^/]+)?)` +
 		`|(/scim/v2/orgs/[^/]+/ResourceTypes(/[^/]+)?)` +
+
+		// The plugin workload token exchange authenticates its caller with the
+		// projected ServiceAccount token in the request body.
+		`|/auth/plugin-workload-token` +
 		`)$`,
 )
 
@@ -146,7 +151,7 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 	logger := hlogger.TraceScopedLoggerFromCtx(s.Logger, ctx).WithLazy(ids.AsLogField())
 
 	var tokenHashFromRequest [32]byte
-	var isServiceUserToken bool
+	var kind tokenKind
 	{
 		// Lookup the source of the token from either cookie or bearer token. We hash it immediately without letting
 		// the value leak into the rest of the function.
@@ -160,17 +165,12 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 			// to return any other errors or information.
 			return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer`)}, nil
 		}
-		isServiceUserToken = strings.HasPrefix(token, ServiceUserTokenPrefix)
-		rawToken, _ := DecodeSessionToken(strings.TrimPrefix(token, ServiceUserTokenPrefix))
-		tokenHashFromRequest = sha256.Sum256(rawToken)
+		kind, tokenHashFromRequest = classifyToken(token)
 	}
 	logger = logger.With(
-		zap.Bool("is_service_user_token", isServiceUserToken),
+		zap.String("token_kind", string(kind)),
 		zap.String("token_hash", base64.URLEncoding.EncodeToString(tokenHashFromRequest[:])),
 	)
-
-	// NOTE: in the future when we need to authenticate service user tokens, we should ensure they have a predictable
-	// prefix which indicates this use and allows us to skip immediately to that route.
 
 	// Attempt to record hit stats
 	defer func() {
@@ -181,7 +181,7 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 	}()
 
 	// Now we attempt to match the incoming token hash against a session token and do this through our caching layer
-	st, err := s.TokenByHashCache.GetTokenByHash(ctx, isServiceUserToken, tokenHashFromRequest[:])
+	st, err := s.TokenByHashCache.GetTokenByHash(ctx, kind, tokenHashFromRequest[:])
 	if err != nil {
 		logger.Error("failed to lookup token", zap.Error(err))
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
@@ -190,6 +190,9 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
 	} else if time.Now().After(st.ExpiresAt) {
 		logger.Debug("token expired")
+		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
+	} else if kind == tokenKindServiceUser && st.WorkloadBound && !s.PluginWorkloadStaticTokens {
+		logger.Info("rejected static token of a workload-bound service user", zap.Stringer("user_id", st.UserId))
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
 	}
 
@@ -218,6 +221,34 @@ type GetTokenByHashCache struct {
 type WrappedToken struct {
 	UserId    uuid.UUID
 	ExpiresAt time.Time
+	// WorkloadBound marks a service user that has a plugin workload binding.
+	WorkloadBound bool
+}
+
+// tokenKind selects the authoritative table and the caching rule of a credential.
+type tokenKind string
+
+const (
+	tokenKindSession        tokenKind = "session"
+	tokenKindServiceUser    tokenKind = "service-user"
+	tokenKindPluginWorkload tokenKind = "plugin-workload"
+)
+
+func classifyToken(token string) (tokenKind, [32]byte) {
+	switch {
+	case strings.HasPrefix(token, ServiceUserTokenPrefix):
+		raw, _ := DecodeSessionToken(strings.TrimPrefix(token, ServiceUserTokenPrefix))
+		return tokenKindServiceUser, sha256.Sum256(raw)
+	case strings.HasPrefix(token, workloadidentity.TokenPrefix):
+		var hash [32]byte
+		if parsed, ok := workloadidentity.HashToken(token); ok {
+			copy(hash[:], parsed)
+		}
+		return tokenKindPluginWorkload, hash
+	default:
+		raw, _ := DecodeSessionToken(token)
+		return tokenKindSession, sha256.Sum256(raw)
+	}
 }
 
 func NewGetTokenByHashCache(db model.Databaser) *GetTokenByHashCache {
@@ -228,26 +259,23 @@ func NewGetTokenByHashCache(db model.Databaser) *GetTokenByHashCache {
 	}
 }
 
-func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, isServiceUserToken bool, tokenHash []byte) (*WrappedToken, error) {
+func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, kind tokenKind, tokenHash []byte) (*WrappedToken, error) {
 	a.lookups.Add(1)
-	tokenKind := "session:"
-	if isServiceUserToken {
-		tokenKind = "service-user:"
-	}
-	cacheKey := tokenKind + hex.EncodeToString(tokenHash)
-
-	// A human session must stop authenticating as soon as its database row is
-	// deleted. Positive session caching made logout and SCIM deprovisioning
-	// continue to work for up to authenticationTokenCacheTTL, and a process-
-	// local eviction would still be unsafe with multiple IAM replicas. Keep
-	// negative entries to absorb random/expired-token traffic, but read every
-	// valid human session from the authoritative database.
-	//
 	// The token kind is part of the key deliberately. Service-user tokens use
 	// the same random payload with an SU- wire prefix; sharing a hash-only cache
 	// key let a warmed service-user entry authenticate the prefixless payload as
 	// a human session.
-	if !isServiceUserToken {
+	cacheKey := string(kind) + ":" + hex.EncodeToString(tokenHash)
+
+	// A human session must stop authenticating as soon as its database row is
+	// deleted. Positive session caching made logout and SCIM deprovisioning
+	// continue to work for up to authenticationTokenCacheTTL, and a process-
+	// local eviction would still be unsafe with multiple IAM replicas. Plugin
+	// workload tokens follow the same rule, so revoking a binding or disabling
+	// its service user rejects the next authentication. Keep negative entries to
+	// absorb random/expired-token traffic, but read every valid token of these
+	// kinds from the authoritative database.
+	if kind != tokenKindServiceUser {
 		if item := a.cache.Get(cacheKey); item != nil && !item.Expired() {
 			if item.Value().(*WrappedToken).UserId == uuid.Nil {
 				item.Extend(a.ttl)
@@ -256,16 +284,11 @@ func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, isServiceUserT
 		}
 
 		a.misses.Add(1)
-		st, err := a.inner.GetSessionTokenByHash(ctx, nil, tokenHash)
+		wrapped, err := a.lookupUncached(ctx, kind, tokenHash)
 		if err != nil {
-			if _, ok := model.IsErrNotFound(err); ok {
-				a.cache.Set(cacheKey, &WrappedToken{}, a.ttl)
-				return nil, nil
-			}
-			return nil, errors.Wrap(err, "failed to get session token")
+			return nil, err
 		}
-		wrapped := &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt}
-		if time.Now().After(wrapped.ExpiresAt) {
+		if wrapped == nil || time.Now().After(wrapped.ExpiresAt) {
 			a.cache.Set(cacheKey, &WrappedToken{}, a.ttl)
 		}
 		return wrapped, nil
@@ -281,7 +304,13 @@ func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, isServiceUserT
 			}
 			return nil, errors.Wrap(err, "failed to get service user token")
 		}
-		return &WrappedToken{UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt}, nil
+		// The binding flag is cached with the entry: a binding created later
+		// rejects this static token within authenticationTokenCacheTTL.
+		_, err = a.inner.GetPluginWorkloadBindingForServiceUser(ctx, nil, sut.Id)
+		if _, notFound := model.IsErrNotFound(err); err != nil && !notFound {
+			return nil, errors.Wrap(err, "failed to check plugin workload binding")
+		}
+		return &WrappedToken{UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt, WorkloadBound: err == nil}, nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch and cache token")
@@ -297,6 +326,25 @@ func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, isServiceUserT
 	} else {
 		return v, nil
 	}
+}
+
+func (a *GetTokenByHashCache) lookupUncached(ctx context.Context, kind tokenKind, tokenHash []byte) (*WrappedToken, error) {
+	if kind == tokenKindPluginWorkload {
+		token, err := a.inner.GetPluginWorkloadTokenByHash(ctx, nil, tokenHash)
+		if _, ok := model.IsErrNotFound(err); ok {
+			return nil, nil
+		} else if err != nil {
+			return nil, errors.Wrap(err, "failed to get plugin workload token")
+		}
+		return &WrappedToken{UserId: token.ServiceUserID, ExpiresAt: token.ExpiresAt}, nil
+	}
+	st, err := a.inner.GetSessionTokenByHash(ctx, nil, tokenHash)
+	if _, ok := model.IsErrNotFound(err); ok {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrap(err, "failed to get session token")
+	}
+	return &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt}, nil
 }
 
 // Stats will only return the stats if enough time has passed since the last request for them. This acts as a throttle

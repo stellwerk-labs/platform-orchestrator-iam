@@ -249,6 +249,13 @@ func (s *Server) RegenerateServiceUser(ctx context.Context, request RegenerateSe
 	} else if t.OrgId != request.OrgId {
 		return RegenerateServiceUser404JSONResponse{N404NotFoundJSONResponse: Generate404Response("service user not found")}, nil
 	}
+	if !s.PluginWorkloadStaticTokens {
+		if bound, err := s.isPluginWorkload(ctx, tx, t.Id); err != nil {
+			return nil, err
+		} else if bound {
+			return RegenerateServiceUser409JSONResponse{N409ConflictJSONResponse: Generate409Response("the service user is bound to a plugin workload and cannot hold a static token")}, nil
+		}
+	}
 
 	raw := RegenerateServiceUserToken(t, request.Body.ExpiryInDays)
 	t.GeneratedBy = uid

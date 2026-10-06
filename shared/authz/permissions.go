@@ -74,6 +74,12 @@ const (
 	PermissionProvisioningWrite        = "provisioning_write"
 )
 
+// PermissionPluginWorkloadBindingWrite is platform-level: it manages
+// ServiceAccount-to-service-user workload bindings across organizations. It
+// is granted by IAM configuration only, is not part of the permission
+// catalogue and cannot be assigned through organization roles.
+const PermissionPluginWorkloadBindingWrite = "plugin_workload_binding_write"
+
 type PermissionDefinition struct {
 	ID          string
 	DisplayName string

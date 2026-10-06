@@ -112,6 +112,66 @@ func (e PluginCapabilityRegistrationScopes) Valid() bool {
 	}
 }
 
+// Defines values for PluginWorkloadTokenExchangeRequestGrantType.
+const (
+	PluginWorkloadTokenExchangeGrantType PluginWorkloadTokenExchangeRequestGrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestGrantType enum.
+func (e PluginWorkloadTokenExchangeRequestGrantType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenExchangeGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeRequestSubjectTokenType.
+const (
+	PluginWorkloadSubjectTokenTypeJWT PluginWorkloadTokenExchangeRequestSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestSubjectTokenType enum.
+func (e PluginWorkloadTokenExchangeRequestSubjectTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadSubjectTokenTypeJWT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseIssuedTokenType.
+const (
+	PluginWorkloadIssuedTokenTypeAccessToken PluginWorkloadTokenExchangeResponseIssuedTokenType = "urn:ietf:params:oauth:token-type:access_token"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseIssuedTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseIssuedTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadIssuedTokenTypeAccessToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseTokenType.
+const (
+	PluginWorkloadTokenTypeBearer PluginWorkloadTokenExchangeResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubjectType.
 const (
 	SubjectTypeRole         SubjectType = "role"
@@ -562,6 +622,73 @@ type PluginCapabilityRegistrationBody struct {
 	Capabilities []PluginCapabilityRegistration `json:"capabilities"`
 }
 
+// PluginWorkloadBinding A Kubernetes ServiceAccount bound to the service user of a plugin installation.
+type PluginWorkloadBinding struct {
+	Audience       string             `json:"audience"`
+	CreatedAt      time.Time          `json:"created_at"`
+	CreatedBy      openapi_types.UUID `json:"created_by"`
+	Id             openapi_types.UUID `json:"id"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+	Issuer         string             `json:"issuer"`
+	Namespace      string             `json:"namespace"`
+	PluginId       string             `json:"plugin_id"`
+	ServiceAccount string             `json:"service_account"`
+	ServiceUserId  openapi_types.UUID `json:"service_user_id"`
+}
+
+// PluginWorkloadBindingCreateBody Binds one Kubernetes ServiceAccount of one cluster issuer to the service user of a plugin installation.
+type PluginWorkloadBindingCreateBody struct {
+	// Audience The exact and only audience the projected ServiceAccount token must carry.
+	Audience       string             `json:"audience"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+
+	// Issuer The cluster's ServiceAccount token issuer. Must equal the issuer configured in IAM.
+	Issuer         string `json:"issuer"`
+	Namespace      string `json:"namespace"`
+	PluginId       string `json:"plugin_id"`
+	ServiceAccount string `json:"service_account"`
+
+	// ServiceUserId The IAM service user that the plugin installation record names.
+	ServiceUserId openapi_types.UUID `json:"service_user_id"`
+}
+
+// PluginWorkloadBindingList All plugin workload bindings, oldest first.
+type PluginWorkloadBindingList struct {
+	Items []PluginWorkloadBinding `json:"items"`
+}
+
+// PluginWorkloadTokenExchangeRequest An RFC 8693 token exchange request. Only a Kubernetes ServiceAccount JWT is accepted as subject token.
+type PluginWorkloadTokenExchangeRequest struct {
+	GrantType PluginWorkloadTokenExchangeRequestGrantType `json:"grant_type"`
+
+	// SubjectToken The projected ServiceAccount token of the plugin workload.
+	SubjectToken     string                                             `json:"subject_token"`
+	SubjectTokenType PluginWorkloadTokenExchangeRequestSubjectTokenType `json:"subject_token_type"`
+}
+
+// PluginWorkloadTokenExchangeRequestGrantType defines model for PluginWorkloadTokenExchangeRequest.GrantType.
+type PluginWorkloadTokenExchangeRequestGrantType string
+
+// PluginWorkloadTokenExchangeRequestSubjectTokenType defines model for PluginWorkloadTokenExchangeRequest.SubjectTokenType.
+type PluginWorkloadTokenExchangeRequestSubjectTokenType string
+
+// PluginWorkloadTokenExchangeResponse An RFC 8693 token exchange response carrying an opaque plugin workload token.
+type PluginWorkloadTokenExchangeResponse struct {
+	// AccessToken The opaque plugin workload token. Present it as a Bearer token.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Lifetime of the issued token in seconds.
+	ExpiresIn       int                                                `json:"expires_in"`
+	IssuedTokenType PluginWorkloadTokenExchangeResponseIssuedTokenType `json:"issued_token_type"`
+	TokenType       PluginWorkloadTokenExchangeResponseTokenType       `json:"token_type"`
+}
+
+// PluginWorkloadTokenExchangeResponseIssuedTokenType defines model for PluginWorkloadTokenExchangeResponse.IssuedTokenType.
+type PluginWorkloadTokenExchangeResponseIssuedTokenType string
+
+// PluginWorkloadTokenExchangeResponseTokenType defines model for PluginWorkloadTokenExchangeResponse.TokenType.
+type PluginWorkloadTokenExchangeResponseTokenType string
+
 // RegisterUserBody A payload needed to register a user against an identity provider.
 type RegisterUserBody struct {
 	// Provider The login provider type.
@@ -982,6 +1109,9 @@ type PageTokenQueryParam = string
 // PerPageQueryParam defines model for perPageQueryParam.
 type PerPageQueryParam = int
 
+// PluginWorkloadBindingIdPathParam defines model for pluginWorkloadBindingIdPathParam.
+type PluginWorkloadBindingIdPathParam = openapi_types.UUID
+
 // ProjectIdPathParam defines model for projectIdPathParam.
 type ProjectIdPathParam = string
 
@@ -1224,6 +1354,9 @@ type RequestDeviceLoginJSONRequestBody = DeviceLoginCreateBody
 // LoginSessionJSONRequestBody defines body for LoginSession for application/json ContentType.
 type LoginSessionJSONRequestBody = LoginUserBody
 
+// ExchangePluginWorkloadTokenJSONRequestBody defines body for ExchangePluginWorkloadToken for application/json ContentType.
+type ExchangePluginWorkloadTokenJSONRequestBody = PluginWorkloadTokenExchangeRequest
+
 // RegisterUserJSONRequestBody defines body for RegisterUser for application/json ContentType.
 type RegisterUserJSONRequestBody = RegisterUserBody
 
@@ -1266,6 +1399,9 @@ type RegenerateServiceUserJSONRequestBody = ServiceUserRegenerateBody
 // ReplaceOrgUserMembershipsJSONRequestBody defines body for ReplaceOrgUserMemberships for application/json ContentType.
 type ReplaceOrgUserMembershipsJSONRequestBody = ReplaceUserMembershipsBody
 
+// CreatePluginWorkloadBindingJSONRequestBody defines body for CreatePluginWorkloadBinding for application/json ContentType.
+type CreatePluginWorkloadBindingJSONRequestBody = PluginWorkloadBindingCreateBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// CheckPermissions Bulkly check permissions for the current subject that is logged in. This works for both human users and service users.
@@ -1280,6 +1416,9 @@ type ServerInterface interface {
 	// LogoutSession Log out the current session token
 	// (POST /auth/logout)
 	LogoutSession(ctx echo.Context, params LogoutSessionParams) error
+	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	// (POST /auth/plugin-workload-token)
+	ExchangePluginWorkloadToken(ctx echo.Context) error
 	// RegisterUser Register a new user using a login provider and grant an initial session token in the cookie.
 	// (POST /auth/register)
 	RegisterUser(ctx echo.Context, params RegisterUserParams) error
@@ -1403,6 +1542,18 @@ type ServerInterface interface {
 	// ReplaceOrgUserMemberships Replace all memberships for a user in an organization
 	// (PUT /orgs/{orgId}/users/{userId}/memberships)
 	ReplaceOrgUserMemberships(ctx echo.Context, orgId OrgIdPathParam, userId UserIdPathParam) error
+	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+	// (GET /plugin-workload-bindings)
+	ListPluginWorkloadBindings(ctx echo.Context) error
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// (POST /plugin-workload-bindings)
+	CreatePluginWorkloadBinding(ctx echo.Context) error
+	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+	// (DELETE /plugin-workload-bindings/{bindingId})
+	DeletePluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error
+	// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+	// (GET /plugin-workload-bindings/{bindingId})
+	GetPluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error
 	// DismissPrompt Dismiss a prompt for the user
 	// (POST /users/{userId}/actions/dismiss-prompt)
 	DismissPrompt(ctx echo.Context, userId UserIdPathParam, params DismissPromptParams) error
@@ -1594,6 +1745,15 @@ func (w *ServerInterfaceWrapper) LogoutSession(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.LogoutSession(ctx, params)
+	return err
+}
+
+// ExchangePluginWorkloadToken converts echo context to params.
+func (w *ServerInterfaceWrapper) ExchangePluginWorkloadToken(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ExchangePluginWorkloadToken(ctx)
 	return err
 }
 
@@ -2725,6 +2885,64 @@ func (w *ServerInterfaceWrapper) ReplaceOrgUserMemberships(ctx echo.Context) err
 	return err
 }
 
+// ListPluginWorkloadBindings converts echo context to params.
+func (w *ServerInterfaceWrapper) ListPluginWorkloadBindings(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListPluginWorkloadBindings(ctx)
+	return err
+}
+
+// CreatePluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) CreatePluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreatePluginWorkloadBinding(ctx)
+	return err
+}
+
+// DeletePluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) DeletePluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId PluginWorkloadBindingIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", ctx.Param("bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter bindingId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeletePluginWorkloadBinding(ctx, bindingId)
+	return err
+}
+
+// GetPluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) GetPluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId PluginWorkloadBindingIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", ctx.Param("bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter bindingId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetPluginWorkloadBinding(ctx, bindingId)
+	return err
+}
+
 // DismissPrompt converts echo context to params.
 func (w *ServerInterfaceWrapper) DismissPrompt(ctx echo.Context) error {
 	var err error
@@ -2908,6 +3126,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/internal/orgs/:orgId/sso-configuration", wrapper.InternalGetSsoConfiguration, options.OperationMiddlewares["internalGetSsoConfiguration"]...)
 	router.PUT(options.BaseURL+"/internal/orgs/:orgId/sso-configuration", wrapper.InternalUpdateSsoConfiguration, options.OperationMiddlewares["internalUpdateSsoConfiguration"]...)
 	router.POST(options.BaseURL+"/auth/logout", wrapper.LogoutSession, options.OperationMiddlewares["logoutSession"]...)
+	router.POST(options.BaseURL+"/auth/plugin-workload-token", wrapper.ExchangePluginWorkloadToken, options.OperationMiddlewares["exchangePluginWorkloadToken"]...)
 	router.POST(options.BaseURL+"/auth/check-permissions", wrapper.CheckPermissions, options.OperationMiddlewares["checkPermissions"]...)
 	router.GET(options.BaseURL+"/users/:userId/memberships", wrapper.ListUserMemberships, options.OperationMiddlewares["listUserMemberships"]...)
 	router.GET(options.BaseURL+"/users/:userId/session-tokens", wrapper.ListUserSessionTokens, options.OperationMiddlewares["listUserSessionTokens"]...)
@@ -2937,6 +3156,10 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/orgs/:orgId/projects/:projectId/envs/:envId/users", wrapper.ListEnvironmentUsers, options.OperationMiddlewares["listEnvironmentUsers"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/permissions", wrapper.ListPermissions, options.OperationMiddlewares["listPermissions"]...)
 	router.PUT(options.BaseURL+"/orgs/:orgId/plugins/:pluginId/capabilities", wrapper.ReplacePluginCapabilities, options.OperationMiddlewares["replacePluginCapabilities"]...)
+	router.GET(options.BaseURL+"/plugin-workload-bindings", wrapper.ListPluginWorkloadBindings, options.OperationMiddlewares["listPluginWorkloadBindings"]...)
+	router.POST(options.BaseURL+"/plugin-workload-bindings", wrapper.CreatePluginWorkloadBinding, options.OperationMiddlewares["createPluginWorkloadBinding"]...)
+	router.DELETE(options.BaseURL+"/plugin-workload-bindings/:bindingId", wrapper.DeletePluginWorkloadBinding, options.OperationMiddlewares["deletePluginWorkloadBinding"]...)
+	router.GET(options.BaseURL+"/plugin-workload-bindings/:bindingId", wrapper.GetPluginWorkloadBinding, options.OperationMiddlewares["getPluginWorkloadBinding"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/roles", wrapper.ListRoles, options.OperationMiddlewares["listRoles"]...)
 	router.POST(options.BaseURL+"/orgs/:orgId/roles", wrapper.CreateRole, options.OperationMiddlewares["createRole"]...)
 	router.DELETE(options.BaseURL+"/orgs/:orgId/roles/:roleId", wrapper.DeleteRole, options.OperationMiddlewares["deleteRole"]...)
@@ -3150,6 +3373,78 @@ func (response LogoutSession204Response) VisitLogoutSessionResponse(w http.Respo
 	w.Header().Set("Set-Cookie", fmt.Sprint(response.Headers.SetCookie))
 	w.WriteHeader(204)
 	return nil
+}
+
+type ExchangePluginWorkloadTokenRequestObject struct {
+	Body *ExchangePluginWorkloadTokenJSONRequestBody
+}
+
+type ExchangePluginWorkloadTokenResponseObject interface {
+	VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error
+}
+
+type ExchangePluginWorkloadToken200ResponseHeaders struct {
+	CacheControl string
+}
+
+type ExchangePluginWorkloadToken200JSONResponse struct {
+	Body    PluginWorkloadTokenExchangeResponse
+	Headers ExchangePluginWorkloadToken200ResponseHeaders
+}
+
+func (response ExchangePluginWorkloadToken200JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response ExchangePluginWorkloadToken400JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response ExchangePluginWorkloadToken404JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken503JSONResponse Error
+
+func (response ExchangePluginWorkloadToken503JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type RegisterUserRequestObject struct {
@@ -4820,6 +5115,20 @@ func (response RegenerateServiceUser404JSONResponse) VisitRegenerateServiceUserR
 	return err
 }
 
+type RegenerateServiceUser409JSONResponse struct{ N409ConflictJSONResponse }
+
+func (response RegenerateServiceUser409JSONResponse) VisitRegenerateServiceUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReplaceOrgUserMembershipsRequestObject struct {
 	OrgId  OrgIdPathParam  `json:"orgId"`
 	UserId UserIdPathParam `json:"userId"`
@@ -4882,6 +5191,199 @@ func (response ReplaceOrgUserMemberships409JSONResponse) VisitReplaceOrgUserMemb
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginWorkloadBindingsRequestObject struct {
+}
+
+type ListPluginWorkloadBindingsResponseObject interface {
+	VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error
+}
+
+type ListPluginWorkloadBindings200JSONResponse PluginWorkloadBindingList
+
+func (response ListPluginWorkloadBindings200JSONResponse) VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginWorkloadBindings403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response ListPluginWorkloadBindings403JSONResponse) VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBindingRequestObject struct {
+	Body *CreatePluginWorkloadBindingJSONRequestBody
+}
+
+type CreatePluginWorkloadBindingResponseObject interface {
+	VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type CreatePluginWorkloadBinding201JSONResponse PluginWorkloadBinding
+
+func (response CreatePluginWorkloadBinding201JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response CreatePluginWorkloadBinding400JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response CreatePluginWorkloadBinding403JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding409JSONResponse struct{ N409ConflictJSONResponse }
+
+func (response CreatePluginWorkloadBinding409JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePluginWorkloadBindingRequestObject struct {
+	BindingId PluginWorkloadBindingIdPathParam `json:"bindingId"`
+}
+
+type DeletePluginWorkloadBindingResponseObject interface {
+	VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type DeletePluginWorkloadBinding204Response struct {
+}
+
+func (response DeletePluginWorkloadBinding204Response) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response DeletePluginWorkloadBinding403JSONResponse) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePluginWorkloadBinding404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response DeletePluginWorkloadBinding404JSONResponse) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBindingRequestObject struct {
+	BindingId PluginWorkloadBindingIdPathParam `json:"bindingId"`
+}
+
+type GetPluginWorkloadBindingResponseObject interface {
+	VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type GetPluginWorkloadBinding200JSONResponse PluginWorkloadBinding
+
+func (response GetPluginWorkloadBinding200JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response GetPluginWorkloadBinding403JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBinding404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response GetPluginWorkloadBinding404JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5036,6 +5538,9 @@ type StrictServerInterface interface {
 	// LogoutSession Log out the current session token
 	// (POST /auth/logout)
 	LogoutSession(ctx context.Context, request LogoutSessionRequestObject) (LogoutSessionResponseObject, error)
+	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	// (POST /auth/plugin-workload-token)
+	ExchangePluginWorkloadToken(ctx context.Context, request ExchangePluginWorkloadTokenRequestObject) (ExchangePluginWorkloadTokenResponseObject, error)
 	// RegisterUser Register a new user using a login provider and grant an initial session token in the cookie.
 	// (POST /auth/register)
 	RegisterUser(ctx context.Context, request RegisterUserRequestObject) (RegisterUserResponseObject, error)
@@ -5159,6 +5664,18 @@ type StrictServerInterface interface {
 	// ReplaceOrgUserMemberships Replace all memberships for a user in an organization
 	// (PUT /orgs/{orgId}/users/{userId}/memberships)
 	ReplaceOrgUserMemberships(ctx context.Context, request ReplaceOrgUserMembershipsRequestObject) (ReplaceOrgUserMembershipsResponseObject, error)
+	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+	// (GET /plugin-workload-bindings)
+	ListPluginWorkloadBindings(ctx context.Context, request ListPluginWorkloadBindingsRequestObject) (ListPluginWorkloadBindingsResponseObject, error)
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// (POST /plugin-workload-bindings)
+	CreatePluginWorkloadBinding(ctx context.Context, request CreatePluginWorkloadBindingRequestObject) (CreatePluginWorkloadBindingResponseObject, error)
+	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+	// (DELETE /plugin-workload-bindings/{bindingId})
+	DeletePluginWorkloadBinding(ctx context.Context, request DeletePluginWorkloadBindingRequestObject) (DeletePluginWorkloadBindingResponseObject, error)
+	// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+	// (GET /plugin-workload-bindings/{bindingId})
+	GetPluginWorkloadBinding(ctx context.Context, request GetPluginWorkloadBindingRequestObject) (GetPluginWorkloadBindingResponseObject, error)
 	// DismissPrompt Dismiss a prompt for the user
 	// (POST /users/{userId}/actions/dismiss-prompt)
 	DismissPrompt(ctx context.Context, request DismissPromptRequestObject) (DismissPromptResponseObject, error)
@@ -5331,6 +5848,45 @@ func (sh *strictHandler) LogoutSession(ctx echo.Context, params LogoutSessionPar
 		return err
 	} else if validResponse, ok := response.(LogoutSessionResponseObject); ok {
 		return validResponse.VisitLogoutSessionResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// ExchangePluginWorkloadToken operation middleware
+func (sh *strictHandler) ExchangePluginWorkloadToken(ctx echo.Context) error {
+	var request ExchangePluginWorkloadTokenRequestObject
+
+	var body ExchangePluginWorkloadTokenJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ExchangePluginWorkloadToken(ctx.Request().Context(), request.(ExchangePluginWorkloadTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExchangePluginWorkloadToken")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ExchangePluginWorkloadTokenResponseObject); ok {
+		return validResponse.VisitExchangePluginWorkloadTokenResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
@@ -6637,6 +7193,118 @@ func (sh *strictHandler) ReplaceOrgUserMemberships(ctx echo.Context, orgId OrgId
 	return nil
 }
 
+// ListPluginWorkloadBindings operation middleware
+func (sh *strictHandler) ListPluginWorkloadBindings(ctx echo.Context) error {
+	var request ListPluginWorkloadBindingsRequestObject
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPluginWorkloadBindings(ctx.Request().Context(), request.(ListPluginWorkloadBindingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPluginWorkloadBindings")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ListPluginWorkloadBindingsResponseObject); ok {
+		return validResponse.VisitListPluginWorkloadBindingsResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// CreatePluginWorkloadBinding operation middleware
+func (sh *strictHandler) CreatePluginWorkloadBinding(ctx echo.Context) error {
+	var request CreatePluginWorkloadBindingRequestObject
+
+	var body CreatePluginWorkloadBindingJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePluginWorkloadBinding(ctx.Request().Context(), request.(CreatePluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(CreatePluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitCreatePluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// DeletePluginWorkloadBinding operation middleware
+func (sh *strictHandler) DeletePluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error {
+	var request DeletePluginWorkloadBindingRequestObject
+
+	request.BindingId = bindingId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePluginWorkloadBinding(ctx.Request().Context(), request.(DeletePluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(DeletePluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitDeletePluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// GetPluginWorkloadBinding operation middleware
+func (sh *strictHandler) GetPluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error {
+	var request GetPluginWorkloadBindingRequestObject
+
+	request.BindingId = bindingId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPluginWorkloadBinding(ctx.Request().Context(), request.(GetPluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(GetPluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitGetPluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
 // DismissPrompt operation middleware
 func (sh *strictHandler) DismissPrompt(ctx echo.Context, userId UserIdPathParam, params DismissPromptParams) error {
 	var request DismissPromptRequestObject
@@ -6746,158 +7414,183 @@ func (sh *strictHandler) RevokeUserSessionToken(ctx echo.Context, userId UserIdP
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"//8=",
+	"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",
+	"fevv7v4vAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

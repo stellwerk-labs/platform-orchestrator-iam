@@ -128,6 +128,17 @@ type Databaser interface {
 	DeleteServiceUserToken(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	BulkExpireAllServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) (int64, error)
 	IsAuthorizationSubjectActive(ctx context.Context, optionalTx Tx, subjectID uuid.UUID) (bool, error)
+	DisableServiceUserStaticToken(ctx context.Context, optionalTx Tx, serviceUserID uuid.UUID) error
+
+	CreatePluginWorkloadBinding(ctx context.Context, optionalTx Tx, binding PluginWorkloadBinding) (*PluginWorkloadBinding, error)
+	GetPluginWorkloadBinding(ctx context.Context, optionalTx Tx, id uuid.UUID) (*PluginWorkloadBinding, error)
+	GetPluginWorkloadBindingForServiceAccount(ctx context.Context, optionalTx Tx, issuer, namespace, serviceAccount string) (*PluginWorkloadBinding, error)
+	GetPluginWorkloadBindingForServiceUser(ctx context.Context, optionalTx Tx, serviceUserID uuid.UUID) (*PluginWorkloadBinding, error)
+	ListPluginWorkloadBindings(ctx context.Context, optionalTx Tx) ([]PluginWorkloadBinding, error)
+	DeletePluginWorkloadBinding(ctx context.Context, optionalTx Tx, id uuid.UUID) error
+	CreatePluginWorkloadToken(ctx context.Context, optionalTx Tx, token PluginWorkloadToken) error
+	GetPluginWorkloadTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*PluginWorkloadToken, error)
+	DeleteExpiredPluginWorkloadTokens(ctx context.Context, optionalTx Tx) (int64, error)
 
 	CreateInvitation(ctx context.Context, optionalTx Tx, request *Invitation) (*Invitation, error)
 	GetInvitation(ctx context.Context, optionalTx Tx, id uuid.UUID) (*Invitation, error)

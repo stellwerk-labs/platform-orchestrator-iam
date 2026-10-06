@@ -24,6 +24,7 @@ func Test_cleanupExpiredData_Success(t *testing.T) {
 
 	db.EXPECT().DeleteExpiredSessionTokens(gomock.Any(), nil).Return(int64(5), nil)
 	db.EXPECT().DeleteExpiredInvitations(gomock.Any(), nil).Return(int64(3), nil)
+	db.EXPECT().DeleteExpiredPluginWorkloadTokens(gomock.Any(), nil).Return(int64(7), nil)
 
 	cleanupExpiredData(ctx, logger, db)
 }
@@ -38,6 +39,7 @@ func Test_cleanupExpiredData_NothingToDelete(t *testing.T) {
 
 	db.EXPECT().DeleteExpiredSessionTokens(gomock.Any(), nil).Return(int64(0), nil)
 	db.EXPECT().DeleteExpiredInvitations(gomock.Any(), nil).Return(int64(0), nil)
+	db.EXPECT().DeleteExpiredPluginWorkloadTokens(gomock.Any(), nil).Return(int64(0), nil)
 
 	cleanupExpiredData(ctx, logger, db)
 }
@@ -52,9 +54,11 @@ func Test_cleanupExpiredData_BothErrors(t *testing.T) {
 
 	expectedErr1 := errors.New("session token error")
 	expectedErr2 := errors.New("invitation error")
+	expectedErr3 := errors.New("plugin workload token error")
 
 	db.EXPECT().DeleteExpiredSessionTokens(gomock.Any(), nil).Return(int64(0), expectedErr1)
 	db.EXPECT().DeleteExpiredInvitations(gomock.Any(), nil).Return(int64(0), expectedErr2)
+	db.EXPECT().DeleteExpiredPluginWorkloadTokens(gomock.Any(), nil).Return(int64(0), expectedErr3)
 
 	cleanupExpiredData(ctx, logger, db)
 }
@@ -78,6 +82,7 @@ func TestScheduleExpiredDataCleanup_RunsMultipleTimes(t *testing.T) {
 	}).MinTimes(2)
 
 	db.EXPECT().DeleteExpiredInvitations(gomock.Any(), nil).Return(int64(0), nil).MinTimes(2)
+	db.EXPECT().DeleteExpiredPluginWorkloadTokens(gomock.Any(), nil).Return(int64(0), nil).MinTimes(2)
 
 	errChan := make(chan error, 1)
 	go func() {

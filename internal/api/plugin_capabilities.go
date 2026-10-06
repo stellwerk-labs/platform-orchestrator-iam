@@ -16,6 +16,13 @@ func (s *Server) ReplacePluginCapabilities(ctx context.Context, request ReplaceP
 	if err := s.checkOrgAuthorization(ctx, userID, request.OrgId, sharedauthz.PermissionPluginRegistrationWrite); err != nil {
 		return nil, err
 	}
+	// Operators keep their authority over every plugin. A plugin workload may
+	// only register capabilities in the namespace of its own binding.
+	if binding, err := s.pluginWorkloadBinding(ctx, nil, userID); err != nil {
+		return nil, err
+	} else if binding != nil && binding.PluginID != request.PluginId {
+		return ReplacePluginCapabilities403JSONResponse{Generate403Response("a plugin workload can only register capabilities for its own plugin")}, nil
+	}
 	if request.Body == nil {
 		return ReplacePluginCapabilities400JSONResponse{Generate400Response("request body is required")}, nil
 	}

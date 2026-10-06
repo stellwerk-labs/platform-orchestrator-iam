@@ -367,6 +367,62 @@
         }
       }
     },
+    "/auth/plugin-workload-token": {
+      "post": {
+        "tags": [
+          "PluginWorkload"
+        ],
+        "operationId": "exchangePluginWorkloadToken",
+        "summary": "Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).",
+        "description": "RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginWorkloadTokenExchangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plugin workload token issued.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always no-store.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWorkloadTokenExchangeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "503": {
+            "description": "The verification keys of the configured issuer are temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/check-permissions": {
       "post": {
         "tags": [
@@ -1095,6 +1151,9 @@
           },
           "404": {
             "$ref": "#/components/responses/404NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/409Conflict"
           }
         }
       }
@@ -1459,6 +1518,127 @@
           },
           "403": {
             "$ref": "#/components/responses/403Forbidden"
+          }
+        }
+      }
+    },
+    "/plugin-workload-bindings": {
+      "get": {
+        "tags": [
+          "PluginWorkload"
+        ],
+        "operationId": "listPluginWorkloadBindings",
+        "summary": "List plugin workload bindings (v1alpha).",
+        "description": "Requires the platform-level permission plugin_workload_binding_write.",
+        "responses": {
+          "200": {
+            "description": "All plugin workload bindings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWorkloadBindingList"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "PluginWorkload"
+        ],
+        "operationId": "createPluginWorkloadBinding",
+        "summary": "Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).",
+        "description": "Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginWorkloadBindingCreateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Plugin workload binding created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWorkloadBinding"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/409Conflict"
+          }
+        }
+      }
+    },
+    "/plugin-workload-bindings/{bindingId}": {
+      "get": {
+        "tags": [
+          "PluginWorkload"
+        ],
+        "operationId": "getPluginWorkloadBinding",
+        "summary": "Get a plugin workload binding (v1alpha).",
+        "description": "Requires the platform-level permission plugin_workload_binding_write.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/pluginWorkloadBindingIdPathParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin workload binding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWorkloadBinding"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "PluginWorkload"
+        ],
+        "operationId": "deletePluginWorkloadBinding",
+        "summary": "Revoke a plugin workload binding (v1alpha).",
+        "description": "Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The service user's static token stays disabled.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/pluginWorkloadBindingIdPathParam"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Plugin workload binding revoked."
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
           }
         }
       }
@@ -1962,6 +2142,17 @@
         "name": "userId",
         "in": "path",
         "description": "The User ID",
+        "example": "01234567-89ab-cdef-0123-456789abcdef",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "pluginWorkloadBindingIdPathParam": {
+        "name": "bindingId",
+        "in": "path",
+        "description": "The plugin workload binding ID",
         "example": "01234567-89ab-cdef-0123-456789abcdef",
         "required": true,
         "schema": {
@@ -3370,6 +3561,203 @@
                 "PluginCapabilityRegistrationScopesProject",
                 "PluginCapabilityRegistrationScopesEnvironment"
               ]
+            }
+          }
+        }
+      },
+      "PluginWorkloadTokenExchangeRequest": {
+        "description": "An RFC 8693 token exchange request. Only a Kubernetes ServiceAccount JWT is accepted as subject token.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "grant_type",
+          "subject_token",
+          "subject_token_type"
+        ],
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "enum": [
+              "urn:ietf:params:oauth:grant-type:token-exchange"
+            ],
+            "x-enum-varnames": [
+              "PluginWorkloadTokenExchangeGrantType"
+            ]
+          },
+          "subject_token": {
+            "description": "The projected ServiceAccount token of the plugin workload.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "subject_token_type": {
+            "type": "string",
+            "enum": [
+              "urn:ietf:params:oauth:token-type:jwt"
+            ],
+            "x-enum-varnames": [
+              "PluginWorkloadSubjectTokenTypeJWT"
+            ]
+          }
+        }
+      },
+      "PluginWorkloadTokenExchangeResponse": {
+        "description": "An RFC 8693 token exchange response carrying an opaque plugin workload token.",
+        "type": "object",
+        "required": [
+          "access_token",
+          "issued_token_type",
+          "token_type",
+          "expires_in"
+        ],
+        "properties": {
+          "access_token": {
+            "description": "The opaque plugin workload token. Present it as a Bearer token.",
+            "type": "string"
+          },
+          "issued_token_type": {
+            "type": "string",
+            "enum": [
+              "urn:ietf:params:oauth:token-type:access_token"
+            ],
+            "x-enum-varnames": [
+              "PluginWorkloadIssuedTokenTypeAccessToken"
+            ]
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ],
+            "x-enum-varnames": [
+              "PluginWorkloadTokenTypeBearer"
+            ]
+          },
+          "expires_in": {
+            "description": "Lifetime of the issued token in seconds.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900
+          }
+        }
+      },
+      "PluginWorkloadBindingCreateBody": {
+        "description": "Binds one Kubernetes ServiceAccount of one cluster issuer to the service user of a plugin installation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "namespace",
+          "service_account",
+          "audience",
+          "service_user_id",
+          "plugin_id",
+          "installation_id"
+        ],
+        "properties": {
+          "issuer": {
+            "description": "The cluster's ServiceAccount token issuer. Must equal the issuer configured in IAM.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          },
+          "service_account": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          },
+          "audience": {
+            "description": "The exact and only audience the projected ServiceAccount token must carry.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^[!-~]+$"
+          },
+          "service_user_id": {
+            "description": "The IAM service user that the plugin installation record names.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])$"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginWorkloadBinding": {
+        "description": "A Kubernetes ServiceAccount bound to the service user of a plugin installation.",
+        "type": "object",
+        "required": [
+          "id",
+          "issuer",
+          "namespace",
+          "service_account",
+          "audience",
+          "service_user_id",
+          "plugin_id",
+          "installation_id",
+          "created_at",
+          "created_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "service_account": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "service_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plugin_id": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginWorkloadBindingList": {
+        "description": "All plugin workload bindings, oldest first.",
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginWorkloadBinding"
             }
           }
         }

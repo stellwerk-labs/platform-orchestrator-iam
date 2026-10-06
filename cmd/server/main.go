@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/lib/pq"
 	"github.com/nats-io/nats.go"
@@ -27,6 +28,7 @@ import (
 	"github.com/stellwerk-labs/golib/hstandardoutbox"
 	htelemetry "github.com/stellwerk-labs/golib/htelemetry"
 	cpclient "github.com/stellwerk-labs/platform-orchestrator-cp/shared/genclient"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 	"github.com/workos/workos-go/v6/pkg/sso"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -43,6 +45,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ref"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/worker"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/workloadidentity"
 )
 
 const (
@@ -315,6 +318,17 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 		zap.L().Fatal("plugin capability registration requires a synchronous authorization policy reloader")
 	}
 	server.PluginCapabilities = &plugincapabilities.Registry{Database: deps.DB, Reloader: policyReloader}
+	server.PlatformPermissionHolders = map[string][]uuid.UUID{
+		sharedauthz.PermissionPluginWorkloadBindingWrite: parsePrincipals(cfg.PluginWorkloadBindingWriters),
+	}
+	if cfg.PluginWorkloadTokenIssuer != "" {
+		server.PluginWorkloadExchange = newPluginWorkloadExchange(cfg)
+	}
+	if cfg.PluginWorkloadStaticTokenAdapter != "" {
+		server.PluginWorkloadStaticTokens = true
+		zap.L().Warn("transitional static-token adapter enabled: workload-bound service users keep static tokens",
+			zap.String("adapter_version", cfg.PluginWorkloadStaticTokenAdapter))
+	}
 	if cfg.SuperUserToken != "" {
 		h := sha256.Sum256([]byte(cfg.SuperUserToken))
 		server.SuperUserTokenHash = h[:]
@@ -359,6 +373,50 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 				zap.L().Info("webserver shutdown")
 			}
 		},
+	}
+}
+
+func parsePrincipals(values []string) []uuid.UUID {
+	principals := make([]uuid.UUID, len(values))
+	for index, value := range values {
+		principal, err := uuid.Parse(value)
+		if err != nil {
+			zap.L().Fatal("invalid platform permission principal", zap.String("principal", value), zap.Error(err))
+		}
+		principals[index] = principal
+	}
+	return principals
+}
+
+func newPluginWorkloadExchange(cfg *config.Configuration) *api.PluginWorkloadExchange {
+	source, err := workloadidentity.NewKeySource(workloadidentity.KeySourceConfig{
+		File:            cfg.PluginWorkloadJWKSFile,
+		URL:             cfg.PluginWorkloadJWKSURL,
+		CAFile:          cfg.PluginWorkloadJWKSCAFile,
+		BearerTokenFile: cfg.PluginWorkloadJWKSTokenFile,
+	})
+	if err != nil {
+		zap.L().Fatal("failed to configure plugin workload token verification keys", zap.Error(err))
+	}
+	keys := workloadidentity.NewKeySet(source, zap.L().Named("plugin-workload-keys"), time.Now)
+	// Core keeps serving when the issuer is briefly unreachable; the exchange
+	// answers 503 until the keys load.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := keys.Ready(ctx); err != nil {
+		zap.L().Warn("plugin workload token verification keys are not available yet", zap.Error(err))
+	}
+	keySource := cfg.PluginWorkloadJWKSURL
+	if cfg.PluginWorkloadJWKSFile != "" {
+		keySource = cfg.PluginWorkloadJWKSFile
+	}
+	zap.L().Info("plugin workload token exchange enabled",
+		zap.String("issuer", cfg.PluginWorkloadTokenIssuer), zap.String("key_source", keySource),
+		zap.Duration("token_ttl", cfg.PluginWorkloadTokenTTL))
+	return &api.PluginWorkloadExchange{
+		Issuer:   cfg.PluginWorkloadTokenIssuer,
+		Verifier: workloadidentity.NewVerifier(cfg.PluginWorkloadTokenIssuer, keys, time.Now),
+		TokenTTL: cfg.PluginWorkloadTokenTTL,
 	}
 }
 

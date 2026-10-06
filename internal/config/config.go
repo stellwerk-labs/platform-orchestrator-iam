@@ -69,4 +69,24 @@ type Configuration struct {
 
 	// SuperUserToken enables the global super user identity when set. The token is compared via sha256 hash.
 	SuperUserToken string `env:"SUPER_USER_TOKEN"`
+
+	// PluginWorkloadTokenIssuer enables the v1alpha plugin workload token
+	// exchange for projected ServiceAccount tokens of this cluster issuer.
+	// Without it the exchange answers 404 and no workload binding can be created.
+	PluginWorkloadTokenIssuer string `env:"PLUGIN_WORKLOAD_TOKEN_ISSUER" validate:"omitempty,url"`
+	// PluginWorkloadJWKSFile is an operator-supplied JWKS used instead of the
+	// URL, for clusters where IAM cannot reach the API server.
+	PluginWorkloadJWKSFile      string `env:"PLUGIN_WORKLOAD_JWKS_FILE"`
+	PluginWorkloadJWKSURL       string `env:"PLUGIN_WORKLOAD_JWKS_URL, default=https://kubernetes.default.svc/openid/v1/jwks" validate:"omitempty,url"`
+	PluginWorkloadJWKSCAFile    string `env:"PLUGIN_WORKLOAD_JWKS_CA_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"`
+	PluginWorkloadJWKSTokenFile string `env:"PLUGIN_WORKLOAD_JWKS_TOKEN_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/token"`
+	// PluginWorkloadTokenTTL is the lifetime of issued workload tokens, never
+	// longer than the subject token's remaining lifetime.
+	PluginWorkloadTokenTTL time.Duration `env:"PLUGIN_WORKLOAD_TOKEN_TTL, default=15m" validate:"min=1m,max=15m"`
+	// PluginWorkloadBindingWriters are the principals holding the platform-level
+	// plugin_workload_binding_write permission, typically the installation controller.
+	PluginWorkloadBindingWriters []string `env:"PLUGIN_WORKLOAD_BINDING_WRITERS" validate:"dive,uuid"`
+	// PluginWorkloadStaticTokenAdapter names the transitional adapter version
+	// that keeps static tokens of workload-bound service users usable. Off when empty.
+	PluginWorkloadStaticTokenAdapter string `env:"PLUGIN_WORKLOAD_STATIC_TOKEN_ADAPTER" validate:"omitempty,oneof=v1alpha"`
 }

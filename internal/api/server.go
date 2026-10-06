@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	strictecho "github.com/oapi-codegen/runtime/strictmiddleware/echo"
 	"go.uber.org/zap"
@@ -51,6 +52,15 @@ type Server struct {
 	Authorizer         authorization.Authorizer
 	Publisher          hmessaging.Publisher
 	PluginCapabilities PluginCapabilityRegistry
+
+	// PluginWorkloadExchange is the v1alpha workload token exchange; nil disables it.
+	PluginWorkloadExchange *PluginWorkloadExchange
+	// PluginWorkloadStaticTokens enables the transitional v1alpha adapter that
+	// keeps static tokens usable for workload-bound service users.
+	PluginWorkloadStaticTokens bool
+	// PlatformPermissionHolders lists, per platform-level permission, the
+	// principals that hold it. Organization roles never grant these.
+	PlatformPermissionHolders map[string][]uuid.UUID
 
 	SuperUserTokenHash []byte
 }

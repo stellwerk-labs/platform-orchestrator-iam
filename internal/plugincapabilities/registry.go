@@ -65,8 +65,14 @@ func (r Registry) Replace(ctx context.Context, orgID, pluginID string, definitio
 	return errors.Wrap(r.Reloader.ReloadPolicy(), "failed to reload plugin capability policy")
 }
 
+// ValidPluginID reports whether id has the immutable plugin ID shape that
+// capability namespaces and workload bindings are keyed by.
+func ValidPluginID(id string) bool {
+	return pluginIDPattern.MatchString(id) && !strings.Contains(id, "..")
+}
+
 func validate(orgID, pluginID string, definitions []Definition) ([]model.PluginCapability, error) {
-	if orgID == "" || !pluginIDPattern.MatchString(pluginID) || strings.Contains(pluginID, "..") {
+	if orgID == "" || !ValidPluginID(pluginID) {
 		return nil, errors.Wrap(ErrInvalidDefinition, "invalid organization or plugin identity")
 	}
 	seen := make(map[string]struct{}, len(definitions))
