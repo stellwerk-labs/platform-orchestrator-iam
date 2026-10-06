@@ -57,11 +57,11 @@ func (d *databaser) GetServiceUserToken(ctx context.Context, optionalTx Tx, id u
 			sut.generated_by, 
 			sut.current_token_expires_at,
 			sut.current_token_sha256_hash,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id
 				)
-			) FILTER (WHERE sur.role_id IS NOT NULL) as roles
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id
 		WHERE sut.id = $1
@@ -93,11 +93,11 @@ func (d *databaser) GetServiceUserTokenByHash(ctx context.Context, optionalTx Tx
 			sut.generated_at,
 			sut.generated_by,
 			sut.current_token_expires_at,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id
 				)
-			) as roles 
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id 
 		WHERE sut.current_token_sha256_hash = $1
@@ -151,12 +151,12 @@ func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, pa
 			sut.generated_by,
 			sut.current_token_expires_at,
 			sut.current_token_sha256_hash,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id,
 					'scope', sur.scope
 				)
-			) as roles 
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id 
 		WHERE sut.org_id = $1
