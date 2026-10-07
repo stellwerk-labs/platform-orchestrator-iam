@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -239,4 +240,43 @@ func TestPluginWorkloadRoutesEnforceAuthenticationAndPlatformPermission(t *testi
 	response = serve(http.MethodPost, "/auth/plugin-workload-token", "", exchangeBody+`x","audience":"other"}`)
 	require.Equal(t, http.StatusBadRequest, response.Code, "unknown RFC 8693 parameters are rejected by the contract")
 	require.NotContains(t, response.Body.String(), invalidGrantErrorCode)
+}
+
+func TestInternalPlatformRoutesHonourTheirContract(t *testing.T) {
+	// No Database: every request below is decided before any lookup.
+	server := &Server{Logger: zaptest.NewLogger(t), PlatformPermissionHolders: map[string][]uuid.UUID{}}
+	echoServer, err := hecho.DefaultEchoServerWithValidation(&hecho.ValidatedServerConfig{
+		AppName: "test", Logger: zaptest.NewLogger(t), OpenAPIRawSchema: MustDecodeOpenApiSpec(), OpenAPISkipperFn: OpenApiValidatorSkipper,
+	})
+	require.NoError(t, err)
+	server.MapRoutes(echoServer)
+	serve := func(method, path, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("From", userid.InternalSystemUuid.String())
+		response := httptest.NewRecorder()
+		echoServer.ServeHTTP(response, request)
+		return response
+	}
+
+	authorize := func(resource string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "/internal/authorize",
+			`{"user_id":"`+userid.InternalSystemUuid.String()+`","checks":[{"resource":"`+resource+`","permission":"plugin_manager_read"}]}`)
+	}
+	response := authorize(sharedauthz.PlatformResource)
+	require.Equal(t, http.StatusForbidden, response.Code, "the internal system identity is not a configured holder")
+	require.JSONEq(t, `[{"resource":"platform","permission":"plugin_manager_read"}]`, failedChecksJSON(t, response.Body.Bytes()))
+	for _, resource := range []string{"platforms", "platform:plugins", "Platform"} {
+		require.Equal(t, http.StatusBadRequest, authorize(resource).Code, resource)
+	}
+
+}
+
+func failedChecksJSON(t *testing.T, body []byte) string {
+	t.Helper()
+	var decoded struct {
+		Details map[string]json.RawMessage `json:"details"`
+	}
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	return string(decoded.Details[failedChecksField])
 }

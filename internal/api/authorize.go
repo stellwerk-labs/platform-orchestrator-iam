@@ -12,7 +12,7 @@ import (
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
-
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
@@ -38,6 +38,14 @@ func (s *Server) InternalAuthorizeInner(ctx context.Context, body InternalAuthor
 	validChecks := make([]authorization.Check, 0, len(body.Checks))
 	validOriginalChecks := make([]ResourcePermissionCheck, 0, len(body.Checks))
 	for _, check := range body.Checks {
+		if check.Resource == sharedauthz.PlatformResource {
+			if held, err := s.holdsPlatformPermission(ctx, body.UserId, check.Permission); err != nil {
+				return false, nil, err
+			} else if !held {
+				failedChecks = append(failedChecks, check)
+			}
+			continue
+		}
 		if _, _, err := authorization.ParseResource(check.Resource); err != nil {
 			failedChecks = append(failedChecks, check)
 			continue
@@ -50,13 +58,15 @@ func (s *Server) InternalAuthorizeInner(ctx context.Context, body InternalAuthor
 		validOriginalChecks = append(validOriginalChecks, check)
 	}
 
-	results, err := s.Authorizer.Authorize(ctx, body.UserId, validChecks)
-	if err != nil {
-		return false, nil, err
-	}
-	for index, result := range results {
-		if !result.Allowed {
-			failedChecks = append(failedChecks, validOriginalChecks[index])
+	if len(validChecks) > 0 {
+		results, err := s.Authorizer.Authorize(ctx, body.UserId, validChecks)
+		if err != nil {
+			return false, nil, err
+		}
+		for index, result := range results {
+			if !result.Allowed {
+				failedChecks = append(failedChecks, validOriginalChecks[index])
+			}
 		}
 	}
 

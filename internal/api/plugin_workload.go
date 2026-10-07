@@ -43,24 +43,15 @@ func (s *Server) checkPlatformPermission(ctx context.Context, permission string)
 		return uuid.Nil, authErr
 	}
 	if subject != userid.InternalSystemUuid {
-		denied := &herrors.PlatformOrchestratorError{
-			StatusCode: http.StatusForbidden,
-			Details: map[string]interface{}{
-				failedChecksField: []ResourcePermissionCheck{{Resource: "platform", Permission: permission}},
-			},
-		}
-		if !slices.Contains(s.PlatformPermissionHolders[permission], subject) {
-			return uuid.Nil, denied
-		}
-		if active, err := s.Database.IsAuthorizationSubjectActive(ctx, nil, subject); err != nil {
+		if held, err := s.holdsPlatformPermission(ctx, subject, permission); err != nil {
 			return uuid.Nil, err
-		} else if !active {
-			return uuid.Nil, denied
-		}
-		if bound, err := s.isPluginWorkload(ctx, nil, subject); err != nil {
-			return uuid.Nil, err
-		} else if bound {
-			return uuid.Nil, denied
+		} else if !held {
+			return uuid.Nil, &herrors.PlatformOrchestratorError{
+				StatusCode: http.StatusForbidden,
+				Details: map[string]interface{}{
+					failedChecksField: []ResourcePermissionCheck{{Resource: sharedauthz.PlatformResource, Permission: permission}},
+				},
+			}
 		}
 	}
 	if ids, ok := hlogger.GetPlatformOrchestratorIdsFromCtx(ctx); ok {
@@ -68,6 +59,20 @@ func (s *Server) checkPlatformPermission(ctx context.Context, permission string)
 	}
 	middleware.SetAuthAsserterChecked(ctx)
 	return subject, nil
+}
+
+// holdsPlatformPermission reports whether subject holds a platform-level
+// permission: it is configured as a holder, is active and is not a plugin
+// workload. The internal system identity is never active, so it holds none.
+func (s *Server) holdsPlatformPermission(ctx context.Context, subject uuid.UUID, permission string) (bool, error) {
+	if !slices.Contains(s.PlatformPermissionHolders[permission], subject) {
+		return false, nil
+	}
+	if active, err := s.Database.IsAuthorizationSubjectActive(ctx, nil, subject); err != nil || !active {
+		return false, err
+	}
+	bound, err := s.isPluginWorkload(ctx, nil, subject)
+	return !bound, err
 }
 
 // pluginWorkloadBinding returns the binding of a service user, or nil when the

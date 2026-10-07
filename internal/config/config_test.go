@@ -2,16 +2,21 @@ package config
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/hconfig"
+
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
 )
 
 var pluginWorkloadEnvironment = []string{
 	"PLUGIN_WORKLOAD_TOKEN_ISSUER", "PLUGIN_WORKLOAD_JWKS_FILE", "PLUGIN_WORKLOAD_JWKS_URL",
 	"PLUGIN_WORKLOAD_JWKS_CA_FILE", "PLUGIN_WORKLOAD_JWKS_TOKEN_FILE", "PLUGIN_WORKLOAD_TOKEN_TTL",
-	"PLUGIN_WORKLOAD_BINDING_WRITERS", "PLUGIN_WORKLOAD_STATIC_TOKEN_ADAPTER",
+	"PLUGIN_WORKLOAD_BINDING_WRITERS", "PLUGIN_WORKLOAD_STATIC_TOKEN_ADAPTER", "PLUGIN_MANAGER_READERS", "PLUGIN_MANAGER_WRITERS",
 }
 
 func setRequiredEnvironment(t *testing.T) {
@@ -157,5 +162,80 @@ func TestConfigurationRejectsUnsafePluginWorkloadSettings(t *testing.T) {
 				t.Fatalf("%s=%q must be rejected", setting[0], setting[1])
 			}
 		})
+	}
+}
+
+func loadPlatformPermissionHolders(t *testing.T, settings map[string]string) (map[string][]uuid.UUID, error) {
+	t.Helper()
+	setRequiredEnvironment(t)
+	unsetEnvironment(t, pluginWorkloadEnvironment...)
+	for key, value := range settings {
+		t.Setenv(key, value)
+	}
+	var cfg Configuration
+	requireNoError(t, hconfig.LoadConfigWithoutRetag(&cfg))
+	return cfg.PlatformPermissionHolders()
+}
+
+func TestConfigurationGrantsPlatformPermissionsOnlyToConfiguredHolders(t *testing.T) {
+	for name, value := range map[string]*string{"unset": nil, "empty": new(string)} {
+		t.Run(name, func(t *testing.T) {
+			settings := map[string]string{}
+			if value != nil {
+				for _, key := range []string{"PLUGIN_WORKLOAD_BINDING_WRITERS", "PLUGIN_MANAGER_READERS", "PLUGIN_MANAGER_WRITERS"} {
+					settings[key] = *value
+				}
+			}
+			holders, err := loadPlatformPermissionHolders(t, settings)
+			requireNoError(t, err)
+			for _, permission := range []string{sharedauthz.PermissionPluginWorkloadBindingWrite, sharedauthz.PermissionPluginManagerRead, sharedauthz.PermissionPluginManagerWrite} {
+				if len(holders[permission]) != 0 {
+					t.Fatalf("nobody may hold %s unless configured, got %v", permission, holders[permission])
+				}
+			}
+		})
+	}
+
+	controller, reader := userid.NewServiceUserTokenId(), userid.NewHumanUserId()
+	writers := []uuid.UUID{userid.NewHumanUserId(), userid.NewHumanUserId()}
+	holders, err := loadPlatformPermissionHolders(t, map[string]string{
+		"PLUGIN_WORKLOAD_BINDING_WRITERS": controller.String(),
+		"PLUGIN_MANAGER_READERS":          reader.String(),
+		"PLUGIN_MANAGER_WRITERS":          writers[0].String() + "," + writers[1].String(),
+	})
+	requireNoError(t, err)
+	for permission, expected := range map[string][]uuid.UUID{
+		sharedauthz.PermissionPluginWorkloadBindingWrite: {controller},
+		sharedauthz.PermissionPluginManagerRead:          {reader, writers[0], writers[1]},
+		sharedauthz.PermissionPluginManagerWrite:         writers,
+	} {
+		if !slices.Equal(holders[permission], expected) {
+			t.Fatalf("%s: expected holders %v, got %v", permission, expected, holders[permission])
+		}
+	}
+}
+
+func TestConfigurationRefusesPluginManagerHoldersThatAreNotUsers(t *testing.T) {
+	for name, holder := range map[string]uuid.UUID{
+		"service user":             userid.NewServiceUserTokenId(),
+		"internal system identity": userid.InternalSystemUuid,
+		"nil UUID":                 uuid.Nil,
+	} {
+		for _, key := range []string{"PLUGIN_MANAGER_READERS", "PLUGIN_MANAGER_WRITERS"} {
+			t.Run(name+" in "+key, func(t *testing.T) {
+				if _, err := loadPlatformPermissionHolders(t, map[string]string{key: userid.NewHumanUserId().String() + "," + holder.String()}); err == nil {
+					t.Fatalf("%s=%s must stop IAM from starting", key, holder)
+				}
+			})
+		}
+	}
+	for _, key := range []string{"PLUGIN_MANAGER_READERS", "PLUGIN_MANAGER_WRITERS"} {
+		setRequiredEnvironment(t)
+		unsetEnvironment(t, pluginWorkloadEnvironment...)
+		t.Setenv(key, "platform-admins")
+		var cfg Configuration
+		if err := hconfig.LoadConfigWithoutRetag(&cfg); err == nil {
+			t.Fatalf("%s must hold UUIDs", key)
+		}
 	}
 }

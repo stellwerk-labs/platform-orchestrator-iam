@@ -81,6 +81,19 @@ const (
 // catalogue and cannot be assigned through organization roles.
 const PermissionPluginWorkloadBindingWrite = "plugin_workload_binding_write"
 
+// PermissionPluginManagerRead and PermissionPluginManagerWrite are
+// platform-level: they let operators read and change the Core Plugin Manager.
+// Like PermissionPluginWorkloadBindingWrite they are granted by IAM
+// configuration only and are not part of the permission catalogue; in
+// addition, only users hold them, never a service user.
+const (
+	PermissionPluginManagerRead  = "plugin_manager_read"
+	PermissionPluginManagerWrite = "plugin_manager_write"
+)
+
+// PlatformResource is the resource of a platform-level permission check.
+const PlatformResource = "platform"
+
 type PermissionDefinition struct {
 	ID          string
 	DisplayName string

@@ -739,7 +739,7 @@ type ResourcePermissionCheck struct {
 	// Permission The complete permission ID, including the namespace for a registered plugin capability. Accepting an ID does not grant it; current scope and registration are checked by the authorizer.
 	Permission string `json:"permission"`
 
-	// Resource The resource to check permissions on.
+	// Resource The resource to check permissions on; platform for a platform-level permission.
 	Resource string `json:"resource"`
 }
 
@@ -1582,12 +1582,16 @@ type ClientInterface interface {
 
 	// InternalAuthorizeWithBody Perform a policy enforcement check on the requested user, subjects, and permissions
 	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
 	InternalAuthorizeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// InternalAuthorize Perform a policy enforcement check on the requested user, subjects, and permissions
+	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2252,6 +2256,8 @@ func (c *Client) InternalAuthenticate(ctx context.Context, params *InternalAuthe
 
 // InternalAuthorizeWithBody Perform a policy enforcement check on the requested user, subjects, and permissions
 //
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
@@ -2268,6 +2274,8 @@ func (c *Client) InternalAuthorizeWithBody(ctx context.Context, contentType stri
 }
 
 // InternalAuthorize Perform a policy enforcement check on the requested user, subjects, and permissions
+//
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6193,12 +6201,16 @@ type ClientWithResponsesInterface interface {
 
 	// InternalAuthorizeWithBodyWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
 	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
 	InternalAuthorizeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalAuthorizeResponse, error)
 
 	// InternalAuthorizeWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
+	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9593,6 +9605,8 @@ func (c *ClientWithResponses) InternalAuthenticateWithResponse(ctx context.Conte
 
 // InternalAuthorizeWithBodyWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
 //
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
@@ -9605,6 +9619,8 @@ func (c *ClientWithResponses) InternalAuthorizeWithBodyWithResponse(ctx context.
 }
 
 // InternalAuthorizeWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
+//
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

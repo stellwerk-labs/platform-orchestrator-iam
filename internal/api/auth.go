@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 )
 
 func (s *Server) CheckPermissions(ctx context.Context, request CheckPermissionsRequestObject) (CheckPermissionsResponseObject, error) {
@@ -24,8 +25,19 @@ func (s *Server) CheckPermissions(ctx context.Context, request CheckPermissionsR
 		}, nil
 	}
 
+	results := make([]ResourcePermissionCheckResultItem, len(*request.Body))
 	checks := make([]authorization.Check, 0, len(*request.Body))
-	for _, permCheck := range *request.Body {
+	checkIndexes := make([]int, 0, len(*request.Body))
+	for index, permCheck := range *request.Body {
+		results[index].PermissionCheck = permCheck
+		if permCheck.Resource == sharedauthz.PlatformResource {
+			held, err := s.holdsPlatformPermission(ctx, subjId, permCheck.Permission)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to check permissions")
+			}
+			results[index].Allowed = held
+			continue
+		}
 		if _, _, err := authorization.ParseResource(permCheck.Resource); err != nil {
 			return CheckPermissions400JSONResponse{
 				N400BadRequestJSONResponse: N400BadRequestJSONResponse{
@@ -34,14 +46,14 @@ func (s *Server) CheckPermissions(ctx context.Context, request CheckPermissionsR
 			}, nil
 		}
 		checks = append(checks, authorization.Check{Resource: permCheck.Resource, Permission: permCheck.Permission})
+		checkIndexes = append(checkIndexes, index)
 	}
 
 	decisionResults, err := s.Authorizer.Authorize(ctx, subjId, checks)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to check permissions")
 	}
-	results := make([]ResourcePermissionCheckResultItem, len(decisionResults))
-	for index, result := range decisionResults {
+	for position, result := range decisionResults {
 		if result.Invalid {
 			return CheckPermissions400JSONResponse{
 				N400BadRequestJSONResponse: N400BadRequestJSONResponse{
@@ -50,10 +62,7 @@ func (s *Server) CheckPermissions(ctx context.Context, request CheckPermissionsR
 				},
 			}, nil
 		}
-		results[index] = ResourcePermissionCheckResultItem{
-			PermissionCheck: (*request.Body)[index],
-			Allowed:         result.Allowed,
-		}
+		results[checkIndexes[position]].Allowed = result.Allowed
 	}
 	return CheckPermissions200JSONResponse{Items: results}, nil
 }

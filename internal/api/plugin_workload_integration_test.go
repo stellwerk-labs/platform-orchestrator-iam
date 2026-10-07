@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/config"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/plugincapabilities"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/workloadidentity"
@@ -346,4 +347,63 @@ func TestTransitionalStaticTokenAdapterKeepsStaticTokensOfBoundServiceUsers(t *t
 	_, ok = f.authenticate(t, f.pluginStaticToken)
 	require.False(t, ok)
 	require.IsType(t, RegenerateServiceUser409JSONResponse{}, f.regenerate(t))
+}
+
+func (f *workloadFixture) authorize(t *testing.T, subject uuid.UUID, checks ...ResourcePermissionCheck) []ResourcePermissionCheck {
+	t.Helper()
+	response, err := f.server.InternalAuthorize(f.ctx, InternalAuthorizeRequestObject{Body: &InternalAuthorizeBody{UserId: subject, Checks: checks}})
+	require.NoError(t, err)
+	if _, allowed := response.(InternalAuthorize204Response); allowed {
+		return nil
+	}
+	denied, ok := response.(InternalAuthorize403JSONResponse)
+	require.True(t, ok, "unexpected authorize response %#v", response)
+	return (*denied.Details)[failedChecksField].([]ResourcePermissionCheck)
+}
+
+func TestPlatformAuthorizeGrantsPluginManagerPermissionsOnlyToConfiguredUsers(t *testing.T) {
+	f := newWorkloadFixture(t)
+	reader, writer, outsider := userid.NewHumanUserId(), userid.NewHumanUserId(), userid.NewHumanUserId()
+	_, err := f.raw.ExecContext(f.ctx, `INSERT INTO users (id, display_name, created_at)
+		VALUES ($1, 'Reader', now()), ($2, 'Writer', now()), ($3, 'Outsider', now())`, reader, writer, outsider)
+	require.NoError(t, err)
+	holders, err := (&config.Configuration{
+		PluginWorkloadBindingWriters: []string{f.operator.String()},
+		PluginManagerReaders:         []string{reader.String()},
+		PluginManagerWriters:         []string{writer.String()},
+	}).PlatformPermissionHolders()
+	require.NoError(t, err)
+	f.server.PlatformPermissionHolders = holders
+	read := ResourcePermissionCheck{Resource: sharedauthz.PlatformResource, Permission: sharedauthz.PermissionPluginManagerRead}
+	write := ResourcePermissionCheck{Resource: sharedauthz.PlatformResource, Permission: sharedauthz.PermissionPluginManagerWrite}
+
+	require.Empty(t, f.authorize(t, reader, read))
+	require.Equal(t, []ResourcePermissionCheck{write}, f.authorize(t, reader, read, write), "a reader never writes")
+	require.Empty(t, f.authorize(t, writer, read, write), "writers also read")
+	require.Equal(t, []ResourcePermissionCheck{read, write}, f.authorize(t, outsider, read, write))
+	require.Equal(t, []ResourcePermissionCheck{read}, f.authorize(t, userid.InternalSystemUuid, read), "the internal system identity holds no platform permission here")
+	require.Equal(t, []ResourcePermissionCheck{{Resource: sharedauthz.PlatformResource, Permission: sharedauthz.PermissionPluginWorkloadBindingWrite}},
+		f.authorize(t, writer, ResourcePermissionCheck{Resource: sharedauthz.PlatformResource, Permission: sharedauthz.PermissionPluginWorkloadBindingWrite}),
+		"each platform permission has its own holders")
+	require.Equal(t, []ResourcePermissionCheck{{Resource: sharedauthz.PlatformResource, Permission: "plugin_manager_admin"}},
+		f.authorize(t, writer, ResourcePermissionCheck{Resource: sharedauthz.PlatformResource, Permission: "plugin_manager_admin"}))
+
+	// Organization roles never grant a platform permission, and a platform
+	// holder gains nothing in an organization; both checks are decided in one call.
+	orgCheck := ResourcePermissionCheck{Resource: "organization:" + workloadOrg, Permission: sharedauthz.PermissionPluginRegistrationWrite}
+	require.Equal(t, []ResourcePermissionCheck{read}, f.authorize(t, f.operator, orgCheck, read))
+	require.Equal(t, []ResourcePermissionCheck{orgCheck}, f.authorize(t, writer, orgCheck, read))
+
+	// A plugin workload never holds a platform permission, even when listed.
+	f.createBinding(t, f.bindingBody())
+	f.server.PlatformPermissionHolders[sharedauthz.PermissionPluginManagerRead] = append(f.server.PlatformPermissionHolders[sharedauthz.PermissionPluginManagerRead], f.plugin)
+	require.Equal(t, []ResourcePermissionCheck{read}, f.authorize(t, f.plugin, read))
+
+	// A subject can ask for its own platform permissions.
+	body := []ResourcePermissionCheck{write, orgCheck, read}
+	checked, err := f.server.CheckPermissions(f.as(reader), CheckPermissionsRequestObject{Body: &body})
+	require.NoError(t, err)
+	require.Equal(t, CheckPermissions200JSONResponse{Items: []ResourcePermissionCheckResultItem{
+		{PermissionCheck: write, Allowed: false}, {PermissionCheck: orgCheck, Allowed: false}, {PermissionCheck: read, Allowed: true},
+	}}, checked)
 }

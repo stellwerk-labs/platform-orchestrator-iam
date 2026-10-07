@@ -97,3 +97,11 @@ func TestAssignableRolePermissions(t *testing.T) {
 		assert.False(t, IsAssignableRolePermission(permission), permission)
 	}
 }
+
+func TestPlatformPermissionsAreNeverGrantedByRoles(t *testing.T) {
+	for _, permission := range []string{PermissionPluginWorkloadBindingWrite, PermissionPluginManagerRead, PermissionPluginManagerWrite} {
+		_, catalogued := FindPermission(permission)
+		assert.False(t, catalogued, permission)
+		assert.False(t, IsAssignableRolePermission(permission), permission)
+	}
+}

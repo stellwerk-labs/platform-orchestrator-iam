@@ -26,6 +26,15 @@ func EnvironmentCheck(envUuid uuid.UUID, permission string) genclient.ResourcePe
 	}
 }
 
+// PlatformCheck checks a platform-level permission such as
+// PermissionPluginManagerWrite. Only principals configured in IAM hold one.
+func PlatformCheck(permission string) genclient.ResourcePermissionCheck {
+	return genclient.ResourcePermissionCheck{
+		Permission: permission,
+		Resource:   PlatformResource,
+	}
+}
+
 // CanReadOrgCheck generates a temporary permission check to validate that a user id has at least read permissions on an org
 func CanReadOrgCheck(orgId string) genclient.ResourcePermissionCheck {
 	return OrgCheck(orgId, "read")
