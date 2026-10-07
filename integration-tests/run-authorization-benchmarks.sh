@@ -70,7 +70,7 @@ if [[ -n "$invalidation_interval" ]]; then
   docker run --rm -d \
     --name "$invalidation_container" \
     --network "$docker_network" \
-    natsio/nats-box:0.19.5 sh -c \
+    natsio/nats-box:0.19.5@sha256:5d513bf0bb82d6af3fe8363097eb14d2e4ca3242db24140db88df4a4ba082442 sh -c \
     "while true; do nats pub --server '$nats_url' '$policy_invalidation_subject' benchmark; sleep '$invalidation_interval'; done" >/dev/null
 fi
 

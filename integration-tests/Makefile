@@ -1,5 +1,5 @@
 
-CP_IMAGE ?= ghcr.io/stellwerk-labs/platform-orchestrator-cp:v2.0.0
+CP_IMAGE ?= ghcr.io/stellwerk-labs/platform-orchestrator-cp:v2.0.0@sha256:10a06fdd20d904dede6e0b7745eb11da7678f8a82e204ffc596321a2ffa7e698
 
 compose.yaml: BUILD_ARGS := {"context":"../"}
 compose.yaml: ../score.yaml Makefile compose-mixins.yaml score.provisioners.yaml score.cp.yaml
@@ -80,5 +80,5 @@ test-integration-logs:
 .PHONY: connect-to-integ-db
 connect-to-integ-db:
 	@score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' \
-		--format 'Command: docker run -it --network integration-tests_default --rm postgres:17-alpine psql -h {{ .host }} -U {{ .username }} --dbname {{ .name }}'
+		--format 'Command: docker run -it --network integration-tests_default --rm postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24 psql -h {{ .host }} -U {{ .username }} --dbname {{ .name }}'
 	@score-compose resources get-outputs 'postgres.default#platform-orchestrator-iam.postgres' --format 'Password: {{ .password }}'
