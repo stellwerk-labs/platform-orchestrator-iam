@@ -115,7 +115,16 @@ func (d *databaser) GetPluginWorkloadBindingForServiceUser(ctx context.Context, 
 }
 
 func (d *databaser) ListPluginWorkloadBindings(ctx context.Context, optionalTx Tx) ([]PluginWorkloadBinding, error) {
-	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, selectPluginWorkloadBindings+`ORDER BY b.created_at, b.id`)
+	return d.listPluginWorkloadBindings(ctx, optionalTx, "")
+}
+
+// ListPluginWorkloadBindingsForInstallation returns the bindings of one plugin installation.
+func (d *databaser) ListPluginWorkloadBindingsForInstallation(ctx context.Context, optionalTx Tx, pluginID string, installationID uuid.UUID) ([]PluginWorkloadBinding, error) {
+	return d.listPluginWorkloadBindings(ctx, optionalTx, `WHERE b.plugin_id = $1 AND b.installation_id = $2 `, pluginID, installationID)
+}
+
+func (d *databaser) listPluginWorkloadBindings(ctx context.Context, optionalTx Tx, where string, args ...any) ([]PluginWorkloadBinding, error) {
+	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, selectPluginWorkloadBindings+where+`ORDER BY b.created_at, b.id`, args...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list plugin workload bindings")
 	}

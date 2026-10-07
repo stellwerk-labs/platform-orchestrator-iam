@@ -270,6 +270,16 @@ func TestInternalPlatformRoutesHonourTheirContract(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, authorize(resource).Code, resource)
 	}
 
+	installation := uuid.NewString()
+	for name, query := range map[string]string{
+		"no parameters":           "",
+		"no installation":         "?plugin_id=dev.stellwerk.progressive-rollouts",
+		"no plugin":               "?installation_id=" + installation,
+		"invalid plugin ID":       "?plugin_id=Dev_Stellwerk&installation_id=" + installation,
+		"invalid installation ID": "?plugin_id=dev.stellwerk.progressive-rollouts&installation_id=42",
+	} {
+		require.Equal(t, http.StatusBadRequest, serve(http.MethodGet, "/internal/plugin-workload-bindings"+query, "").Code, name)
+	}
 }
 
 func failedChecksJSON(t *testing.T, body []byte) string {

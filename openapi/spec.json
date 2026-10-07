@@ -949,6 +949,52 @@
         }
       }
     },
+    "/internal/plugin-workload-bindings": {
+      "get": {
+        "tags": [
+          "internal"
+        ],
+        "operationId": "internalListPluginWorkloadBindings",
+        "summary": "List the workload bindings of one plugin installation (v1alpha).",
+        "description": "Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])$"
+            }
+          },
+          {
+            "name": "installation_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bindings of the installation, oldest first; empty when it has none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginWorkloadBindingList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          }
+        }
+      }
+    },
     "/current-user": {
       "get": {
         "tags": [

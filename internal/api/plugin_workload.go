@@ -212,6 +212,20 @@ func (s *Server) GetPluginWorkloadBinding(ctx context.Context, request GetPlugin
 	return GetPluginWorkloadBinding200JSONResponse(toAPIPluginWorkloadBinding(*binding)), nil
 }
 
+// InternalListPluginWorkloadBindings returns the bindings of one plugin
+// installation, so Core can verify the service user it records for it.
+func (s *Server) InternalListPluginWorkloadBindings(ctx context.Context, request InternalListPluginWorkloadBindingsRequestObject) (InternalListPluginWorkloadBindingsResponseObject, error) {
+	bindings, err := s.Database.ListPluginWorkloadBindingsForInstallation(ctx, nil, request.Params.PluginId, request.Params.InstallationId)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]PluginWorkloadBinding, len(bindings))
+	for index, binding := range bindings {
+		items[index] = toAPIPluginWorkloadBinding(binding)
+	}
+	return InternalListPluginWorkloadBindings200JSONResponse{Items: items}, nil
+}
+
 // DeletePluginWorkloadBinding revokes a binding. Issued tokens are deleted with
 // it and workload tokens are never cached positively, so the next
 // authentication with any of them fails.

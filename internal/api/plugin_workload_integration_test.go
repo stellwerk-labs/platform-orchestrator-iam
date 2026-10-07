@@ -407,3 +407,31 @@ func TestPlatformAuthorizeGrantsPluginManagerPermissionsOnlyToConfiguredUsers(t 
 		{PermissionCheck: write, Allowed: false}, {PermissionCheck: orgCheck, Allowed: false}, {PermissionCheck: read, Allowed: true},
 	}}, checked)
 }
+
+func TestInternalBindingLookupReturnsExactlyTheInstallationsBindings(t *testing.T) {
+	f := newWorkloadFixture(t)
+	lookup := func(pluginID string, installationID uuid.UUID) []PluginWorkloadBinding {
+		t.Helper()
+		response, err := f.server.InternalListPluginWorkloadBindings(f.ctx, InternalListPluginWorkloadBindingsRequestObject{
+			Params: InternalListPluginWorkloadBindingsParams{PluginId: pluginID, InstallationId: installationID},
+		})
+		require.NoError(t, err)
+		return response.(InternalListPluginWorkloadBindings200JSONResponse).Items
+	}
+	body := f.bindingBody()
+	require.Empty(t, lookup(workloadPluginID, body.InstallationId))
+	created := f.createBinding(t, body).(CreatePluginWorkloadBinding201JSONResponse)
+	other := f.bindingBody()
+	other.ServiceUserId, other.ServiceAccount = f.other, "other-runtime"
+	otherCreated := f.createBinding(t, other).(CreatePluginWorkloadBinding201JSONResponse)
+
+	found := lookup(workloadPluginID, body.InstallationId)
+	require.Equal(t, []PluginWorkloadBinding{PluginWorkloadBinding(created)}, found)
+	require.Equal(t, f.plugin, found[0].ServiceUserId)
+	require.Equal(t, []PluginWorkloadBinding{PluginWorkloadBinding(otherCreated)}, lookup(workloadPluginID, other.InstallationId))
+	require.Empty(t, lookup("dev.stellwerk.other-plugin", body.InstallationId), "the plugin ID must match as well")
+
+	_, err := f.server.DeletePluginWorkloadBinding(f.as(f.operator), DeletePluginWorkloadBindingRequestObject{BindingId: created.Id})
+	require.NoError(t, err)
+	require.Empty(t, lookup(workloadPluginID, body.InstallationId), "a revoked binding is gone at once")
+}

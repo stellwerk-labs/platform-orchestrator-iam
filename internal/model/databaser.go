@@ -135,6 +135,7 @@ type Databaser interface {
 	GetPluginWorkloadBindingForServiceAccount(ctx context.Context, optionalTx Tx, issuer, namespace, serviceAccount string) (*PluginWorkloadBinding, error)
 	GetPluginWorkloadBindingForServiceUser(ctx context.Context, optionalTx Tx, serviceUserID uuid.UUID) (*PluginWorkloadBinding, error)
 	ListPluginWorkloadBindings(ctx context.Context, optionalTx Tx) ([]PluginWorkloadBinding, error)
+	ListPluginWorkloadBindingsForInstallation(ctx context.Context, optionalTx Tx, pluginID string, installationID uuid.UUID) ([]PluginWorkloadBinding, error)
 	DeletePluginWorkloadBinding(ctx context.Context, optionalTx Tx, id uuid.UUID) error
 	CreatePluginWorkloadToken(ctx context.Context, optionalTx Tx, token PluginWorkloadToken) error
 	GetPluginWorkloadTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*PluginWorkloadToken, error)

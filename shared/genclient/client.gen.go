@@ -1204,6 +1204,12 @@ type InternalAuthenticateParams struct {
 	SessionToken  *string `form:"session-token,omitempty" json:"session-token,omitempty"`
 }
 
+// InternalListPluginWorkloadBindingsParams defines parameters for InternalListPluginWorkloadBindings.
+type InternalListPluginWorkloadBindingsParams struct {
+	PluginId       string             `form:"plugin_id" json:"plugin_id"`
+	InstallationId openapi_types.UUID `form:"installation_id" json:"installation_id"`
+}
+
 // ListInvitationsParams defines parameters for ListInvitations.
 type ListInvitationsParams struct {
 	// PerPage The maximum number of items to return in a page of results
@@ -1642,6 +1648,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 	InternalUpdateSsoConfiguration(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+	//
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+	//
+	// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+	InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListInvitations List the invitations that are pending in the organization.
 	//
@@ -2397,6 +2410,23 @@ func (c *Client) InternalUpdateSsoConfigurationWithBody(ctx context.Context, org
 // Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 func (c *Client) InternalUpdateSsoConfiguration(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewInternalUpdateSsoConfigurationRequest(c.Server, orgId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+//
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+//
+// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+func (c *Client) InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalListPluginWorkloadBindingsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4125,6 +4155,64 @@ func NewInternalUpdateSsoConfigurationRequestWithBody(server string, orgId OrgId
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewInternalListPluginWorkloadBindingsRequest constructs an http.Request for the InternalListPluginWorkloadBindings method
+func NewInternalListPluginWorkloadBindingsRequest(server string, params *InternalListPluginWorkloadBindingsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/plugin-workload-bindings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "plugin_id", params.PluginId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "installation_id", params.InstallationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -6268,6 +6356,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 	InternalUpdateSsoConfigurationWithResponse(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalUpdateSsoConfigurationResponse, error)
 
+	// InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
+	//
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+	InternalListPluginWorkloadBindingsWithResponse(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*InternalListPluginWorkloadBindingsResponse, error)
+
 	// ListInvitationsWithResponse List the invitations that are pending in the organization.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -7645,6 +7742,54 @@ func (r InternalUpdateSsoConfigurationResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r InternalUpdateSsoConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type InternalListPluginWorkloadBindingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginWorkloadBindingList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r InternalListPluginWorkloadBindingsResponse) GetJSON200() *PluginWorkloadBindingList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r InternalListPluginWorkloadBindingsResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetBody returns the raw response body bytes
+func (r InternalListPluginWorkloadBindingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r InternalListPluginWorkloadBindingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InternalListPluginWorkloadBindingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r InternalListPluginWorkloadBindingsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9726,6 +9871,21 @@ func (c *ClientWithResponses) InternalUpdateSsoConfigurationWithResponse(ctx con
 	return ParseInternalUpdateSsoConfigurationResponse(rsp)
 }
 
+// InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
+//
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+func (c *ClientWithResponses) InternalListPluginWorkloadBindingsWithResponse(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*InternalListPluginWorkloadBindingsResponse, error) {
+	rsp, err := c.InternalListPluginWorkloadBindings(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInternalListPluginWorkloadBindingsResponse(rsp)
+}
+
 // ListInvitationsWithResponse List the invitations that are pending in the organization.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -11126,6 +11286,39 @@ func ParseInternalUpdateSsoConfigurationResponse(rsp *http.Response) (*InternalU
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInternalListPluginWorkloadBindingsResponse parses an HTTP response from a InternalListPluginWorkloadBindingsWithResponse call
+func ParseInternalListPluginWorkloadBindingsResponse(rsp *http.Response) (*InternalListPluginWorkloadBindingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InternalListPluginWorkloadBindingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginWorkloadBindingList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	}
 
