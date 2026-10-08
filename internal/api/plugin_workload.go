@@ -254,16 +254,17 @@ func (s *Server) InternalListPluginWorkloadBindings(ctx context.Context, request
 // it and workload tokens are never cached positively, so the next
 // authentication with any of them fails.
 func (s *Server) DeletePluginWorkloadBinding(ctx context.Context, request DeletePluginWorkloadBindingRequestObject) (DeletePluginWorkloadBindingResponseObject, error) {
-	if _, err := s.checkPlatformPermission(ctx, sharedauthz.PermissionPluginWorkloadBindingWrite); err != nil {
+	operator, err := s.checkPlatformPermission(ctx, sharedauthz.PermissionPluginWorkloadBindingWrite)
+	if err != nil {
 		return nil, err
 	}
-	err := s.Database.DeletePluginWorkloadBinding(ctx, nil, request.BindingId)
+	err = s.Database.DeletePluginWorkloadBinding(ctx, nil, request.BindingId)
 	if notFound, ok := model.IsErrNotFound(err); ok {
 		return DeletePluginWorkloadBinding404JSONResponse{Generate404FromModelErr(notFound)}, nil
 	} else if err != nil {
 		return nil, err
 	}
-	s.Logger.Info("revoked plugin workload binding", zap.Stringer("binding_id", request.BindingId))
+	s.Logger.Info("revoked plugin workload binding", zap.Stringer("binding_id", request.BindingId), zap.Stringer("operator", operator))
 	return DeletePluginWorkloadBinding204Response{}, nil
 }
 

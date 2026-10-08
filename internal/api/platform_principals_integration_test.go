@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
@@ -34,6 +36,26 @@ func (f *workloadFixture) createChecker(t *testing.T, operator uuid.UUID) Platfo
 	created, ok := response.(CreatePlatformPrincipal201JSONResponse)
 	require.True(t, ok, "creation refused: %#v", response)
 	return PlatformPrincipalWithToken(created)
+}
+
+// observeLogs records the server's log entries from now on.
+func (f *workloadFixture) observeLogs() *observer.ObservedLogs {
+	core, logs := observer.New(zap.InfoLevel)
+	f.server.Logger = zap.New(core)
+	return logs
+}
+
+// requireAudited asserts exactly one entry with message that names the
+// operator and carries the given string fields.
+func requireAudited(t *testing.T, logs *observer.ObservedLogs, message string, operator uuid.UUID, fields map[string]string) {
+	t.Helper()
+	entries := logs.FilterMessage(message).All()
+	require.Len(t, entries, 1, message)
+	context := entries[0].ContextMap()
+	require.Equal(t, operator.String(), context["operator"], message)
+	for key, value := range fields {
+		require.Equal(t, value, context[key], "%s: %s", message, key)
+	}
 }
 
 func (f *workloadFixture) regeneratePlatformPrincipal(t *testing.T, operator, principal uuid.UUID) RegeneratePlatformPrincipalResponseObject {
@@ -135,6 +157,35 @@ func TestStaticTokenPlatformPrincipalAuthenticatesOutsideEveryOrganization(t *te
 	_, ok = f.authenticate(t, regenerated.Token)
 	require.False(t, ok)
 	require.False(t, f.active(t, checker.Id))
+}
+
+// Every change to a platform identity is logged with the operator who made it.
+func TestPlatformIdentityChangesAreAuditedWithTheOperator(t *testing.T) {
+	f := newWorkloadFixture(t)
+	operator := f.platformOperator(t)
+	logs := f.observeLogs()
+
+	binding := f.bind(t, f.bindingBody())
+	requireAudited(t, logs, "created plugin workload binding", f.operator, map[string]string{
+		"binding_id": binding.Id.String(), "service_user_id": binding.ServiceUserId.String(),
+		"plugin_id": workloadPluginID, "installation_id": binding.InstallationId.String(),
+	})
+	_, err := f.server.DeletePluginWorkloadBinding(f.as(f.operator), DeletePluginWorkloadBindingRequestObject{BindingId: binding.Id})
+	require.NoError(t, err)
+	requireAudited(t, logs, "revoked plugin workload binding", f.operator, map[string]string{"binding_id": binding.Id.String()})
+
+	checker := f.createChecker(t, operator)
+	requireAudited(t, logs, "created static-token platform principal", operator, map[string]string{
+		"platform_principal_id": checker.Id.String(), "display_name": checker.DisplayName,
+	})
+	require.IsType(t, RegeneratePlatformPrincipal200JSONResponse{}, f.regeneratePlatformPrincipal(t, operator, checker.Id))
+	requireAudited(t, logs, "regenerated platform principal token", operator, map[string]string{"platform_principal_id": checker.Id.String()})
+	_, err = f.server.DeletePlatformPrincipal(f.as(f.operator), DeletePlatformPrincipalRequestObject{PrincipalId: checker.Id})
+	require.NoError(t, err)
+	requireAudited(t, logs, "deleted platform principal", f.operator, map[string]string{"platform_principal_id": checker.Id.String()})
+	for _, entry := range logs.All() {
+		require.NotContains(t, entry.ContextMap(), "token", "a token never reaches the log")
+	}
 }
 
 func TestPlatformPrincipalsAreListedAndDeletedByPlatformOperatorsOnly(t *testing.T) {
