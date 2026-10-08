@@ -353,6 +353,12 @@ func (s *Server) ReplaceServiceUserRoles(ctx context.Context, request ReplaceSer
 	if serviceUser.OrgId != request.OrgId {
 		return ReplaceServiceUserRoles404JSONResponse{N404NotFoundJSONResponse: Generate404Response("service user not found")}, nil
 	}
+	// A plugin workload holds no role, so a bound service user gets none.
+	if bound, err := s.isPluginWorkload(ctx, tx, serviceUser.Id); err != nil {
+		return nil, err
+	} else if bound {
+		return ReplaceServiceUserRoles409JSONResponse{N409ConflictJSONResponse: Generate409Response("the service user is bound to a plugin workload and cannot hold roles")}, nil
+	}
 
 	// Delete all existing service user roles for this service user in this organization
 	deletedCount, err := s.Database.BulkDeleteServiceUserRoles(ctx, tx, model.BulkDeleteServiceUserRolesParams{

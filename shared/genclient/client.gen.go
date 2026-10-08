@@ -1542,7 +1542,7 @@ type ClientInterface interface {
 
 	// ExchangePluginWorkloadTokenWithBody Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 	//
-	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1551,7 +1551,7 @@ type ClientInterface interface {
 
 	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 	//
-	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1874,12 +1874,16 @@ type ClientInterface interface {
 
 	// ReplaceServiceUserRolesWithBody Replace all roles for a service user in an organization
 	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
 	ReplaceServiceUserRolesWithBody(ctx context.Context, orgId OrgIdPathParam, serviceUserId ServiceUserIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReplaceServiceUserRoles Replace all roles for a service user in an organization
+	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2093,7 +2097,7 @@ func (c *Client) LogoutSession(ctx context.Context, params *LogoutSessionParams,
 
 // ExchangePluginWorkloadTokenWithBody Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 //
-// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2112,7 +2116,7 @@ func (c *Client) ExchangePluginWorkloadTokenWithBody(ctx context.Context, conten
 
 // ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 //
-// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2945,6 +2949,8 @@ func (c *Client) DeleteServiceUser(ctx context.Context, orgId OrgIdPathParam, se
 
 // ReplaceServiceUserRolesWithBody Replace all roles for a service user in an organization
 //
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
@@ -2961,6 +2967,8 @@ func (c *Client) ReplaceServiceUserRolesWithBody(ctx context.Context, orgId OrgI
 }
 
 // ReplaceServiceUserRoles Replace all roles for a service user in an organization
+//
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6229,7 +6237,7 @@ type ClientWithResponsesInterface interface {
 
 	// ExchangePluginWorkloadTokenWithBodyWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 	//
-	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6238,7 +6246,7 @@ type ClientWithResponsesInterface interface {
 
 	// ExchangePluginWorkloadTokenWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 	//
-	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6617,12 +6625,16 @@ type ClientWithResponsesInterface interface {
 
 	// ReplaceServiceUserRolesWithBodyWithResponse Replace all roles for a service user in an organization
 	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
 	ReplaceServiceUserRolesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, serviceUserId ServiceUserIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceServiceUserRolesResponse, error)
 
 	// ReplaceServiceUserRolesWithResponse Replace all roles for a service user in an organization
+	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9612,7 +9624,7 @@ func (c *ClientWithResponses) LogoutSessionWithResponse(ctx context.Context, par
 
 // ExchangePluginWorkloadTokenWithBodyWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 //
-// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9627,7 +9639,7 @@ func (c *ClientWithResponses) ExchangePluginWorkloadTokenWithBodyWithResponse(ct
 
 // ExchangePluginWorkloadTokenWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
 //
-// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10312,6 +10324,8 @@ func (c *ClientWithResponses) DeleteServiceUserWithResponse(ctx context.Context,
 
 // ReplaceServiceUserRolesWithBodyWithResponse Replace all roles for a service user in an organization
 //
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
@@ -10324,6 +10338,8 @@ func (c *ClientWithResponses) ReplaceServiceUserRolesWithBodyWithResponse(ctx co
 }
 
 // ReplaceServiceUserRolesWithResponse Replace all roles for a service user in an organization
+//
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

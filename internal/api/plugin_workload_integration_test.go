@@ -683,6 +683,78 @@ func TestOrganizationAccessRemovalLeavesPlatformPrincipalsActive(t *testing.T) {
 	require.Equal(t, principal, subject)
 }
 
+// A plugin workload holds no role. A service user bound before platform
+// principals existed may hold one, for example the Admin role that creating
+// it without a roles field assigns. It gets no workload credential while it
+// holds a role, and no role can be assigned to it while it is bound.
+func TestServiceUsersHoldingRolesGetNoWorkloadCredential(t *testing.T) {
+	f := newWorkloadFixture(t)
+	f.server.PluginWorkloadStaticTokens = true
+
+	created, err := f.server.CreateServiceUser(f.as(f.admin), CreateServiceUserRequestObject{
+		OrgId: workloadOrg, Body: &ServiceUserCreateBody{DisplayName: "plugin without roles field", ExpiryInDays: 30},
+	})
+	require.NoError(t, err)
+	defaultAdmin := created.(CreateServiceUser201JSONResponse)
+	require.Len(t, defaultAdmin.Roles, 1, "the public default stays: no roles field means the Admin role")
+	binding := f.bindLegacy(t, defaultAdmin.Id)
+	read, err := f.server.Database.GetPluginWorkloadBinding(f.ctx, nil, binding.ID)
+	require.NoError(t, err)
+	require.True(t, read.ServiceUserHoldsRoles)
+
+	require.IsType(t, ExchangePluginWorkloadToken400JSONResponse{}, f.exchange(t, f.claimsFor(legacyServiceAccount)),
+		"an Admin service user never becomes a plugin workload")
+	_, ok := f.authenticate(t, defaultAdmin.Token)
+	require.False(t, ok, "the static-token adapter never keeps the token of a bound role holder")
+	replaced, err := f.server.ReplaceServiceUserRoles(f.as(f.admin), ReplaceServiceUserRolesRequestObject{
+		OrgId: workloadOrg, ServiceUserId: defaultAdmin.Id, Body: &ReplaceServiceUserRolesJSONRequestBody{Roles: []ServiceUserRole{{Id: f.roleID}}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ReplaceServiceUserRoles409JSONResponse{N409ConflictJSONResponse: Generate409Response("the service user is bound to a plugin workload and cannot hold roles")}, replaced)
+
+	// After revocation it is an ordinary organization service user again.
+	_, err = f.server.DeletePluginWorkloadBinding(f.as(f.operator), DeletePluginWorkloadBindingRequestObject{BindingId: binding.ID})
+	require.NoError(t, err)
+	subject, ok := f.authenticate(t, defaultAdmin.Token)
+	require.True(t, ok)
+	require.Equal(t, defaultAdmin.Id, subject)
+	replaced, err = f.server.ReplaceServiceUserRoles(f.as(f.admin), ReplaceServiceUserRolesRequestObject{
+		OrgId: workloadOrg, ServiceUserId: defaultAdmin.Id, Body: &ReplaceServiceUserRolesJSONRequestBody{Roles: []ServiceUserRole{{Id: f.roleID}}},
+	})
+	require.NoError(t, err)
+	require.IsType(t, ReplaceServiceUserRoles200JSONResponse{}, replaced)
+}
+
+// A role that reaches a bound service user by any path stops the workload
+// tokens issued before it at the next request.
+func TestARoleStopsWorkloadTokensIssuedBeforeIt(t *testing.T) {
+	f := newWorkloadFixture(t)
+	f.server.PluginWorkloadStaticTokens = true
+	f.bindLegacy(t, f.legacy)
+	issued := f.exchangeTokenFor(t, legacyServiceAccount)
+	subject, ok := f.authenticate(t, issued)
+	require.True(t, ok)
+	require.Equal(t, f.legacy, subject)
+	subject, ok = f.authenticate(t, f.legacyStaticToken)
+	require.True(t, ok, "the adapter keeps the static token of a role-less bound service user")
+	require.Equal(t, f.legacy, subject)
+
+	_, err := f.raw.ExecContext(f.ctx, `INSERT INTO service_user_roles (service_user_id, org_id, role_id, created_at)
+		VALUES ($1, $2, $3, now())`, f.legacy, workloadOrg, f.roleID)
+	require.NoError(t, err)
+	_, ok = f.authenticate(t, issued)
+	require.False(t, ok)
+	_, ok = f.authenticate(t, f.legacyStaticToken)
+	require.False(t, ok)
+	require.IsType(t, ExchangePluginWorkloadToken400JSONResponse{}, f.exchange(t, f.claimsFor(legacyServiceAccount)))
+
+	_, err = f.raw.ExecContext(f.ctx, `DELETE FROM service_user_roles WHERE service_user_id = $1`, f.legacy)
+	require.NoError(t, err)
+	subject, ok = f.authenticate(t, f.exchangeTokenFor(t, legacyServiceAccount))
+	require.True(t, ok, "without the role the binding serves again")
+	require.Equal(t, f.legacy, subject)
+}
+
 // Each installation has its own principal; revoking one binding stops exactly
 // that principal at its next request.
 func TestBindingRevocationStopsOnlyThatPlatformPrincipal(t *testing.T) {

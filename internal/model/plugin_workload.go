@@ -30,6 +30,9 @@ type PluginWorkloadBinding struct {
 	// ServiceUserActive reports whether the bound service user is active, the
 	// same rule IsAuthorizationSubjectActive applies.
 	ServiceUserActive bool
+	// ServiceUserHoldsRoles reports whether the bound service user holds any
+	// role. Only an organization service user can.
+	ServiceUserHoldsRoles bool
 }
 
 // PluginWorkloadToken is an issued plugin workload token. Only its hash is stored.
@@ -41,10 +44,16 @@ type PluginWorkloadToken struct {
 	ExpiresAt     time.Time
 }
 
+// serviceUserHoldsRoles is true when the service_user_tokens row aliased sut
+// holds a role. A platform principal has no organization, so it never does.
+const serviceUserHoldsRoles = `EXISTS (
+	SELECT 1 FROM service_user_roles sur WHERE sur.org_id = sut.org_id AND sur.service_user_id = sut.id
+)`
+
 const selectPluginWorkloadBindings = `
 	SELECT b.id, b.issuer, b.namespace, b.service_account, b.audience, b.service_user_id,
 		b.plugin_id, b.installation_id, b.created_at, b.created_by,
-		sut.scope, ` + serviceUserActive + `
+		sut.scope, ` + serviceUserActive + `, ` + serviceUserHoldsRoles + `
 	FROM plugin_workload_bindings b
 	JOIN service_user_tokens sut ON sut.id = b.service_user_id
 `
@@ -57,7 +66,7 @@ func scanPluginWorkloadBinding(row rowScanner) (*PluginWorkloadBinding, error) {
 	var binding PluginWorkloadBinding
 	if err := row.Scan(&binding.ID, &binding.Issuer, &binding.Namespace, &binding.ServiceAccount, &binding.Audience,
 		&binding.ServiceUserID, &binding.PluginID, &binding.InstallationID, &binding.CreatedAt, &binding.CreatedBy,
-		&binding.ServiceUserScope, &binding.ServiceUserActive); err != nil {
+		&binding.ServiceUserScope, &binding.ServiceUserActive, &binding.ServiceUserHoldsRoles); err != nil {
 		return nil, err
 	}
 	return &binding, nil
@@ -175,7 +184,7 @@ func (d *databaser) CreatePluginWorkloadToken(ctx context.Context, optionalTx Tx
 }
 
 // GetPluginWorkloadTokenByHash returns a token only while it is unexpired, its
-// binding exists and the bound service user is active.
+// binding exists and the bound service user is active and holds no role.
 func (d *databaser) GetPluginWorkloadTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*PluginWorkloadToken, error) {
 	token := PluginWorkloadToken{Sha256Hash: hash}
 	if err := d.txOrDb(optionalTx).QueryRowContext(ctx, `
@@ -186,6 +195,7 @@ func (d *databaser) GetPluginWorkloadTokenByHash(ctx context.Context, optionalTx
 		WHERE t.token_sha256_hash = $1
 		  AND t.expires_at > now()
 		  AND `+serviceUserActive+`
+		  AND NOT `+serviceUserHoldsRoles+`
 	`, hash).Scan(&token.BindingID, &token.ServiceUserID, &token.IssuedAt, &token.ExpiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("plugin workload token not found")

@@ -75,22 +75,17 @@ func (s *Server) holdsPlatformPermission(ctx context.Context, subject uuid.UUID,
 	return !bound, err
 }
 
-// pluginWorkloadBinding returns the binding of a service user, or nil when the
-// principal is not a plugin workload.
-func (s *Server) pluginWorkloadBinding(ctx context.Context, tx model.Tx, principal uuid.UUID) (*model.PluginWorkloadBinding, error) {
-	if !userid.IsServiceUser(principal) {
-		return nil, nil
-	}
-	binding, err := s.Database.GetPluginWorkloadBindingForServiceUser(ctx, tx, principal)
-	if _, notFound := model.IsErrNotFound(err); notFound {
-		return nil, nil
-	}
-	return binding, err
-}
-
+// isPluginWorkload reports whether principal is a service user with a plugin
+// workload binding.
 func (s *Server) isPluginWorkload(ctx context.Context, tx model.Tx, principal uuid.UUID) (bool, error) {
-	binding, err := s.pluginWorkloadBinding(ctx, tx, principal)
-	return binding != nil, err
+	if !userid.IsServiceUser(principal) {
+		return false, nil
+	}
+	_, err := s.Database.GetPluginWorkloadBindingForServiceUser(ctx, tx, principal)
+	if _, notFound := model.IsErrNotFound(err); notFound {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func toAPIPluginWorkloadBinding(binding model.PluginWorkloadBinding) PluginWorkloadBinding {
@@ -318,6 +313,9 @@ func (s *Server) ExchangePluginWorkloadToken(ctx context.Context, request Exchan
 	}
 	if !binding.ServiceUserActive {
 		return reject(errors.New("the bound service user is not active")), nil
+	}
+	if binding.ServiceUserHoldsRoles {
+		return reject(errors.New("the bound service user holds roles; a plugin workload must hold none")), nil
 	}
 	now := time.Now().UTC()
 	lifetime, err := workloadidentity.IssuedLifetime(now, exchange.TokenTTL, claims.Expiry)

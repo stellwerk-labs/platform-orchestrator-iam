@@ -191,8 +191,11 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 	} else if time.Now().After(st.ExpiresAt) {
 		logger.Debug("token expired")
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
-	} else if kind == tokenKindServiceUser && st.WorkloadBound && !s.PluginWorkloadStaticTokens {
-		logger.Info("rejected static token of a workload-bound service user", zap.Stringer("user_id", st.UserId))
+	} else if kind == tokenKindServiceUser && st.WorkloadBound && (st.HoldsRoles || !s.PluginWorkloadStaticTokens) {
+		// The transitional adapter keeps static tokens of bound service users,
+		// never of one that holds roles: a plugin workload holds none.
+		logger.Info("rejected static token of a workload-bound service user",
+			zap.Stringer("user_id", st.UserId), zap.Bool("holds_roles", st.HoldsRoles))
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
 	}
 
@@ -223,6 +226,8 @@ type WrappedToken struct {
 	ExpiresAt time.Time
 	// WorkloadBound marks a service user that has a plugin workload binding.
 	WorkloadBound bool
+	// HoldsRoles marks a service user that holds at least one role.
+	HoldsRoles bool
 }
 
 // tokenKind selects the authoritative table and the caching rule of a credential.
@@ -304,13 +309,16 @@ func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, kind tokenKind
 			}
 			return nil, errors.Wrap(err, "failed to get service user token")
 		}
-		// The binding flag is cached with the entry: a binding created later
-		// rejects this static token within authenticationTokenCacheTTL.
+		// The binding and role flags are cached with the entry: a binding
+		// created later rejects this static token within
+		// authenticationTokenCacheTTL.
 		_, err = a.inner.GetPluginWorkloadBindingForServiceUser(ctx, nil, sut.Id)
 		if _, notFound := model.IsErrNotFound(err); err != nil && !notFound {
 			return nil, errors.Wrap(err, "failed to check plugin workload binding")
 		}
-		return &WrappedToken{UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt, WorkloadBound: err == nil}, nil
+		return &WrappedToken{
+			UserId: sut.Id, ExpiresAt: sut.CurrentTokenExpiresAt, WorkloadBound: err == nil, HoldsRoles: len(sut.ServiceUserRoles) > 0,
+		}, nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch and cache token")

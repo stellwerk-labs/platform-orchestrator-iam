@@ -374,7 +374,7 @@
         ],
         "operationId": "exchangePluginWorkloadToken",
         "summary": "Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).",
-        "description": "RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding or disabling the service user rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.",
+        "description": "RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1121,6 +1121,7 @@
         ],
         "operationId": "replaceServiceUserRoles",
         "summary": "Replace all roles for a service user in an organization",
+        "description": "A service user bound to a plugin workload holds no role; assigning any returns 409.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgIdPathParam"
