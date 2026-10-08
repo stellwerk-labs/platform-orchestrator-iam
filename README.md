@@ -12,6 +12,10 @@ Stellwerk Platform Orchestrator. It provides APIs for:
 Organizations are owned by `platform-orchestrator-cp`; users can be members of
 one, many, or no organizations.
 
+Native plugin workloads and the Data Plane admission checker authenticate as
+platform principals: service users that belong to no organization and hold no
+role. See [Plugin workload identity and platform principals](docs/plugin-workload-identity.md).
+
 ## Requirements
 
 - Go version declared in `go.mod`
