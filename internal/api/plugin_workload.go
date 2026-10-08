@@ -95,16 +95,17 @@ func (s *Server) isPluginWorkload(ctx context.Context, tx model.Tx, principal uu
 
 func toAPIPluginWorkloadBinding(binding model.PluginWorkloadBinding) PluginWorkloadBinding {
 	return PluginWorkloadBinding{
-		Id:             binding.ID,
-		Issuer:         binding.Issuer,
-		Namespace:      binding.Namespace,
-		ServiceAccount: binding.ServiceAccount,
-		Audience:       binding.Audience,
-		ServiceUserId:  binding.ServiceUserID,
-		PluginId:       binding.PluginID,
-		InstallationId: binding.InstallationID,
-		CreatedAt:      binding.CreatedAt,
-		CreatedBy:      binding.CreatedBy,
+		Id:               binding.ID,
+		Issuer:           binding.Issuer,
+		Namespace:        binding.Namespace,
+		ServiceAccount:   binding.ServiceAccount,
+		Audience:         binding.Audience,
+		ServiceUserId:    binding.ServiceUserID,
+		ServiceUserScope: PluginWorkloadBindingServiceUserScope(binding.ServiceUserScope),
+		PluginId:         binding.PluginID,
+		InstallationId:   binding.InstallationID,
+		CreatedAt:        binding.CreatedAt,
+		CreatedBy:        binding.CreatedBy,
 	}
 }
 
@@ -112,6 +113,8 @@ func (s *Server) validatePluginWorkloadBinding(body *PluginWorkloadBindingCreate
 	switch {
 	case body == nil:
 		return "request body is required"
+	case (body.PlatformPrincipal == nil) == (body.ServiceUserId == nil):
+		return "exactly one of platform_principal and service_user_id is required"
 	case s.PluginWorkloadExchange == nil || body.Issuer != s.PluginWorkloadExchange.Issuer:
 		return "issuer must be the configured plugin workload token issuer"
 	case !workloadidentity.ValidServiceAccount(body.Namespace, body.ServiceAccount):
@@ -146,16 +149,23 @@ func (s *Server) CreatePluginWorkloadBinding(ctx context.Context, request Create
 	}()
 
 	body := request.Body
+	now := time.Now().UTC()
+	principal, refusal, err := s.pluginWorkloadPrincipal(ctx, tx, body, operator, now)
+	if err != nil {
+		return nil, err
+	} else if refusal != "" {
+		return CreatePluginWorkloadBinding400JSONResponse{Generate400Response(refusal)}, nil
+	}
 	binding, err := s.Database.CreatePluginWorkloadBinding(ctx, tx, model.PluginWorkloadBinding{
 		ID:             uuid.Must(uuid.NewV7()),
 		Issuer:         body.Issuer,
 		Namespace:      body.Namespace,
 		ServiceAccount: body.ServiceAccount,
 		Audience:       body.Audience,
-		ServiceUserID:  body.ServiceUserId,
+		ServiceUserID:  principal,
 		PluginID:       body.PluginId,
 		InstallationID: body.InstallationId,
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      now,
 		CreatedBy:      operator,
 	})
 	if conflict, ok := model.IsErrConflict(err); ok {
@@ -165,23 +175,42 @@ func (s *Server) CreatePluginWorkloadBinding(ctx context.Context, request Create
 	} else if err != nil {
 		return nil, err
 	}
-	if !binding.ServiceUserActive {
-		return CreatePluginWorkloadBinding400JSONResponse{Generate400Response("service user is not active")}, nil
-	}
-	if !s.PluginWorkloadStaticTokens {
-		if err := s.Database.DisableServiceUserStaticToken(ctx, tx, binding.ServiceUserID); err != nil {
-			return nil, err
-		}
-	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
 	logger.Info("created plugin workload binding",
 		zap.Stringer("binding_id", binding.ID), zap.Stringer("service_user_id", binding.ServiceUserID),
-		zap.String("plugin_id", binding.PluginID), zap.String("namespace", binding.Namespace),
-		zap.String("service_account", binding.ServiceAccount), zap.Bool("static_token_disabled", !s.PluginWorkloadStaticTokens))
+		zap.Bool("platform_principal_created", body.PlatformPrincipal != nil), zap.Stringer("operator", operator),
+		zap.String("plugin_id", binding.PluginID), zap.Stringer("installation_id", binding.InstallationID),
+		zap.String("namespace", binding.Namespace), zap.String("service_account", binding.ServiceAccount))
 	return CreatePluginWorkloadBinding201JSONResponse(toAPIPluginWorkloadBinding(*binding)), nil
+}
+
+// pluginWorkloadPrincipal returns the platform principal a new binding names:
+// a new one created inside tx, or an existing plugin workload principal. An
+// organization service user, a static-token principal or an unknown ID yields
+// a refusal message instead.
+func (s *Server) pluginWorkloadPrincipal(ctx context.Context, tx model.Tx, body *PluginWorkloadBindingCreateBody, operator uuid.UUID, now time.Time) (uuid.UUID, string, error) {
+	if body.PlatformPrincipal != nil {
+		principal, err := s.Database.CreatePlatformPrincipal(ctx, tx, model.PlatformPrincipal{
+			ID: userid.NewServiceUserTokenId(), DisplayName: body.PlatformPrincipal.DisplayName, GeneratedAt: now, GeneratedBy: operator,
+		})
+		if err != nil {
+			return uuid.Nil, "", err
+		}
+		return principal.ID, "", nil
+	}
+	principal, err := s.Database.GetPlatformPrincipal(ctx, tx, *body.ServiceUserId)
+	if _, notFound := model.IsErrNotFound(err); notFound {
+		return uuid.Nil, "service_user_id must name a platform principal; create one with platform_principal", nil
+	} else if err != nil {
+		return uuid.Nil, "", err
+	}
+	if principal.HoldsStaticToken() {
+		return uuid.Nil, "a platform principal with a static token cannot be bound to a plugin workload", nil
+	}
+	return principal.ID, "", nil
 }
 
 func (s *Server) ListPluginWorkloadBindings(ctx context.Context, _ ListPluginWorkloadBindingsRequestObject) (ListPluginWorkloadBindingsResponseObject, error) {

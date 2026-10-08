@@ -102,6 +102,24 @@ func (e PluginCapabilityRegistrationScopes) Valid() bool {
 	}
 }
 
+// Defines values for PluginWorkloadBindingServiceUserScope.
+const (
+	ServiceUserScopeOrganization PluginWorkloadBindingServiceUserScope = "organization"
+	ServiceUserScopePlatform     PluginWorkloadBindingServiceUserScope = "platform"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadBindingServiceUserScope enum.
+func (e PluginWorkloadBindingServiceUserScope) Valid() bool {
+	switch e {
+	case ServiceUserScopeOrganization:
+		return true
+	case ServiceUserScopePlatform:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PluginWorkloadTokenExchangeRequestGrantType.
 const (
 	PluginWorkloadTokenExchangeGrantType PluginWorkloadTokenExchangeRequestGrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -624,27 +642,44 @@ type PluginWorkloadBinding struct {
 	PluginId       string             `json:"plugin_id"`
 	ServiceAccount string             `json:"service_account"`
 	ServiceUserId  openapi_types.UUID `json:"service_user_id"`
+
+	// ServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+	ServiceUserScope PluginWorkloadBindingServiceUserScope `json:"service_user_scope"`
 }
 
-// PluginWorkloadBindingCreateBody Binds one Kubernetes ServiceAccount of one cluster issuer to the service user of a plugin installation.
+// PluginWorkloadBindingServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+type PluginWorkloadBindingServiceUserScope string
+
+// PluginWorkloadBindingCreateBody Binds one Kubernetes ServiceAccount of one cluster issuer to the platform principal of a plugin installation. Exactly one of platform_principal and service_user_id is required.
 type PluginWorkloadBindingCreateBody struct {
 	// Audience The exact and only audience the projected ServiceAccount token must carry.
 	Audience       string             `json:"audience"`
 	InstallationId openapi_types.UUID `json:"installation_id"`
 
 	// Issuer The cluster's ServiceAccount token issuer. Must equal the issuer configured in IAM.
-	Issuer         string `json:"issuer"`
-	Namespace      string `json:"namespace"`
-	PluginId       string `json:"plugin_id"`
-	ServiceAccount string `json:"service_account"`
+	Issuer    string `json:"issuer"`
+	Namespace string `json:"namespace"`
 
-	// ServiceUserId The IAM service user that the plugin installation record names.
-	ServiceUserId openapi_types.UUID `json:"service_user_id"`
+	// PlatformPrincipal Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+	PlatformPrincipal *PluginWorkloadPrincipalCreateBody `json:"platform_principal,omitempty"`
+	PluginId          string                             `json:"plugin_id"`
+	ServiceAccount    string                             `json:"service_account"`
+
+	// ServiceUserId An existing plugin workload principal without a binding, for example one whose binding was revoked. The plugin installation record names this principal.
+	ServiceUserId *openapi_types.UUID `json:"service_user_id,omitempty"`
 }
 
 // PluginWorkloadBindingList All plugin workload bindings, oldest first.
 type PluginWorkloadBindingList struct {
 	Items []PluginWorkloadBinding `json:"items"`
+}
+
+// PluginWorkloadPrincipalCreateBody Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+type PluginWorkloadPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: progressive-rollouts
+	DisplayName string `json:"display_name"`
 }
 
 // PluginWorkloadTokenExchangeRequest An RFC 8693 token exchange request. Only a Kubernetes ServiceAccount JWT is accepted as subject token.
@@ -1651,7 +1686,7 @@ type ClientInterface interface {
 
 	// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
 	//
-	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
 	//
 	// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
 	InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1886,18 +1921,18 @@ type ClientInterface interface {
 	// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
 	ListPluginWorkloadBindings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
 	CreatePluginWorkloadBindingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1906,7 +1941,7 @@ type ClientInterface interface {
 
 	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The service user's static token stays disabled.
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
 	//
 	// Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
 	DeletePluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2422,7 +2457,7 @@ func (c *Client) InternalUpdateSsoConfiguration(ctx context.Context, orgId OrgId
 
 // InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
 //
-// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
 //
 // Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
 func (c *Client) InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3027,9 +3062,9 @@ func (c *Client) ListPluginWorkloadBindings(ctx context.Context, reqEditors ...R
 	return c.Client.Do(req)
 }
 
-// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3046,9 +3081,9 @@ func (c *Client) CreatePluginWorkloadBindingWithBody(ctx context.Context, conten
 	return c.Client.Do(req)
 }
 
-// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -3067,7 +3102,7 @@ func (c *Client) CreatePluginWorkloadBinding(ctx context.Context, body CreatePlu
 
 // DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The service user's static token stays disabled.
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
 //
 // Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
 func (c *Client) DeletePluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6358,7 +6393,7 @@ type ClientWithResponsesInterface interface {
 
 	// InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
 	//
-	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6631,18 +6666,18 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
 	ListPluginWorkloadBindingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginWorkloadBindingsResponse, error)
 
-	// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
 	CreatePluginWorkloadBindingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePluginWorkloadBindingResponse, error)
 
-	// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+	// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6651,7 +6686,7 @@ type ClientWithResponsesInterface interface {
 
 	// DeletePluginWorkloadBindingWithResponse Revoke a plugin workload binding (v1alpha).
 	//
-	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The service user's static token stays disabled.
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9873,7 +9908,7 @@ func (c *ClientWithResponses) InternalUpdateSsoConfigurationWithResponse(ctx con
 
 // InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
 //
-// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation.
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10368,9 +10403,9 @@ func (c *ClientWithResponses) ListPluginWorkloadBindingsWithResponse(ctx context
 	return ParseListPluginWorkloadBindingsResponse(rsp)
 }
 
-// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10383,9 +10418,9 @@ func (c *ClientWithResponses) CreatePluginWorkloadBindingWithBodyWithResponse(ct
 	return ParseCreatePluginWorkloadBindingResponse(rsp)
 }
 
-// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the service user's static token is disabled and no new static token can be issued while the binding exists.
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10400,7 +10435,7 @@ func (c *ClientWithResponses) CreatePluginWorkloadBindingWithResponse(ctx contex
 
 // DeletePluginWorkloadBindingWithResponse Revoke a plugin workload binding (v1alpha).
 //
-// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The service user's static token stays disabled.
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
 //
 // Returns a wrapper object for the known response body format(s).
 //

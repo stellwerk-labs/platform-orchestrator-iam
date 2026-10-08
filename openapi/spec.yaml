@@ -621,7 +621,7 @@ paths:
       summary: List the workload bindings of one plugin installation (v1alpha).
       description: >-
         Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user
-        it records for an installation.
+        it records for an installation, and that this service user is a platform principal (service_user_scope).
       parameters:
         - name: plugin_id
           in: query
@@ -1043,12 +1043,15 @@ paths:
       tags:
         - PluginWorkload
       operationId: createPluginWorkloadBinding
-      summary: Bind a Kubernetes ServiceAccount to a plugin service user (v1alpha).
+      summary: Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
       description: >-
         Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant.
-        A ServiceAccount and a service user each have at most one binding. The issuer must be the configured workload
-        token issuer and the service user must be active. Unless the transitional static-token adapter is enabled, the
-        service user's static token is disabled and no new static token can be issued while the binding exists.
+        The binding names a platform principal: a service user that belongs to no organization, can hold no role and
+        has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id
+        names an existing plugin workload principal without a binding, for example after a revocation, so the
+        principal and the identity Core records for the installation stay the same. An organization service user or
+        a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one
+        binding. The issuer must be the configured workload token issuer.
       security:
         - userIdHeader: []
       requestBody:
@@ -1100,7 +1103,8 @@ paths:
       summary: Revoke a plugin workload binding (v1alpha).
       description: >-
         Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued
-        for it; the next authentication with such a token fails. The service user's static token stays disabled.
+        for it; the next authentication with such a token fails. The bound principal stays: a platform principal then
+        has no credential at all, and a new binding can name it again.
       security:
         - userIdHeader: []
       parameters:
@@ -2597,7 +2601,9 @@ components:
           maximum: 900
 
     PluginWorkloadBindingCreateBody:
-      description: Binds one Kubernetes ServiceAccount of one cluster issuer to the service user of a plugin installation.
+      description: >-
+        Binds one Kubernetes ServiceAccount of one cluster issuer to the platform principal of a plugin installation.
+        Exactly one of platform_principal and service_user_id is required.
       type: object
       additionalProperties: false
       required:
@@ -2605,7 +2611,6 @@ components:
         - namespace
         - service_account
         - audience
-        - service_user_id
         - plugin_id
         - installation_id
       properties:
@@ -2628,8 +2633,12 @@ components:
           minLength: 1
           maxLength: 255
           pattern: ^[!-~]+$
+        platform_principal:
+          $ref: "#/components/schemas/PluginWorkloadPrincipalCreateBody"
         service_user_id:
-          description: The IAM service user that the plugin installation record names.
+          description: >-
+            An existing plugin workload principal without a binding, for example one whose binding was revoked. The
+            plugin installation record names this principal.
           type: string
           format: uuid
         plugin_id:
@@ -2639,6 +2648,24 @@ components:
         installation_id:
           type: string
           format: uuid
+
+    PluginWorkloadPrincipalCreateBody:
+      description: >-
+        Creates the platform principal of the plugin workload together with the binding. It belongs to no
+        organization, can hold no role and has no static token.
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+      properties:
+        display_name:
+          description: A display name of the platform principal
+          minLength: 2
+          maxLength: 200
+          pattern: ^[^\p{Cc}\p{Cs}\p{Z}\n]( |[^\p{Cc}\p{Cs}\p{Z}\n])*[^\p{Cc}\p{Cs}\p{Z}\n]$
+          x-pattern-error: display_name contains invalid characters
+          type: string
+          example: progressive-rollouts
 
     PluginWorkloadBinding:
       description: A Kubernetes ServiceAccount bound to the service user of a plugin installation.
@@ -2650,6 +2677,7 @@ components:
         - service_account
         - audience
         - service_user_id
+        - service_user_scope
         - plugin_id
         - installation_id
         - created_at
@@ -2669,6 +2697,17 @@ components:
         service_user_id:
           type: string
           format: uuid
+        service_user_scope:
+          description: >-
+            platform for a platform principal, which belongs to no organization and holds no role; organization for a
+            service user of one organization, bound before platform principals existed.
+          type: string
+          enum:
+            - organization
+            - platform
+          x-enum-varnames:
+            - ServiceUserScopeOrganization
+            - ServiceUserScopePlatform
         plugin_id:
           type: string
         installation_id:

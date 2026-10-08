@@ -128,7 +128,9 @@ type Databaser interface {
 	DeleteServiceUserToken(ctx context.Context, optionalTx Tx, orgId string, id uuid.UUID) error
 	BulkExpireAllServiceUserTokens(ctx context.Context, optionalTx Tx, orgId string) (int64, error)
 	IsAuthorizationSubjectActive(ctx context.Context, optionalTx Tx, subjectID uuid.UUID) (bool, error)
-	DisableServiceUserStaticToken(ctx context.Context, optionalTx Tx, serviceUserID uuid.UUID) error
+
+	CreatePlatformPrincipal(ctx context.Context, optionalTx Tx, principal PlatformPrincipal) (*PlatformPrincipal, error)
+	GetPlatformPrincipal(ctx context.Context, optionalTx Tx, id uuid.UUID) (*PlatformPrincipal, error)
 
 	CreatePluginWorkloadBinding(ctx context.Context, optionalTx Tx, binding PluginWorkloadBinding) (*PluginWorkloadBinding, error)
 	GetPluginWorkloadBinding(ctx context.Context, optionalTx Tx, id uuid.UUID) (*PluginWorkloadBinding, error)

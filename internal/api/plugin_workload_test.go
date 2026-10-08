@@ -95,6 +95,22 @@ func TestPluginWorkloadContractValidatesRequestsAgainstTheGeneratedSchema(t *tes
 		}
 	}
 	require.NoError(t, binding.VisitJSON(validBinding()))
+	withPrincipal := validBinding()
+	delete(withPrincipal, "service_user_id")
+	withPrincipal["platform_principal"] = map[string]any{"display_name": "progressive-rollouts"}
+	require.NoError(t, binding.VisitJSON(withPrincipal))
+	for name, principal := range map[string]any{
+		"unknown principal field":   map[string]any{"display_name": "progressive-rollouts", "roles": []any{}},
+		"principal without name":    map[string]any{},
+		"principal with short name": map[string]any{"display_name": "p"},
+		"principal name with space": map[string]any{"display_name": " leading"},
+	} {
+		t.Run("binding/"+name, func(t *testing.T) {
+			body := validBinding()
+			body["platform_principal"] = principal
+			require.Error(t, binding.VisitJSON(body))
+		})
+	}
 	for name, mutate := range map[string]func(map[string]any){
 		"uppercase namespace":        func(body map[string]any) { body["namespace"] = "Plugins" },
 		"dotted namespace":           func(body map[string]any) { body["namespace"] = "plugins.v1" },
@@ -231,6 +247,19 @@ func TestPluginWorkloadRoutesEnforceAuthenticationAndPlatformPermission(t *testi
 				require.Equal(t, http.StatusForbidden, serve(request.method, request.path, principal, request.body).Code, "%s %s", request.method, request.path)
 			}
 		})
+	}
+
+	// A binding names exactly one principal: a new platform principal or an
+	// existing one. Both or neither is refused before any lookup.
+	bindingFields := `"issuer":"` + issuer.URL + `","namespace":"plugins","service_account":"runtime","audience":"stellwerk-iam-plugin-workload",` +
+		`"plugin_id":"dev.stellwerk.progressive-rollouts","installation_id":"` + uuid.NewString() + `"`
+	for name, principal := range map[string]string{
+		"both":    `,"platform_principal":{"display_name":"rollouts"},"service_user_id":"` + userid.NewServiceUserTokenId().String() + `"`,
+		"neither": ``,
+	} {
+		response := serve(http.MethodPost, "/plugin-workload-bindings", userid.InternalSystemUuid.String(), "{"+bindingFields+principal+"}")
+		require.Equal(t, http.StatusBadRequest, response.Code, name)
+		require.Contains(t, response.Body.String(), "exactly one of platform_principal and service_user_id is required", name)
 	}
 
 	exchangeBody := `{"grant_type":"urn:ietf:params:oauth:grant-type:token-exchange","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","subject_token":"`

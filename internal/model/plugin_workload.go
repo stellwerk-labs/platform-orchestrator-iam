@@ -2,8 +2,6 @@ package model
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"time"
 
@@ -14,7 +12,8 @@ import (
 )
 
 // PluginWorkloadBinding maps one Kubernetes ServiceAccount of one issuer to
-// the service user named by a plugin installation record.
+// the service user named by a plugin installation record. New bindings name a
+// platform principal; bindings of organization service users predate them.
 type PluginWorkloadBinding struct {
 	ID             uuid.UUID
 	Issuer         string
@@ -26,8 +25,10 @@ type PluginWorkloadBinding struct {
 	InstallationID uuid.UUID
 	CreatedAt      time.Time
 	CreatedBy      uuid.UUID
-	// ServiceUserActive reports whether the bound service user still exists
-	// within its expiry, the same rule IsAuthorizationSubjectActive applies.
+	// ServiceUserScope is the scope of the bound service user.
+	ServiceUserScope ServiceUserScope
+	// ServiceUserActive reports whether the bound service user is active, the
+	// same rule IsAuthorizationSubjectActive applies.
 	ServiceUserActive bool
 }
 
@@ -43,7 +44,7 @@ type PluginWorkloadToken struct {
 const selectPluginWorkloadBindings = `
 	SELECT b.id, b.issuer, b.namespace, b.service_account, b.audience, b.service_user_id,
 		b.plugin_id, b.installation_id, b.created_at, b.created_by,
-		sut.current_token_expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+		sut.scope, ` + serviceUserActive + `
 	FROM plugin_workload_bindings b
 	JOIN service_user_tokens sut ON sut.id = b.service_user_id
 `
@@ -56,7 +57,7 @@ func scanPluginWorkloadBinding(row rowScanner) (*PluginWorkloadBinding, error) {
 	var binding PluginWorkloadBinding
 	if err := row.Scan(&binding.ID, &binding.Issuer, &binding.Namespace, &binding.ServiceAccount, &binding.Audience,
 		&binding.ServiceUserID, &binding.PluginID, &binding.InstallationID, &binding.CreatedAt, &binding.CreatedBy,
-		&binding.ServiceUserActive); err != nil {
+		&binding.ServiceUserScope, &binding.ServiceUserActive); err != nil {
 		return nil, err
 	}
 	return &binding, nil
@@ -159,25 +160,6 @@ func (d *databaser) DeletePluginWorkloadBinding(ctx context.Context, optionalTx 
 	return nil
 }
 
-// DisableServiceUserStaticToken replaces the static token hash with random
-// bytes that are no token's hash. Identity, roles and expiry stay unchanged, so
-// revoking a workload binding later cannot revive a previously issued static token.
-func (d *databaser) DisableServiceUserStaticToken(ctx context.Context, optionalTx Tx, serviceUserID uuid.UUID) error {
-	unusable := make([]byte, sha256.Size)
-	if _, err := rand.Read(unusable); err != nil {
-		return errors.Wrap(err, "failed to generate an unusable token hash")
-	}
-	result, err := d.txOrDb(optionalTx).ExecContext(ctx,
-		`UPDATE service_user_tokens SET current_token_sha256_hash = $2 WHERE id = $1`, serviceUserID, unusable)
-	if err != nil {
-		return errors.Wrap(err, "failed to disable service user static token")
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		return NewErrNotFound("service user not found")
-	}
-	return nil
-}
-
 func (d *databaser) CreatePluginWorkloadToken(ctx context.Context, optionalTx Tx, token PluginWorkloadToken) error {
 	if _, err := d.txOrDb(optionalTx).ExecContext(ctx, `
 		INSERT INTO plugin_workload_tokens (token_sha256_hash, binding_id, issued_at, expires_at)
@@ -203,7 +185,7 @@ func (d *databaser) GetPluginWorkloadTokenByHash(ctx context.Context, optionalTx
 		JOIN service_user_tokens sut ON sut.id = b.service_user_id
 		WHERE t.token_sha256_hash = $1
 		  AND t.expires_at > now()
-		  AND sut.current_token_expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+		  AND `+serviceUserActive+`
 	`, hash).Scan(&token.BindingID, &token.ServiceUserID, &token.IssuedAt, &token.ExpiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, NewErrNotFound("plugin workload token not found")
