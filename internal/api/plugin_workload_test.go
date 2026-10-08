@@ -26,6 +26,8 @@ func TestPluginWorkloadTokenExchangeIsExemptFromGatewayAuthentication(t *testing
 		"/auth/plugin-workload-tokens",
 		"/plugin-workload-bindings",
 		"/plugin-workload-bindings/0199a0c1-1d6e-72f1-8000-000000000001",
+		"/platform-principals",
+		"/platform-principals/0199a0c1-1d6e-72f2-8000-000000000001/actions/regenerate",
 		"/orgs/acme/auth/plugin-workload-token",
 	} {
 		require.False(t, skipAuthenticationRegex.MatchString(path), path)
@@ -135,10 +137,34 @@ func TestPluginWorkloadContractValidatesRequestsAgainstTheGeneratedSchema(t *tes
 	regenerate := spec.Paths.Value("/orgs/{orgId}/service-users/{serviceUserId}/actions/regenerate").Post
 	require.NotNil(t, regenerate.Responses.Value("409"), "regeneration documents the refusal for workload-bound service users")
 	require.Empty(t, spec.Paths.Value("/auth/plugin-workload-token").Post.Security, "the exchange needs no prior authentication")
-	for _, path := range []string{"/plugin-workload-bindings", "/plugin-workload-bindings/{bindingId}"} {
+	for _, path := range []string{
+		"/plugin-workload-bindings", "/plugin-workload-bindings/{bindingId}",
+		"/platform-principals", "/platform-principals/{principalId}", "/platform-principals/{principalId}/actions/regenerate",
+	} {
 		for method, operation := range spec.Paths.Value(path).Operations() {
 			require.NotNil(t, operation.Security, "%s %s must require an authenticated principal", method, path)
 		}
+	}
+
+	principal := spec.Components.Schemas["PlatformPrincipalCreateBody"].Value
+	validPrincipal := func() map[string]any {
+		return map[string]any{"display_name": "Data Plane admission checker", "expiry_in_days": 365}
+	}
+	require.NoError(t, principal.VisitJSON(validPrincipal()))
+	for name, mutate := range map[string]func(map[string]any){
+		"roles":              func(body map[string]any) { body["roles"] = []any{} },
+		"organization":       func(body map[string]any) { body["org_id"] = "acme" },
+		"no expiry":          func(body map[string]any) { delete(body, "expiry_in_days") },
+		"expiry zero":        func(body map[string]any) { body["expiry_in_days"] = 0 },
+		"expiry above max":   func(body map[string]any) { body["expiry_in_days"] = 3661 },
+		"no display name":    func(body map[string]any) { delete(body, "display_name") },
+		"blank display name": func(body map[string]any) { body["display_name"] = "  " },
+	} {
+		t.Run("platform principal/"+name, func(t *testing.T) {
+			body := validPrincipal()
+			mutate(body)
+			require.Error(t, principal.VisitJSON(body))
+		})
 	}
 }
 
@@ -269,6 +295,64 @@ func TestPluginWorkloadRoutesEnforceAuthenticationAndPlatformPermission(t *testi
 	response = serve(http.MethodPost, "/auth/plugin-workload-token", "", exchangeBody+`x","audience":"other"}`)
 	require.Equal(t, http.StatusBadRequest, response.Code, "unknown RFC 8693 parameters are rejected by the contract")
 	require.NotContains(t, response.Body.String(), invalidGrantErrorCode)
+}
+
+func TestPlatformPrincipalRoutesEnforceAuthenticationAndPlatformPermission(t *testing.T) {
+	// No Database: every request below is decided before any lookup.
+	server := &Server{
+		Logger:                    zaptest.NewLogger(t),
+		PlatformPermissionHolders: map[string][]uuid.UUID{sharedauthz.PermissionPluginWorkloadBindingWrite: {userid.NewHumanUserId()}},
+	}
+	echoServer, err := hecho.DefaultEchoServerWithValidation(&hecho.ValidatedServerConfig{
+		AppName: "test", Logger: zaptest.NewLogger(t), OpenAPIRawSchema: MustDecodeOpenApiSpec(), OpenAPISkipperFn: OpenApiValidatorSkipper,
+	})
+	require.NoError(t, err)
+	server.MapRoutes(echoServer)
+	serve := func(method, path, from, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if from != "" {
+			request.Header.Set("From", from)
+		}
+		response := httptest.NewRecorder()
+		echoServer.ServeHTTP(response, request)
+		return response
+	}
+
+	principalPath := "/platform-principals/" + userid.NewServiceUserTokenId().String()
+	requests := []struct{ method, path, body string }{
+		{http.MethodGet, "/platform-principals", ""},
+		{http.MethodPost, "/platform-principals", `{"display_name":"Data Plane admission checker","expiry_in_days":365}`},
+		{http.MethodGet, principalPath, ""},
+		{http.MethodDelete, principalPath, ""},
+		{http.MethodPost, principalPath + "/actions/regenerate", `{"expiry_in_days":365}`},
+	}
+	for _, request := range requests {
+		require.Equal(t, http.StatusUnauthorized, serve(request.method, request.path, "", request.body).Code, "%s %s without principal", request.method, request.path)
+	}
+	for name, principal := range map[string]string{
+		"organization service user": userid.NewServiceUserTokenId().String(),
+		"human":                     userid.NewHumanUserId().String(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, request := range requests {
+				response := serve(request.method, request.path, principal, request.body)
+				require.Equal(t, http.StatusForbidden, response.Code, "%s %s", request.method, request.path)
+				require.JSONEq(t, `[{"resource":"platform","permission":"plugin_workload_binding_write"}]`, failedChecksJSON(t, response.Body.Bytes()))
+			}
+		})
+	}
+
+	system := userid.InternalSystemUuid.String()
+	for name, body := range map[string]string{
+		"organization":   `{"display_name":"checker","expiry_in_days":365,"org_id":"acme"}`,
+		"roles":          `{"display_name":"checker","expiry_in_days":365,"roles":[]}`,
+		"without expiry": `{"display_name":"checker"}`,
+	} {
+		require.Equal(t, http.StatusBadRequest, serve(http.MethodPost, "/platform-principals", system, body).Code, name)
+	}
+	require.Equal(t, http.StatusBadRequest, serve(http.MethodPost, principalPath+"/actions/regenerate", system, `{}`).Code)
+	require.Equal(t, http.StatusBadRequest, serve(http.MethodGet, "/platform-principals/not-a-uuid", system, "").Code)
 }
 
 func TestInternalPlatformRoutesHonourTheirContract(t *testing.T) {

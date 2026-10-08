@@ -36,6 +36,19 @@ func EncodeServiceUserToken(raw []byte) string {
 }
 
 func RegenerateServiceUserToken(subject *model.ServiceUserToken, expireDays int) string {
+	token := newStaticToken(expireDays)
+	subject.GeneratedAt, subject.CurrentTokenExpiresAt, subject.CurrentTokenSha256Hash = token.generatedAt, token.expiresAt, token.sha256Hash
+	return token.value
+}
+
+// staticToken is a new static service user token; only its hash is stored.
+type staticToken struct {
+	value                  string
+	sha256Hash             []byte
+	generatedAt, expiresAt time.Time
+}
+
+func newStaticToken(expireDays int) staticToken {
 	raw := make([]byte, ServiceUserTokenEntropyBytes)
 	if _, err := rand.Read(raw); err != nil {
 		// panic if we can't get entropy
@@ -43,10 +56,10 @@ func RegenerateServiceUserToken(subject *model.ServiceUserToken, expireDays int)
 	}
 	hashSum := sha256.Sum256(raw)
 	now := time.Now().UTC()
-	subject.GeneratedAt = now
-	subject.CurrentTokenExpiresAt = now.Add(time.Duration(expireDays*24) * time.Hour)
-	subject.CurrentTokenSha256Hash = hashSum[:]
-	return EncodeServiceUserToken(raw)
+	return staticToken{
+		value: EncodeServiceUserToken(raw), sha256Hash: hashSum[:],
+		generatedAt: now, expiresAt: now.Add(time.Duration(expireDays*24) * time.Hour),
+	}
 }
 
 func (s *Server) ListServiceUsers(ctx context.Context, request ListServiceUsersRequestObject) (ListServiceUsersResponseObject, error) {

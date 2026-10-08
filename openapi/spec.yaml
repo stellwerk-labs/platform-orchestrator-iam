@@ -1119,6 +1119,134 @@ paths:
         "404":
           $ref: "#/components/responses/404NotFound"
 
+  /platform-principals:
+    get:
+      tags:
+        - PlatformPrincipal
+      operationId: listPlatformPrincipals
+      summary: List platform principals (v1alpha).
+      description: >-
+        Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no
+        organization, hold no role and never appear in an organization's service users.
+      security:
+        - userIdHeader: []
+      responses:
+        "200":
+          description: All platform principals, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPrincipalList"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+    post:
+      tags:
+        - PlatformPrincipal
+      operationId: createPlatformPrincipal
+      summary: Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+      description: >-
+        Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system
+        identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can
+        hold no role and cannot be bound to a plugin workload. The token is returned only once.
+      security:
+        - userIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformPrincipalCreateBody"
+      responses:
+        "201":
+          description: Platform principal created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPrincipalWithToken"
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+
+  /platform-principals/{principalId}:
+    get:
+      tags:
+        - PlatformPrincipal
+      operationId: getPlatformPrincipal
+      summary: Get a platform principal (v1alpha).
+      description: Requires the platform-level permission plugin_workload_binding_write.
+      security:
+        - userIdHeader: []
+      parameters:
+        - $ref: "#/components/parameters/platformPrincipalIdPathParam"
+      responses:
+        "200":
+          description: The platform principal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPrincipal"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "404":
+          $ref: "#/components/responses/404NotFound"
+    delete:
+      tags:
+        - PlatformPrincipal
+      operationId: deletePlatformPrincipal
+      summary: Delete a platform principal (v1alpha).
+      description: >-
+        Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its
+        workload binding and every token issued for it. Due to internal caching, a static token may keep
+        authenticating for up to a minute.
+      security:
+        - userIdHeader: []
+      parameters:
+        - $ref: "#/components/parameters/platformPrincipalIdPathParam"
+      responses:
+        "204":
+          description: Platform principal deleted.
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "404":
+          $ref: "#/components/responses/404NotFound"
+
+  /platform-principals/{principalId}/actions/regenerate:
+    post:
+      tags:
+        - PlatformPrincipal
+      operationId: regeneratePlatformPrincipal
+      summary: Replace the static token of a platform principal (v1alpha).
+      description: >-
+        Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system
+        identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A
+        plugin workload principal has no static token and returns 409.
+      security:
+        - userIdHeader: []
+      parameters:
+        - $ref: "#/components/parameters/platformPrincipalIdPathParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceUserRegenerateBody"
+      responses:
+        "200":
+          description: Static token replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPrincipalWithToken"
+        "400":
+          $ref: "#/components/responses/400BadRequest"
+        "403":
+          $ref: "#/components/responses/403Forbidden"
+        "404":
+          $ref: "#/components/responses/404NotFound"
+        "409":
+          $ref: "#/components/responses/409Conflict"
+
   /orgs/{orgId}/roles:
     get:
       tags:
@@ -1479,6 +1607,15 @@ components:
       name: bindingId
       in: path
       description: The plugin workload binding ID
+      example: 01234567-89ab-cdef-0123-456789abcdef
+      required: true
+      schema:
+        type: string
+        format: uuid
+    platformPrincipalIdPathParam:
+      name: principalId
+      in: path
+      description: The platform principal ID
       example: 01234567-89ab-cdef-0123-456789abcdef
       required: true
       schema:
@@ -2732,6 +2869,97 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PluginWorkloadBinding"
+
+    PlatformPrincipalCreateBody:
+      description: Creates a platform principal that authenticates with a static token.
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+        - expiry_in_days
+      properties:
+        display_name:
+          description: A display name of the platform principal
+          minLength: 2
+          maxLength: 200
+          pattern: ^[^\p{Cc}\p{Cs}\p{Z}\n]( |[^\p{Cc}\p{Cs}\p{Z}\n])*[^\p{Cc}\p{Cs}\p{Z}\n]$
+          x-pattern-error: display_name contains invalid characters
+          type: string
+          example: Data Plane admission checker
+        expiry_in_days:
+          description: The expiry time of the token in days from the time of creation
+          type: integer
+          minimum: 1
+          maximum: 3660
+          example: 365
+
+    PlatformPrincipal:
+      description: >-
+        A service user that belongs to no organization and holds no role. A static_token principal, such as the Data
+        Plane admission checker, authenticates with a token from this API. A workload principal has no static token;
+        it authenticates only with tokens exchanged through its plugin workload binding.
+      type: object
+      required:
+        - id
+        - display_name
+        - credential
+        - generated_at
+        - generated_by
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        credential:
+          $ref: "#/components/schemas/PlatformPrincipalCredential"
+        generated_at:
+          description: The time the principal was created or its static token last regenerated
+          type: string
+          format: date-time
+        generated_by:
+          description: The principal that created it or last regenerated its static token
+          type: string
+          format: uuid
+        current_token_expires_at:
+          description: The expiry of the static token; absent for a workload principal.
+          type: string
+          format: date-time
+        workload_binding_id:
+          description: The plugin workload binding of a bound workload principal.
+          type: string
+          format: uuid
+
+    PlatformPrincipalCredential:
+      description: How a platform principal authenticates.
+      type: string
+      enum:
+        - static_token
+        - workload
+      x-enum-varnames:
+        - PlatformPrincipalCredentialStaticToken
+        - PlatformPrincipalCredentialWorkload
+
+    PlatformPrincipalWithToken:
+      allOf:
+        - $ref: "#/components/schemas/PlatformPrincipal"
+        - required:
+            - token
+          properties:
+            token:
+              description: The static bearer token. It is returned only here.
+              type: string
+
+    PlatformPrincipalList:
+      description: All platform principals, oldest first.
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPrincipal"
 
     ServiceUserRole:
       description: A role to assign to a user or service user.

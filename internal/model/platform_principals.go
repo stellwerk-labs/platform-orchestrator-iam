@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // ServiceUserScope says where a service user belongs.
@@ -94,4 +95,61 @@ func (d *databaser) GetPlatformPrincipal(ctx context.Context, optionalTx Tx, id 
 		return nil, errors.Wrap(err, "failed to read platform principal")
 	}
 	return principal, nil
+}
+
+// ListPlatformPrincipals returns every platform principal, oldest first.
+func (d *databaser) ListPlatformPrincipals(ctx context.Context, optionalTx Tx) ([]PlatformPrincipal, error) {
+	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, selectPlatformPrincipals+`ORDER BY sut.id`)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list platform principals")
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			d.logger.Error("failed to close platform principal rows", zap.Error(closeErr))
+		}
+	}()
+	principals := make([]PlatformPrincipal, 0)
+	for rows.Next() {
+		principal, err := scanPlatformPrincipal(rows)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to scan platform principal")
+		}
+		principals = append(principals, *principal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "failed to iterate platform principals")
+	}
+	return principals, nil
+}
+
+// RegeneratePlatformPrincipalToken replaces the static token of a static-token
+// platform principal. A plugin workload principal never gains one: it is not
+// found here.
+func (d *databaser) RegeneratePlatformPrincipalToken(ctx context.Context, optionalTx Tx, principal PlatformPrincipal) (*PlatformPrincipal, error) {
+	tx := d.txOrDb(optionalTx)
+	result, err := tx.ExecContext(ctx, `
+		UPDATE service_user_tokens
+		SET generated_at = $2, generated_by = $3, current_token_expires_at = $4, current_token_sha256_hash = $5
+		WHERE id = $1 AND scope = 'platform' AND current_token_sha256_hash IS NOT NULL
+	`, principal.ID, principal.GeneratedAt, principal.GeneratedBy, principal.CurrentTokenExpiresAt, principal.CurrentTokenSha256Hash)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to regenerate platform principal token")
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return nil, NewErrNotFound("static-token platform principal not found")
+	}
+	return d.GetPlatformPrincipal(ctx, tx, principal.ID)
+}
+
+// DeletePlatformPrincipal deletes a platform principal together with its
+// workload binding and every token issued for it.
+func (d *databaser) DeletePlatformPrincipal(ctx context.Context, optionalTx Tx, id uuid.UUID) error {
+	result, err := d.txOrDb(optionalTx).ExecContext(ctx, `DELETE FROM service_user_tokens WHERE id = $1 AND scope = 'platform'`, id)
+	if err != nil {
+		return errors.Wrap(err, "failed to delete platform principal")
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return NewErrNotFound("platform principal not found")
+	}
+	return nil
 }

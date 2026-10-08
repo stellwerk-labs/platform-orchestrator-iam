@@ -131,6 +131,9 @@ type Databaser interface {
 
 	CreatePlatformPrincipal(ctx context.Context, optionalTx Tx, principal PlatformPrincipal) (*PlatformPrincipal, error)
 	GetPlatformPrincipal(ctx context.Context, optionalTx Tx, id uuid.UUID) (*PlatformPrincipal, error)
+	ListPlatformPrincipals(ctx context.Context, optionalTx Tx) ([]PlatformPrincipal, error)
+	RegeneratePlatformPrincipalToken(ctx context.Context, optionalTx Tx, principal PlatformPrincipal) (*PlatformPrincipal, error)
+	DeletePlatformPrincipal(ctx context.Context, optionalTx Tx, id uuid.UUID) error
 
 	CreatePluginWorkloadBinding(ctx context.Context, optionalTx Tx, binding PluginWorkloadBinding) (*PluginWorkloadBinding, error)
 	GetPluginWorkloadBinding(ctx context.Context, optionalTx Tx, id uuid.UUID) (*PluginWorkloadBinding, error)

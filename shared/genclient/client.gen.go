@@ -60,6 +60,24 @@ func (e PermissionDefinitionScopes) Valid() bool {
 	}
 }
 
+// Defines values for PlatformPrincipalCredential.
+const (
+	PlatformPrincipalCredentialStaticToken PlatformPrincipalCredential = "static_token"
+	PlatformPrincipalCredentialWorkload    PlatformPrincipalCredential = "workload"
+)
+
+// Valid indicates whether the value is a known member of the PlatformPrincipalCredential enum.
+func (e PlatformPrincipalCredential) Valid() bool {
+	switch e {
+	case PlatformPrincipalCredentialStaticToken:
+		return true
+	case PlatformPrincipalCredentialWorkload:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PluginCapabilityRegistrationLevel.
 const (
 	PluginCapabilityRegistrationLevelManage PluginCapabilityRegistrationLevel = "manage"
@@ -609,6 +627,70 @@ type PermissionDefinitionPage struct {
 	Items []PermissionDefinition `json:"items"`
 }
 
+// PlatformPrincipal A service user that belongs to no organization and holds no role. A static_token principal, such as the Data Plane admission checker, authenticates with a token from this API. A workload principal has no static token; it authenticates only with tokens exchanged through its plugin workload binding.
+type PlatformPrincipal struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
+// PlatformPrincipalCreateBody Creates a platform principal that authenticates with a static token.
+type PlatformPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: Data Plane admission checker
+	DisplayName string `json:"display_name"`
+
+	// ExpiryInDays The expiry time of the token in days from the time of creation
+	//
+	// Example: 365
+	ExpiryInDays int `json:"expiry_in_days"`
+}
+
+// PlatformPrincipalCredential How a platform principal authenticates.
+type PlatformPrincipalCredential string
+
+// PlatformPrincipalList All platform principals, oldest first.
+type PlatformPrincipalList struct {
+	Items []PlatformPrincipal `json:"items"`
+}
+
+// PlatformPrincipalWithToken defines model for PlatformPrincipalWithToken.
+type PlatformPrincipalWithToken struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Token The static bearer token. It is returned only here.
+	Token string `json:"token"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
 // PluginCapabilityRegistration A plugin-owned permission definition. The name is a flat slug local to the plugin namespace; dots are forbidden so the full identifier has one unambiguous plugin/local boundary.
 type PluginCapabilityRegistration struct {
 	Category    string                               `json:"category"`
@@ -1123,6 +1205,9 @@ type PageTokenQueryParam = string
 // PerPageQueryParam defines model for perPageQueryParam.
 type PerPageQueryParam = int
 
+// PlatformPrincipalIdPathParam defines model for platformPrincipalIdPathParam.
+type PlatformPrincipalIdPathParam = openapi_types.UUID
+
 // PluginWorkloadBindingIdPathParam defines model for pluginWorkloadBindingIdPathParam.
 type PluginWorkloadBindingIdPathParam = openapi_types.UUID
 
@@ -1415,6 +1500,12 @@ type RegenerateServiceUserJSONRequestBody = ServiceUserRegenerateBody
 
 // ReplaceOrgUserMembershipsJSONRequestBody defines body for ReplaceOrgUserMemberships for application/json ContentType.
 type ReplaceOrgUserMembershipsJSONRequestBody = ReplaceUserMembershipsBody
+
+// CreatePlatformPrincipalJSONRequestBody defines body for CreatePlatformPrincipal for application/json ContentType.
+type CreatePlatformPrincipalJSONRequestBody = PlatformPrincipalCreateBody
+
+// RegeneratePlatformPrincipalJSONRequestBody defines body for RegeneratePlatformPrincipal for application/json ContentType.
+type RegeneratePlatformPrincipalJSONRequestBody = ServiceUserRegenerateBody
 
 // CreatePluginWorkloadBindingJSONRequestBody defines body for CreatePluginWorkloadBinding for application/json ContentType.
 type CreatePluginWorkloadBindingJSONRequestBody = PluginWorkloadBindingCreateBody
@@ -1917,6 +2008,63 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 	ReplaceOrgUserMemberships(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlatformPrincipals List platform principals (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+	//
+	// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+	ListPlatformPrincipals(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePlatformPrincipalWithBody Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipal(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+	//
+	// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+	DeletePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlatformPrincipal Get a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+	GetPlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegeneratePlatformPrincipalWithBody Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithBody(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
 	//
@@ -3043,6 +3191,133 @@ func (c *Client) ReplaceOrgUserMembershipsWithBody(ctx context.Context, orgId Or
 // Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 func (c *Client) ReplaceOrgUserMemberships(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReplaceOrgUserMembershipsRequest(c.Server, orgId, userId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPlatformPrincipals List platform principals (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+//
+// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+func (c *Client) ListPlatformPrincipals(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPlatformPrincipalsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePlatformPrincipalWithBody Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *Client) CreatePlatformPrincipalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePlatformPrincipalRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *Client) CreatePlatformPrincipal(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePlatformPrincipalRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+//
+// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+func (c *Client) DeletePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePlatformPrincipalRequest(c.Server, principalId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPlatformPrincipal Get a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+func (c *Client) GetPlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlatformPrincipalRequest(c.Server, principalId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegeneratePlatformPrincipalWithBody Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *Client) RegeneratePlatformPrincipalWithBody(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegeneratePlatformPrincipalRequestWithBody(c.Server, principalId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *Client) RegeneratePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegeneratePlatformPrincipalRequest(c.Server, principalId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5751,6 +6026,188 @@ func NewReplaceOrgUserMembershipsRequestWithBody(server string, orgId OrgIdPathP
 	return req, nil
 }
 
+// NewListPlatformPrincipalsRequest constructs an http.Request for the ListPlatformPrincipals method
+func NewListPlatformPrincipalsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePlatformPrincipalRequest calls the generic CreatePlatformPrincipal builder with application/json body
+func NewCreatePlatformPrincipalRequest(server string, body CreatePlatformPrincipalJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePlatformPrincipalRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePlatformPrincipalRequestWithBody constructs an http.Request for the CreatePlatformPrincipal method, with any body, and a specified content type
+func NewCreatePlatformPrincipalRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePlatformPrincipalRequest constructs an http.Request for the DeletePlatformPrincipal method
+func NewDeletePlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPlatformPrincipalRequest constructs an http.Request for the GetPlatformPrincipal method
+func NewGetPlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegeneratePlatformPrincipalRequest calls the generic RegeneratePlatformPrincipal builder with application/json body
+func NewRegeneratePlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegeneratePlatformPrincipalRequestWithBody(server, principalId, "application/json", bodyReader)
+}
+
+// NewRegeneratePlatformPrincipalRequestWithBody constructs an http.Request for the RegeneratePlatformPrincipal method, with any body, and a specified content type
+func NewRegeneratePlatformPrincipalRequestWithBody(server string, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s/actions/regenerate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListPluginWorkloadBindingsRequest constructs an http.Request for the ListPluginWorkloadBindings method
 func NewListPluginWorkloadBindingsRequest(server string) (*http.Request, error) {
 	var err error
@@ -6668,6 +7125,69 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 	ReplaceOrgUserMembershipsWithResponse(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceOrgUserMembershipsResponse, error)
+
+	// ListPlatformPrincipalsWithResponse List platform principals (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+	ListPlatformPrincipalsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlatformPrincipalsResponse, error)
+
+	// CreatePlatformPrincipalWithBodyWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error)
+
+	// CreatePlatformPrincipalWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithResponse(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error)
+
+	// DeletePlatformPrincipalWithResponse Delete a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+	DeletePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*DeletePlatformPrincipalResponse, error)
+
+	// GetPlatformPrincipalWithResponse Get a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+	GetPlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*GetPlatformPrincipalResponse, error)
+
+	// RegeneratePlatformPrincipalWithBodyWithResponse Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithBodyWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error)
+
+	// RegeneratePlatformPrincipalWithResponse Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error)
 
 	// ListPluginWorkloadBindingsWithResponse List plugin workload bindings (v1alpha).
 	//
@@ -9140,6 +9660,281 @@ func (r ReplaceOrgUserMembershipsResponse) ContentType() string {
 	return ""
 }
 
+type ListPlatformPrincipalsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipalList
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPlatformPrincipalsResponse) GetJSON200() *PlatformPrincipalList {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPlatformPrincipalsResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPlatformPrincipalsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPlatformPrincipalsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPlatformPrincipalsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPlatformPrincipalsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreatePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *PlatformPrincipalWithToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON201() *PlatformPrincipalWithToken {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r CreatePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipal
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON200() *PlatformPrincipal {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RegeneratePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipalWithToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *N409Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON200() *PlatformPrincipalWithToken {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON409() *N409Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r RegeneratePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RegeneratePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegeneratePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RegeneratePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPluginWorkloadBindingsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -10402,6 +11197,111 @@ func (c *ClientWithResponses) ReplaceOrgUserMembershipsWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseReplaceOrgUserMembershipsResponse(rsp)
+}
+
+// ListPlatformPrincipalsWithResponse List platform principals (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+func (c *ClientWithResponses) ListPlatformPrincipalsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlatformPrincipalsResponse, error) {
+	rsp, err := c.ListPlatformPrincipals(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPlatformPrincipalsResponse(rsp)
+}
+
+// CreatePlatformPrincipalWithBodyWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *ClientWithResponses) CreatePlatformPrincipalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error) {
+	rsp, err := c.CreatePlatformPrincipalWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePlatformPrincipalResponse(rsp)
+}
+
+// CreatePlatformPrincipalWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *ClientWithResponses) CreatePlatformPrincipalWithResponse(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error) {
+	rsp, err := c.CreatePlatformPrincipal(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePlatformPrincipalResponse(rsp)
+}
+
+// DeletePlatformPrincipalWithResponse Delete a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+func (c *ClientWithResponses) DeletePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*DeletePlatformPrincipalResponse, error) {
+	rsp, err := c.DeletePlatformPrincipal(ctx, principalId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePlatformPrincipalResponse(rsp)
+}
+
+// GetPlatformPrincipalWithResponse Get a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+func (c *ClientWithResponses) GetPlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*GetPlatformPrincipalResponse, error) {
+	rsp, err := c.GetPlatformPrincipal(ctx, principalId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlatformPrincipalResponse(rsp)
+}
+
+// RegeneratePlatformPrincipalWithBodyWithResponse Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *ClientWithResponses) RegeneratePlatformPrincipalWithBodyWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error) {
+	rsp, err := c.RegeneratePlatformPrincipalWithBody(ctx, principalId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegeneratePlatformPrincipalResponse(rsp)
+}
+
+// RegeneratePlatformPrincipalWithResponse Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *ClientWithResponses) RegeneratePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error) {
+	rsp, err := c.RegeneratePlatformPrincipal(ctx, principalId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegeneratePlatformPrincipalResponse(rsp)
 }
 
 // ListPluginWorkloadBindingsWithResponse List plugin workload bindings (v1alpha).
@@ -12281,6 +13181,209 @@ func ParseReplaceOrgUserMembershipsResponse(rsp *http.Response) (*ReplaceOrgUser
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest N409Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPlatformPrincipalsResponse parses an HTTP response from a ListPlatformPrincipalsWithResponse call
+func ParseListPlatformPrincipalsResponse(rsp *http.Response) (*ListPlatformPrincipalsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPlatformPrincipalsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipalList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePlatformPrincipalResponse parses an HTTP response from a CreatePlatformPrincipalWithResponse call
+func ParseCreatePlatformPrincipalResponse(rsp *http.Response) (*CreatePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PlatformPrincipalWithToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePlatformPrincipalResponse parses an HTTP response from a DeletePlatformPrincipalWithResponse call
+func ParseDeletePlatformPrincipalResponse(rsp *http.Response) (*DeletePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPlatformPrincipalResponse parses an HTTP response from a GetPlatformPrincipalWithResponse call
+func ParseGetPlatformPrincipalResponse(rsp *http.Response) (*GetPlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipal
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegeneratePlatformPrincipalResponse parses an HTTP response from a RegeneratePlatformPrincipalWithResponse call
+func ParseRegeneratePlatformPrincipalResponse(rsp *http.Response) (*RegeneratePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegeneratePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipalWithToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest N404NotFound
