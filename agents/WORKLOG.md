@@ -1,5 +1,16 @@
 # Worklog
 
+## Immutable BuildKit SBOM generator
+
+- Pinned BuildKit's existing SBOM generator to
+  docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+  in both candidate/stable builds and any existing dependency-seed pair.
+  Official registry descriptors verify the index and Linux amd64/arm64 manifests.
+- Preserve maximum provenance and all SBOM attestations. This existing generator
+  is distinct from the unchanged external Syft 1.54.1 image used after inspection.
+  Workflow contracts require the exact generator pin and reject mutable sbom:true.
+  No build, push, or publication was executed for this tooling correction.
+
 ## Upgrade fixture and isolated current build context
 
 - Pinned the existing SpiceDB v1.45.4 upgrade fixture to its coordinator-verified
