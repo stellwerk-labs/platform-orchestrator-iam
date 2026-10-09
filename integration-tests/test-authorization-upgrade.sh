@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+current_build_context=${CURRENT_BUILD_CONTEXT:-$repo_dir}
 legacy_ref=${LEGACY_REF:-v2.0.1}
 run_id="stellwerk-authz-upgrade-$$"
 network_name="$run_id"
@@ -88,7 +89,7 @@ authorize_on() {
 
 git -C "$repo_dir" archive "$legacy_ref" | tar -x -C "$temp_dir"
 docker build -q -t "$legacy_image" "$temp_dir" >/dev/null
-docker build -q -t "$casbin_image" "$repo_dir" >/dev/null
+docker build -q -t "$casbin_image" "$current_build_context" >/dev/null
 
 docker network create "$network_name" >/dev/null
 docker run -d --name "$postgres_name" --network "$network_name" \
@@ -96,7 +97,7 @@ docker run -d --name "$postgres_name" --network "$network_name" \
   postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24 >/dev/null
 docker run -d --name "$nats_name" --network "$network_name" nats:2.12.0-alpine@sha256:5ef5cab0ec8057c0b2017e0579f1de7ff01c9ef6d506b07cfef1e63037854776 --jetstream >/dev/null
 docker run -d --name "$spicedb_name" --network "$network_name" \
-  -e SPICEDB_GRPC_PRESHARED_KEY=t0k3n authzed/spicedb:v1.45.4 serve-testing >/dev/null
+  -e SPICEDB_GRPC_PRESHARED_KEY=t0k3n authzed/spicedb:v1.45.4@sha256:cad9887e8c0335f06dbaf6a7db8011a666075e6fe143c5181ddbc258280d1e23 serve-testing >/dev/null
 docker run -d --name "$cp_name" --network "$network_name" \
   -v "$repo_dir/integration-tests/authorization-upgrade-nginx.conf:/etc/nginx/nginx.conf:ro" nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de >/dev/null
 

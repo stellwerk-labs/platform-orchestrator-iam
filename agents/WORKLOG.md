@@ -1,5 +1,17 @@
 # Worklog
 
+## Upgrade fixture and isolated current build context
+
+- Pinned the existing SpiceDB v1.45.4 upgrade fixture to its coordinator-verified
+  official manifest index. Added CURRENT_BUILD_CONTEXT for the current IAM image;
+  its default remains the normal repository entry point. Private qualification
+  verifies its sealed disposable context immediately before invoking this path.
+- The legacy IAM image remains an exact git-archive released-ref baseline, not a
+  claim that old artifacts implement current notice or reproducibility policy.
+- Three contract tests execute the actual POSIX context-selection expression,
+  check exact current/legacy build wiring and image pin, and validate shell syntax.
+  No Docker build, upgrade suite, push, or publication ran for this correction.
+
 ## Exact ORAS installer version validation
 
 - Corrected shell ERE escaping in the Linux ORAS1.3.4 installer. The regression executes the actual installer expression with valid and invalid version output, rejecting wildcard dots and version suffixes without changing approved tool/version/archive checksums.
