@@ -382,6 +382,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Generate
+        run: make generate
+
       - name: Setup Score Compose
         uses: score-spec/setup-score@888a7deafd396c3f3f05e00d2d9b0ab225799ac0 # v3.2.4
         with:
