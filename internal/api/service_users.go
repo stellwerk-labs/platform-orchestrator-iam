@@ -36,6 +36,19 @@ func EncodeServiceUserToken(raw []byte) string {
 }
 
 func RegenerateServiceUserToken(subject *model.ServiceUserToken, expireDays int) string {
+	token := newStaticToken(expireDays)
+	subject.GeneratedAt, subject.CurrentTokenExpiresAt, subject.CurrentTokenSha256Hash = token.generatedAt, token.expiresAt, token.sha256Hash
+	return token.value
+}
+
+// staticToken is a new static service user token; only its hash is stored.
+type staticToken struct {
+	value                  string
+	sha256Hash             []byte
+	generatedAt, expiresAt time.Time
+}
+
+func newStaticToken(expireDays int) staticToken {
 	raw := make([]byte, ServiceUserTokenEntropyBytes)
 	if _, err := rand.Read(raw); err != nil {
 		// panic if we can't get entropy
@@ -43,10 +56,10 @@ func RegenerateServiceUserToken(subject *model.ServiceUserToken, expireDays int)
 	}
 	hashSum := sha256.Sum256(raw)
 	now := time.Now().UTC()
-	subject.GeneratedAt = now
-	subject.CurrentTokenExpiresAt = now.Add(time.Duration(expireDays*24) * time.Hour)
-	subject.CurrentTokenSha256Hash = hashSum[:]
-	return EncodeServiceUserToken(raw)
+	return staticToken{
+		value: EncodeServiceUserToken(raw), sha256Hash: hashSum[:],
+		generatedAt: now, expiresAt: now.Add(time.Duration(expireDays*24) * time.Hour),
+	}
 }
 
 func (s *Server) ListServiceUsers(ctx context.Context, request ListServiceUsersRequestObject) (ListServiceUsersResponseObject, error) {
@@ -249,6 +262,13 @@ func (s *Server) RegenerateServiceUser(ctx context.Context, request RegenerateSe
 	} else if t.OrgId != request.OrgId {
 		return RegenerateServiceUser404JSONResponse{N404NotFoundJSONResponse: Generate404Response("service user not found")}, nil
 	}
+	if !s.PluginWorkloadStaticTokens {
+		if bound, err := s.isPluginWorkload(ctx, tx, t.Id); err != nil {
+			return nil, err
+		} else if bound {
+			return RegenerateServiceUser409JSONResponse{N409ConflictJSONResponse: Generate409Response("the service user is bound to a plugin workload and cannot hold a static token")}, nil
+		}
+	}
 
 	raw := RegenerateServiceUserToken(t, request.Body.ExpiryInDays)
 	t.GeneratedBy = uid
@@ -345,6 +365,12 @@ func (s *Server) ReplaceServiceUserRoles(ctx context.Context, request ReplaceSer
 	// Verify the service user belongs to the correct organization
 	if serviceUser.OrgId != request.OrgId {
 		return ReplaceServiceUserRoles404JSONResponse{N404NotFoundJSONResponse: Generate404Response("service user not found")}, nil
+	}
+	// A plugin workload holds no role, so a bound service user gets none.
+	if bound, err := s.isPluginWorkload(ctx, tx, serviceUser.Id); err != nil {
+		return nil, err
+	} else if bound {
+		return ReplaceServiceUserRoles409JSONResponse{N409ConflictJSONResponse: Generate409Response("the service user is bound to a plugin workload and cannot hold roles")}, nil
 	}
 
 	// Delete all existing service user roles for this service user in this organization

@@ -17,4 +17,6 @@ func TestScopedChecks(t *testing.T) {
 	assert.Equal(t, PermissionEnvironmentWrite, ProjectCheck(projectID, PermissionEnvironmentWrite).Permission)
 	assert.Equal(t, "env:"+environmentID.String(), EnvironmentCheck(environmentID, PermissionDeploymentWrite).Resource)
 	assert.Equal(t, PermissionDeploymentWrite, EnvironmentCheck(environmentID, PermissionDeploymentWrite).Permission)
+	assert.Equal(t, "platform", PlatformCheck(PermissionPluginManagerWrite).Resource)
+	assert.Equal(t, "plugin_manager_write", PlatformCheck(PermissionPluginManagerWrite).Permission)
 }

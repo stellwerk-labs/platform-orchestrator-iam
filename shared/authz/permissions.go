@@ -28,6 +28,7 @@ const (
 	PermissionRoleWrite                = "role_write"
 	PermissionServiceUserRead          = "service_user_read"
 	PermissionServiceUserWrite         = "service_user_write"
+	PermissionPluginRegistrationWrite  = "plugin_registration_write"
 	PermissionProjectRead              = "project_read"
 	PermissionProjectWrite             = "project_write"
 	PermissionEnvironmentRead          = "environment_read"
@@ -66,12 +67,32 @@ const (
 	PermissionDeploymentRead           = "deployment_read"
 	PermissionDeploymentWrite          = "deployment_write"
 	PermissionDeploymentDebugRead      = "deployment_debug_read"
+	PermissionDeploymentOutcomeAck     = "deployment.outcome.acknowledge"
 	PermissionMetadataKeyRead          = "metadata_key_read"
 	PermissionMetadataKeyWrite         = "metadata_key_write"
 	PermissionResourceGraphRead        = "resource_graph_read"
 	PermissionProvisioningRead         = "provisioning_read"
 	PermissionProvisioningWrite        = "provisioning_write"
 )
+
+// PermissionPluginWorkloadBindingWrite is platform-level: it manages
+// ServiceAccount-to-service-user workload bindings across organizations. It
+// is granted by IAM configuration only, is not part of the permission
+// catalogue and cannot be assigned through organization roles.
+const PermissionPluginWorkloadBindingWrite = "plugin_workload_binding_write"
+
+// PermissionPluginManagerRead and PermissionPluginManagerWrite are
+// platform-level: they let operators read and change the Core Plugin Manager.
+// Like PermissionPluginWorkloadBindingWrite they are granted by IAM
+// configuration only and are not part of the permission catalogue; in
+// addition, only users hold them, never a service user.
+const (
+	PermissionPluginManagerRead  = "plugin_manager_read"
+	PermissionPluginManagerWrite = "plugin_manager_write"
+)
+
+// PlatformResource is the resource of a platform-level permission check.
+const PlatformResource = "platform"
 
 type PermissionDefinition struct {
 	ID          string
@@ -95,6 +116,7 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionRoleWrite, DisplayName: "Manage roles", Description: "Create, update, and delete configurable roles.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionServiceUserRead, DisplayName: "View service users", Description: "View service users and their role assignments.", Category: "Access", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionServiceUserWrite, DisplayName: "Manage service users", Description: "Create, update, delete, and rotate credentials for service users.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionPluginRegistrationWrite, DisplayName: "Register plugin capabilities", Description: "Replace the human-role capability catalog for installed plugins.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionProjectRead, DisplayName: "View projects", Description: "View projects and their configuration.", Category: "Projects and environments", Level: PermissionLevelRead, Scopes: allScopes[:2]},
 	{ID: PermissionProjectWrite, DisplayName: "Manage projects", Description: "Create, update, and delete projects.", Category: "Projects and environments", Level: PermissionLevelManage, Scopes: allScopes[:2]},
 	{ID: PermissionEnvironmentRead, DisplayName: "View environments", Description: "View environments and their configuration.", Category: "Projects and environments", Level: PermissionLevelRead, Scopes: allScopes},
@@ -133,6 +155,7 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionDeploymentRead, DisplayName: "View deployments", Description: "View deployments, logs, outputs, and calculated differences.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
 	{ID: PermissionDeploymentWrite, DisplayName: "Create deployments", Description: "Create deployments and wait for their completion.", Category: "Deployments", Level: PermissionLevelWrite, Scopes: allScopes},
 	{ID: PermissionDeploymentDebugRead, DisplayName: "View deployment debug data", Description: "View generated deployment infrastructure code.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
+	{ID: PermissionDeploymentOutcomeAck, DisplayName: "Acknowledge deployment outcomes", Description: "Record, with a reason, that a failed plugin-dispatched deployment left no running work so the environment can deploy again.", Category: "Deployments", Level: PermissionLevelManage, Scopes: allScopes},
 	{ID: PermissionMetadataKeyRead, DisplayName: "View metadata keys", Description: "View deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionMetadataKeyWrite, DisplayName: "Manage metadata keys", Description: "Create, update, and delete deployment metadata key definitions.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionResourceGraphRead, DisplayName: "View resource graphs", Description: "View resources produced by deployments.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},

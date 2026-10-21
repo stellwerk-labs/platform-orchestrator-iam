@@ -58,11 +58,20 @@ func TestModuleVersionManagementPermissionsHaveExpectedScopes(t *testing.T) {
 		PermissionModuleVersionPinRestore,
 		PermissionModulePinDefective,
 		PermissionModuleRollbackRestricted,
+		PermissionDeploymentOutcomeAck,
 	} {
 		definition, found := FindPermission(permission)
 		require.True(t, found, permission)
 		assert.Equal(t, allScopes, definition.Scopes, permission)
 	}
+}
+
+func TestDeploymentOutcomeAcknowledgementIsAnAssignableManagePermission(t *testing.T) {
+	definition, found := FindPermission("deployment.outcome.acknowledge")
+	require.True(t, found)
+	assert.Equal(t, PermissionLevelManage, definition.Level)
+	assert.Equal(t, "Deployments", definition.Category)
+	assert.True(t, IsAssignableRolePermission(PermissionDeploymentOutcomeAck))
 }
 
 func TestPermissionCatalogReturnsCopies(t *testing.T) {
@@ -85,6 +94,14 @@ func TestAssignableRolePermissions(t *testing.T) {
 	}
 
 	for _, permission := range []string{"", "module_delete", "deployment_cancel", "read_everything"} {
+		assert.False(t, IsAssignableRolePermission(permission), permission)
+	}
+}
+
+func TestPlatformPermissionsAreNeverGrantedByRoles(t *testing.T) {
+	for _, permission := range []string{PermissionPluginWorkloadBindingWrite, PermissionPluginManagerRead, PermissionPluginManagerWrite} {
+		_, catalogued := FindPermission(permission)
+		assert.False(t, catalogued, permission)
 		assert.False(t, IsAssignableRolePermission(permission), permission)
 	}
 }

@@ -70,6 +70,144 @@ func (e PermissionDefinitionScopes) Valid() bool {
 	}
 }
 
+// Defines values for PlatformPrincipalCredential.
+const (
+	PlatformPrincipalCredentialStaticToken PlatformPrincipalCredential = "static_token"
+	PlatformPrincipalCredentialWorkload    PlatformPrincipalCredential = "workload"
+)
+
+// Valid indicates whether the value is a known member of the PlatformPrincipalCredential enum.
+func (e PlatformPrincipalCredential) Valid() bool {
+	switch e {
+	case PlatformPrincipalCredentialStaticToken:
+		return true
+	case PlatformPrincipalCredentialWorkload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginCapabilityRegistrationLevel.
+const (
+	PluginCapabilityRegistrationLevelManage PluginCapabilityRegistrationLevel = "manage"
+	PluginCapabilityRegistrationLevelRead   PluginCapabilityRegistrationLevel = "read"
+	PluginCapabilityRegistrationLevelWrite  PluginCapabilityRegistrationLevel = "write"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationLevel enum.
+func (e PluginCapabilityRegistrationLevel) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationLevelManage:
+		return true
+	case PluginCapabilityRegistrationLevelRead:
+		return true
+	case PluginCapabilityRegistrationLevelWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginCapabilityRegistrationScopes.
+const (
+	PluginCapabilityRegistrationScopesEnvironment  PluginCapabilityRegistrationScopes = "environment"
+	PluginCapabilityRegistrationScopesOrganization PluginCapabilityRegistrationScopes = "organization"
+	PluginCapabilityRegistrationScopesProject      PluginCapabilityRegistrationScopes = "project"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationScopes enum.
+func (e PluginCapabilityRegistrationScopes) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationScopesEnvironment:
+		return true
+	case PluginCapabilityRegistrationScopesOrganization:
+		return true
+	case PluginCapabilityRegistrationScopesProject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadBindingServiceUserScope.
+const (
+	ServiceUserScopeOrganization PluginWorkloadBindingServiceUserScope = "organization"
+	ServiceUserScopePlatform     PluginWorkloadBindingServiceUserScope = "platform"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadBindingServiceUserScope enum.
+func (e PluginWorkloadBindingServiceUserScope) Valid() bool {
+	switch e {
+	case ServiceUserScopeOrganization:
+		return true
+	case ServiceUserScopePlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeRequestGrantType.
+const (
+	PluginWorkloadTokenExchangeGrantType PluginWorkloadTokenExchangeRequestGrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestGrantType enum.
+func (e PluginWorkloadTokenExchangeRequestGrantType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenExchangeGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeRequestSubjectTokenType.
+const (
+	PluginWorkloadSubjectTokenTypeJWT PluginWorkloadTokenExchangeRequestSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestSubjectTokenType enum.
+func (e PluginWorkloadTokenExchangeRequestSubjectTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadSubjectTokenTypeJWT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseIssuedTokenType.
+const (
+	PluginWorkloadIssuedTokenTypeAccessToken PluginWorkloadTokenExchangeResponseIssuedTokenType = "urn:ietf:params:oauth:token-type:access_token"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseIssuedTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseIssuedTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadIssuedTokenTypeAccessToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseTokenType.
+const (
+	PluginWorkloadTokenTypeBearer PluginWorkloadTokenExchangeResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubjectType.
 const (
 	SubjectTypeRole         SubjectType = "role"
@@ -499,6 +637,175 @@ type PermissionDefinitionPage struct {
 	Items []PermissionDefinition `json:"items"`
 }
 
+// PlatformPrincipal A service user that belongs to no organization and holds no role. A static_token principal, such as the Data Plane admission checker, authenticates with a token from this API. A workload principal has no static token; it authenticates only with tokens exchanged through its plugin workload binding.
+type PlatformPrincipal struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
+// PlatformPrincipalCreateBody Creates a platform principal that authenticates with a static token.
+type PlatformPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: Data Plane admission checker
+	DisplayName string `json:"display_name"`
+
+	// ExpiryInDays The expiry time of the token in days from the time of creation
+	//
+	// Example: 365
+	ExpiryInDays int `json:"expiry_in_days"`
+}
+
+// PlatformPrincipalCredential How a platform principal authenticates.
+type PlatformPrincipalCredential string
+
+// PlatformPrincipalList All platform principals, oldest first.
+type PlatformPrincipalList struct {
+	Items []PlatformPrincipal `json:"items"`
+}
+
+// PlatformPrincipalWithToken defines model for PlatformPrincipalWithToken.
+type PlatformPrincipalWithToken struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Token The static bearer token. It is returned only here.
+	Token string `json:"token"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
+// PluginCapabilityRegistration A plugin-owned permission definition. The name is a flat slug local to the plugin namespace; dots are forbidden so the full identifier has one unambiguous plugin/local boundary.
+type PluginCapabilityRegistration struct {
+	Category    string                               `json:"category"`
+	Description string                               `json:"description"`
+	DisplayName string                               `json:"display_name"`
+	Level       PluginCapabilityRegistrationLevel    `json:"level"`
+	Name        string                               `json:"name"`
+	Scopes      []PluginCapabilityRegistrationScopes `json:"scopes"`
+}
+
+// PluginCapabilityRegistrationLevel defines model for PluginCapabilityRegistration.Level.
+type PluginCapabilityRegistrationLevel string
+
+// PluginCapabilityRegistrationScopes defines model for PluginCapabilityRegistration.Scopes.
+type PluginCapabilityRegistrationScopes string
+
+// PluginCapabilityRegistrationBody The complete human-role capability catalog for one installed plugin. An empty array unregisters every capability for the plugin.
+type PluginCapabilityRegistrationBody struct {
+	Capabilities []PluginCapabilityRegistration `json:"capabilities"`
+}
+
+// PluginWorkloadBinding A Kubernetes ServiceAccount bound to the service user of a plugin installation.
+type PluginWorkloadBinding struct {
+	Audience       string             `json:"audience"`
+	CreatedAt      time.Time          `json:"created_at"`
+	CreatedBy      openapi_types.UUID `json:"created_by"`
+	Id             openapi_types.UUID `json:"id"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+	Issuer         string             `json:"issuer"`
+	Namespace      string             `json:"namespace"`
+	PluginId       string             `json:"plugin_id"`
+	ServiceAccount string             `json:"service_account"`
+	ServiceUserId  openapi_types.UUID `json:"service_user_id"`
+
+	// ServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+	ServiceUserScope PluginWorkloadBindingServiceUserScope `json:"service_user_scope"`
+}
+
+// PluginWorkloadBindingServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+type PluginWorkloadBindingServiceUserScope string
+
+// PluginWorkloadBindingCreateBody Binds one Kubernetes ServiceAccount of one cluster issuer to the platform principal of a plugin installation. Exactly one of platform_principal and service_user_id is required.
+type PluginWorkloadBindingCreateBody struct {
+	// Audience The exact and only audience the projected ServiceAccount token must carry.
+	Audience       string             `json:"audience"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+
+	// Issuer The cluster's ServiceAccount token issuer. Must equal the issuer configured in IAM.
+	Issuer    string `json:"issuer"`
+	Namespace string `json:"namespace"`
+
+	// PlatformPrincipal Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+	PlatformPrincipal *PluginWorkloadPrincipalCreateBody `json:"platform_principal,omitempty"`
+	PluginId          string                             `json:"plugin_id"`
+	ServiceAccount    string                             `json:"service_account"`
+
+	// ServiceUserId An existing plugin workload principal without a binding, for example one whose binding was revoked. The plugin installation record names this principal.
+	ServiceUserId *openapi_types.UUID `json:"service_user_id,omitempty"`
+}
+
+// PluginWorkloadBindingList All plugin workload bindings, oldest first.
+type PluginWorkloadBindingList struct {
+	Items []PluginWorkloadBinding `json:"items"`
+}
+
+// PluginWorkloadPrincipalCreateBody Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+type PluginWorkloadPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: progressive-rollouts
+	DisplayName string `json:"display_name"`
+}
+
+// PluginWorkloadTokenExchangeRequest An RFC 8693 token exchange request. Only a Kubernetes ServiceAccount JWT is accepted as subject token.
+type PluginWorkloadTokenExchangeRequest struct {
+	GrantType PluginWorkloadTokenExchangeRequestGrantType `json:"grant_type"`
+
+	// SubjectToken The projected ServiceAccount token of the plugin workload.
+	SubjectToken     string                                             `json:"subject_token"`
+	SubjectTokenType PluginWorkloadTokenExchangeRequestSubjectTokenType `json:"subject_token_type"`
+}
+
+// PluginWorkloadTokenExchangeRequestGrantType defines model for PluginWorkloadTokenExchangeRequest.GrantType.
+type PluginWorkloadTokenExchangeRequestGrantType string
+
+// PluginWorkloadTokenExchangeRequestSubjectTokenType defines model for PluginWorkloadTokenExchangeRequest.SubjectTokenType.
+type PluginWorkloadTokenExchangeRequestSubjectTokenType string
+
+// PluginWorkloadTokenExchangeResponse An RFC 8693 token exchange response carrying an opaque plugin workload token.
+type PluginWorkloadTokenExchangeResponse struct {
+	// AccessToken The opaque plugin workload token. Present it as a Bearer token.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Lifetime of the issued token in seconds.
+	ExpiresIn       int                                                `json:"expires_in"`
+	IssuedTokenType PluginWorkloadTokenExchangeResponseIssuedTokenType `json:"issued_token_type"`
+	TokenType       PluginWorkloadTokenExchangeResponseTokenType       `json:"token_type"`
+}
+
+// PluginWorkloadTokenExchangeResponseIssuedTokenType defines model for PluginWorkloadTokenExchangeResponse.IssuedTokenType.
+type PluginWorkloadTokenExchangeResponseIssuedTokenType string
+
+// PluginWorkloadTokenExchangeResponseTokenType defines model for PluginWorkloadTokenExchangeResponse.TokenType.
+type PluginWorkloadTokenExchangeResponseTokenType string
+
 // RegisterUserBody A payload needed to register a user against an identity provider.
 type RegisterUserBody struct {
 	// Provider The login provider type.
@@ -556,10 +863,10 @@ type ReplaceUserMembershipsBody struct {
 
 // ResourcePermissionCheck defines model for ResourcePermissionCheck.
 type ResourcePermissionCheck struct {
-	// Permission The permission string.
+	// Permission The complete permission ID, including the namespace for a registered plugin capability. Accepting an ID does not grant it; current scope and registration are checked by the authorizer.
 	Permission string `json:"permission"`
 
-	// Resource The resource to check permissions on.
+	// Resource The resource to check permissions on; platform for a platform-level permission.
 	Resource string `json:"resource"`
 }
 
@@ -919,6 +1226,12 @@ type PageTokenQueryParam = string
 // PerPageQueryParam defines model for perPageQueryParam.
 type PerPageQueryParam = int
 
+// PlatformPrincipalIdPathParam defines model for platformPrincipalIdPathParam.
+type PlatformPrincipalIdPathParam = openapi_types.UUID
+
+// PluginWorkloadBindingIdPathParam defines model for pluginWorkloadBindingIdPathParam.
+type PluginWorkloadBindingIdPathParam = openapi_types.UUID
+
 // ProjectIdPathParam defines model for projectIdPathParam.
 type ProjectIdPathParam = string
 
@@ -1033,6 +1346,12 @@ type PollDeviceLoginRequestParams struct {
 type InternalAuthenticateParams struct {
 	Authorization *string `json:"Authorization,omitempty"`
 	SessionToken  *string `form:"session-token,omitempty" json:"session-token,omitempty"`
+}
+
+// InternalListPluginWorkloadBindingsParams defines parameters for InternalListPluginWorkloadBindings.
+type InternalListPluginWorkloadBindingsParams struct {
+	PluginId       string             `form:"plugin_id" json:"plugin_id"`
+	InstallationId openapi_types.UUID `form:"installation_id" json:"installation_id"`
 }
 
 // ListInvitationsParams defines parameters for ListInvitations.
@@ -1161,6 +1480,9 @@ type RequestDeviceLoginJSONRequestBody = DeviceLoginCreateBody
 // LoginSessionJSONRequestBody defines body for LoginSession for application/json ContentType.
 type LoginSessionJSONRequestBody = LoginUserBody
 
+// ExchangePluginWorkloadTokenJSONRequestBody defines body for ExchangePluginWorkloadToken for application/json ContentType.
+type ExchangePluginWorkloadTokenJSONRequestBody = PluginWorkloadTokenExchangeRequest
+
 // RegisterUserJSONRequestBody defines body for RegisterUser for application/json ContentType.
 type RegisterUserJSONRequestBody = RegisterUserBody
 
@@ -1178,6 +1500,9 @@ type InternalUpdateSsoConfigurationJSONRequestBody = SsoConfiguration
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreateBody
+
+// ReplacePluginCapabilitiesJSONRequestBody defines body for ReplacePluginCapabilities for application/json ContentType.
+type ReplacePluginCapabilitiesJSONRequestBody = PluginCapabilityRegistrationBody
 
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleWriteBody
@@ -1200,6 +1525,15 @@ type RegenerateServiceUserJSONRequestBody = ServiceUserRegenerateBody
 // ReplaceOrgUserMembershipsJSONRequestBody defines body for ReplaceOrgUserMemberships for application/json ContentType.
 type ReplaceOrgUserMembershipsJSONRequestBody = ReplaceUserMembershipsBody
 
+// CreatePlatformPrincipalJSONRequestBody defines body for CreatePlatformPrincipal for application/json ContentType.
+type CreatePlatformPrincipalJSONRequestBody = PlatformPrincipalCreateBody
+
+// RegeneratePlatformPrincipalJSONRequestBody defines body for RegeneratePlatformPrincipal for application/json ContentType.
+type RegeneratePlatformPrincipalJSONRequestBody = ServiceUserRegenerateBody
+
+// CreatePluginWorkloadBindingJSONRequestBody defines body for CreatePluginWorkloadBinding for application/json ContentType.
+type CreatePluginWorkloadBindingJSONRequestBody = PluginWorkloadBindingCreateBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// CheckPermissions Bulkly check permissions for the current subject that is logged in. This works for both human users and service users.
@@ -1214,6 +1548,9 @@ type ServerInterface interface {
 	// LogoutSession Log out the current session token
 	// (POST /auth/logout)
 	LogoutSession(ctx echo.Context, params LogoutSessionParams) error
+	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	// (POST /auth/plugin-workload-token)
+	ExchangePluginWorkloadToken(ctx echo.Context) error
 	// RegisterUser Register a new user using a login provider and grant an initial session token in the cookie.
 	// (POST /auth/register)
 	RegisterUser(ctx echo.Context, params RegisterUserParams) error
@@ -1259,6 +1596,9 @@ type ServerInterface interface {
 	// InternalUpdateSsoConfiguration Update SSO configuration for the organization
 	// (PUT /internal/orgs/{orgId}/sso-configuration)
 	InternalUpdateSsoConfiguration(ctx echo.Context, orgId OrgIdPathParam) error
+	// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+	// (GET /internal/plugin-workload-bindings)
+	InternalListPluginWorkloadBindings(ctx echo.Context, params InternalListPluginWorkloadBindingsParams) error
 	// ListInvitations List the invitations that are pending in the organization.
 	// (GET /orgs/{orgId}/invitations)
 	ListInvitations(ctx echo.Context, orgId OrgIdPathParam, params ListInvitationsParams) error
@@ -1286,6 +1626,9 @@ type ServerInterface interface {
 	// ListPermissions List permissions available for configurable roles.
 	// (GET /orgs/{orgId}/permissions)
 	ListPermissions(ctx echo.Context, orgId OrgIdPathParam) error
+	// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+	// (PUT /orgs/{orgId}/plugins/{pluginId}/capabilities)
+	ReplacePluginCapabilities(ctx echo.Context, orgId OrgIdPathParam, pluginId string) error
 	// ListEnvironmentUsers List the users and service users that have access to this environment.
 	// (GET /orgs/{orgId}/projects/{projectId}/envs/{envId}/users)
 	ListEnvironmentUsers(ctx echo.Context, orgId OrgIdPathParam, projectId ProjectIdPathParam, envId EnvIdPathParam, params ListEnvironmentUsersParams) error
@@ -1334,6 +1677,33 @@ type ServerInterface interface {
 	// ReplaceOrgUserMemberships Replace all memberships for a user in an organization
 	// (PUT /orgs/{orgId}/users/{userId}/memberships)
 	ReplaceOrgUserMemberships(ctx echo.Context, orgId OrgIdPathParam, userId UserIdPathParam) error
+	// ListPlatformPrincipals List platform principals (v1alpha).
+	// (GET /platform-principals)
+	ListPlatformPrincipals(ctx echo.Context) error
+	// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	// (POST /platform-principals)
+	CreatePlatformPrincipal(ctx echo.Context) error
+	// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+	// (DELETE /platform-principals/{principalId})
+	DeletePlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error
+	// GetPlatformPrincipal Get a platform principal (v1alpha).
+	// (GET /platform-principals/{principalId})
+	GetPlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error
+	// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+	// (POST /platform-principals/{principalId}/actions/regenerate)
+	RegeneratePlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error
+	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+	// (GET /plugin-workload-bindings)
+	ListPluginWorkloadBindings(ctx echo.Context) error
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	// (POST /plugin-workload-bindings)
+	CreatePluginWorkloadBinding(ctx echo.Context) error
+	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+	// (DELETE /plugin-workload-bindings/{bindingId})
+	DeletePluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error
+	// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+	// (GET /plugin-workload-bindings/{bindingId})
+	GetPluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error
 	// DismissPrompt Dismiss a prompt for the user
 	// (POST /users/{userId}/actions/dismiss-prompt)
 	DismissPrompt(ctx echo.Context, userId UserIdPathParam, params DismissPromptParams) error
@@ -1525,6 +1895,15 @@ func (w *ServerInterfaceWrapper) LogoutSession(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.LogoutSession(ctx, params)
+	return err
+}
+
+// ExchangePluginWorkloadToken converts echo context to params.
+func (w *ServerInterfaceWrapper) ExchangePluginWorkloadToken(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ExchangePluginWorkloadToken(ctx)
 	return err
 }
 
@@ -1894,6 +2273,31 @@ func (w *ServerInterfaceWrapper) InternalUpdateSsoConfiguration(ctx echo.Context
 	return err
 }
 
+// InternalListPluginWorkloadBindings converts echo context to params.
+func (w *ServerInterfaceWrapper) InternalListPluginWorkloadBindings(ctx echo.Context) error {
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params InternalListPluginWorkloadBindingsParams
+	// ------------- Required query parameter "plugin_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "plugin_id", ctx.QueryParams(), &params.PluginId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter plugin_id: %s", err))
+	}
+
+	// ------------- Required query parameter "installation_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "installation_id", ctx.QueryParams(), &params.InstallationId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter installation_id: %s", err))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.InternalListPluginWorkloadBindings(ctx, params)
+	return err
+}
+
 // ListInvitations converts echo context to params.
 func (w *ServerInterfaceWrapper) ListInvitations(ctx echo.Context) error {
 	var err error
@@ -2165,6 +2569,32 @@ func (w *ServerInterfaceWrapper) ListPermissions(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.ListPermissions(ctx, orgId)
+	return err
+}
+
+// ReplacePluginCapabilities converts echo context to params.
+func (w *ServerInterfaceWrapper) ReplacePluginCapabilities(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "orgId" -------------
+	var orgId OrgIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orgId", ctx.Param("orgId"), &orgId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter orgId: %s", err))
+	}
+
+	// ------------- Path parameter "pluginId" -------------
+	var pluginId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "pluginId", ctx.Param("pluginId"), &pluginId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter pluginId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ReplacePluginCapabilities(ctx, orgId, pluginId)
 	return err
 }
 
@@ -2630,6 +3060,140 @@ func (w *ServerInterfaceWrapper) ReplaceOrgUserMemberships(ctx echo.Context) err
 	return err
 }
 
+// ListPlatformPrincipals converts echo context to params.
+func (w *ServerInterfaceWrapper) ListPlatformPrincipals(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListPlatformPrincipals(ctx)
+	return err
+}
+
+// CreatePlatformPrincipal converts echo context to params.
+func (w *ServerInterfaceWrapper) CreatePlatformPrincipal(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreatePlatformPrincipal(ctx)
+	return err
+}
+
+// DeletePlatformPrincipal converts echo context to params.
+func (w *ServerInterfaceWrapper) DeletePlatformPrincipal(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "principalId" -------------
+	var principalId PlatformPrincipalIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalId", ctx.Param("principalId"), &principalId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter principalId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeletePlatformPrincipal(ctx, principalId)
+	return err
+}
+
+// GetPlatformPrincipal converts echo context to params.
+func (w *ServerInterfaceWrapper) GetPlatformPrincipal(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "principalId" -------------
+	var principalId PlatformPrincipalIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalId", ctx.Param("principalId"), &principalId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter principalId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetPlatformPrincipal(ctx, principalId)
+	return err
+}
+
+// RegeneratePlatformPrincipal converts echo context to params.
+func (w *ServerInterfaceWrapper) RegeneratePlatformPrincipal(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "principalId" -------------
+	var principalId PlatformPrincipalIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalId", ctx.Param("principalId"), &principalId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter principalId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.RegeneratePlatformPrincipal(ctx, principalId)
+	return err
+}
+
+// ListPluginWorkloadBindings converts echo context to params.
+func (w *ServerInterfaceWrapper) ListPluginWorkloadBindings(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.ListPluginWorkloadBindings(ctx)
+	return err
+}
+
+// CreatePluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) CreatePluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.CreatePluginWorkloadBinding(ctx)
+	return err
+}
+
+// DeletePluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) DeletePluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId PluginWorkloadBindingIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", ctx.Param("bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter bindingId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.DeletePluginWorkloadBinding(ctx, bindingId)
+	return err
+}
+
+// GetPluginWorkloadBinding converts echo context to params.
+func (w *ServerInterfaceWrapper) GetPluginWorkloadBinding(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId PluginWorkloadBindingIdPathParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", ctx.Param("bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: ctx.Request().URL.RawPath == ""})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter bindingId: %s", err))
+	}
+
+	ctx.Set(string(UserIdHeaderScopes), []string{})
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.GetPluginWorkloadBinding(ctx, bindingId)
+	return err
+}
+
 // DismissPrompt converts echo context to params.
 func (w *ServerInterfaceWrapper) DismissPrompt(ctx echo.Context) error {
 	var err error
@@ -2813,6 +3377,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/internal/orgs/:orgId/sso-configuration", wrapper.InternalGetSsoConfiguration, options.OperationMiddlewares["internalGetSsoConfiguration"]...)
 	router.PUT(options.BaseURL+"/internal/orgs/:orgId/sso-configuration", wrapper.InternalUpdateSsoConfiguration, options.OperationMiddlewares["internalUpdateSsoConfiguration"]...)
 	router.POST(options.BaseURL+"/auth/logout", wrapper.LogoutSession, options.OperationMiddlewares["logoutSession"]...)
+	router.POST(options.BaseURL+"/auth/plugin-workload-token", wrapper.ExchangePluginWorkloadToken, options.OperationMiddlewares["exchangePluginWorkloadToken"]...)
 	router.POST(options.BaseURL+"/auth/check-permissions", wrapper.CheckPermissions, options.OperationMiddlewares["checkPermissions"]...)
 	router.GET(options.BaseURL+"/users/:userId/memberships", wrapper.ListUserMemberships, options.OperationMiddlewares["listUserMemberships"]...)
 	router.GET(options.BaseURL+"/users/:userId/session-tokens", wrapper.ListUserSessionTokens, options.OperationMiddlewares["listUserSessionTokens"]...)
@@ -2827,6 +3392,7 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.POST(options.BaseURL+"/internal/orgs/:orgId/actions/sync-scopes", wrapper.InternalSyncOrgScopes, options.OperationMiddlewares["internalSyncOrgScopes"]...)
 	router.POST(options.BaseURL+"/internal/authenticate", wrapper.InternalAuthenticate, options.OperationMiddlewares["internalAuthenticate"]...)
 	router.POST(options.BaseURL+"/internal/authorize", wrapper.InternalAuthorize, options.OperationMiddlewares["internalAuthorize"]...)
+	router.GET(options.BaseURL+"/internal/plugin-workload-bindings", wrapper.InternalListPluginWorkloadBindings, options.OperationMiddlewares["internalListPluginWorkloadBindings"]...)
 	router.GET(options.BaseURL+"/current-user", wrapper.GetCurrentUser, options.OperationMiddlewares["getCurrentUser"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/service-users", wrapper.ListServiceUsers, options.OperationMiddlewares["listServiceUsers"]...)
 	router.POST(options.BaseURL+"/orgs/:orgId/service-users", wrapper.CreateServiceUser, options.OperationMiddlewares["createServiceUser"]...)
@@ -2841,6 +3407,16 @@ func RegisterHandlersWithOptions(router EchoRouter, si ServerInterface, options 
 	router.GET(options.BaseURL+"/orgs/:orgId/projects/:projectId/users", wrapper.ListProjectUsers, options.OperationMiddlewares["listProjectUsers"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/projects/:projectId/envs/:envId/users", wrapper.ListEnvironmentUsers, options.OperationMiddlewares["listEnvironmentUsers"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/permissions", wrapper.ListPermissions, options.OperationMiddlewares["listPermissions"]...)
+	router.PUT(options.BaseURL+"/orgs/:orgId/plugins/:pluginId/capabilities", wrapper.ReplacePluginCapabilities, options.OperationMiddlewares["replacePluginCapabilities"]...)
+	router.GET(options.BaseURL+"/plugin-workload-bindings", wrapper.ListPluginWorkloadBindings, options.OperationMiddlewares["listPluginWorkloadBindings"]...)
+	router.POST(options.BaseURL+"/plugin-workload-bindings", wrapper.CreatePluginWorkloadBinding, options.OperationMiddlewares["createPluginWorkloadBinding"]...)
+	router.DELETE(options.BaseURL+"/plugin-workload-bindings/:bindingId", wrapper.DeletePluginWorkloadBinding, options.OperationMiddlewares["deletePluginWorkloadBinding"]...)
+	router.GET(options.BaseURL+"/plugin-workload-bindings/:bindingId", wrapper.GetPluginWorkloadBinding, options.OperationMiddlewares["getPluginWorkloadBinding"]...)
+	router.GET(options.BaseURL+"/platform-principals", wrapper.ListPlatformPrincipals, options.OperationMiddlewares["listPlatformPrincipals"]...)
+	router.POST(options.BaseURL+"/platform-principals", wrapper.CreatePlatformPrincipal, options.OperationMiddlewares["createPlatformPrincipal"]...)
+	router.DELETE(options.BaseURL+"/platform-principals/:principalId", wrapper.DeletePlatformPrincipal, options.OperationMiddlewares["deletePlatformPrincipal"]...)
+	router.GET(options.BaseURL+"/platform-principals/:principalId", wrapper.GetPlatformPrincipal, options.OperationMiddlewares["getPlatformPrincipal"]...)
+	router.POST(options.BaseURL+"/platform-principals/:principalId/actions/regenerate", wrapper.RegeneratePlatformPrincipal, options.OperationMiddlewares["regeneratePlatformPrincipal"]...)
 	router.GET(options.BaseURL+"/orgs/:orgId/roles", wrapper.ListRoles, options.OperationMiddlewares["listRoles"]...)
 	router.POST(options.BaseURL+"/orgs/:orgId/roles", wrapper.CreateRole, options.OperationMiddlewares["createRole"]...)
 	router.DELETE(options.BaseURL+"/orgs/:orgId/roles/:roleId", wrapper.DeleteRole, options.OperationMiddlewares["deleteRole"]...)
@@ -3054,6 +3630,78 @@ func (response LogoutSession204Response) VisitLogoutSessionResponse(w http.Respo
 	w.Header().Set("Set-Cookie", fmt.Sprint(response.Headers.SetCookie))
 	w.WriteHeader(204)
 	return nil
+}
+
+type ExchangePluginWorkloadTokenRequestObject struct {
+	Body *ExchangePluginWorkloadTokenJSONRequestBody
+}
+
+type ExchangePluginWorkloadTokenResponseObject interface {
+	VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error
+}
+
+type ExchangePluginWorkloadToken200ResponseHeaders struct {
+	CacheControl string
+}
+
+type ExchangePluginWorkloadToken200JSONResponse struct {
+	Body    PluginWorkloadTokenExchangeResponse
+	Headers ExchangePluginWorkloadToken200ResponseHeaders
+}
+
+func (response ExchangePluginWorkloadToken200JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response ExchangePluginWorkloadToken400JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response ExchangePluginWorkloadToken404JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExchangePluginWorkloadToken503JSONResponse Error
+
+func (response ExchangePluginWorkloadToken503JSONResponse) VisitExchangePluginWorkloadTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type RegisterUserRequestObject struct {
@@ -3687,6 +4335,42 @@ func (response InternalUpdateSsoConfiguration409JSONResponse) VisitInternalUpdat
 	return err
 }
 
+type InternalListPluginWorkloadBindingsRequestObject struct {
+	Params InternalListPluginWorkloadBindingsParams
+}
+
+type InternalListPluginWorkloadBindingsResponseObject interface {
+	VisitInternalListPluginWorkloadBindingsResponse(w http.ResponseWriter) error
+}
+
+type InternalListPluginWorkloadBindings200JSONResponse PluginWorkloadBindingList
+
+func (response InternalListPluginWorkloadBindings200JSONResponse) VisitInternalListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InternalListPluginWorkloadBindings400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response InternalListPluginWorkloadBindings400JSONResponse) VisitInternalListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListInvitationsRequestObject struct {
 	OrgId  OrgIdPathParam `json:"orgId"`
 	Params ListInvitationsParams
@@ -4005,6 +4689,52 @@ func (response ListPermissions200JSONResponse) VisitListPermissionsResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplacePluginCapabilitiesRequestObject struct {
+	OrgId    OrgIdPathParam `json:"orgId"`
+	PluginId string         `json:"pluginId"`
+	Body     *ReplacePluginCapabilitiesJSONRequestBody
+}
+
+type ReplacePluginCapabilitiesResponseObject interface {
+	VisitReplacePluginCapabilitiesResponse(w http.ResponseWriter) error
+}
+
+type ReplacePluginCapabilities204Response struct {
+}
+
+func (response ReplacePluginCapabilities204Response) VisitReplacePluginCapabilitiesResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ReplacePluginCapabilities400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response ReplacePluginCapabilities400JSONResponse) VisitReplacePluginCapabilitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReplacePluginCapabilities403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response ReplacePluginCapabilities403JSONResponse) VisitReplacePluginCapabilitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4678,6 +5408,20 @@ func (response RegenerateServiceUser404JSONResponse) VisitRegenerateServiceUserR
 	return err
 }
 
+type RegenerateServiceUser409JSONResponse struct{ N409ConflictJSONResponse }
+
+func (response RegenerateServiceUser409JSONResponse) VisitRegenerateServiceUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReplaceOrgUserMembershipsRequestObject struct {
 	OrgId  OrgIdPathParam  `json:"orgId"`
 	UserId UserIdPathParam `json:"userId"`
@@ -4740,6 +5484,457 @@ func (response ReplaceOrgUserMemberships409JSONResponse) VisitReplaceOrgUserMemb
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlatformPrincipalsRequestObject struct {
+}
+
+type ListPlatformPrincipalsResponseObject interface {
+	VisitListPlatformPrincipalsResponse(w http.ResponseWriter) error
+}
+
+type ListPlatformPrincipals200JSONResponse PlatformPrincipalList
+
+func (response ListPlatformPrincipals200JSONResponse) VisitListPlatformPrincipalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlatformPrincipals403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response ListPlatformPrincipals403JSONResponse) VisitListPlatformPrincipalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlatformPrincipalRequestObject struct {
+	Body *CreatePlatformPrincipalJSONRequestBody
+}
+
+type CreatePlatformPrincipalResponseObject interface {
+	VisitCreatePlatformPrincipalResponse(w http.ResponseWriter) error
+}
+
+type CreatePlatformPrincipal201JSONResponse PlatformPrincipalWithToken
+
+func (response CreatePlatformPrincipal201JSONResponse) VisitCreatePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlatformPrincipal400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response CreatePlatformPrincipal400JSONResponse) VisitCreatePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlatformPrincipal403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response CreatePlatformPrincipal403JSONResponse) VisitCreatePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlatformPrincipalRequestObject struct {
+	PrincipalId PlatformPrincipalIdPathParam `json:"principalId"`
+}
+
+type DeletePlatformPrincipalResponseObject interface {
+	VisitDeletePlatformPrincipalResponse(w http.ResponseWriter) error
+}
+
+type DeletePlatformPrincipal204Response struct {
+}
+
+func (response DeletePlatformPrincipal204Response) VisitDeletePlatformPrincipalResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePlatformPrincipal403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response DeletePlatformPrincipal403JSONResponse) VisitDeletePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlatformPrincipal404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response DeletePlatformPrincipal404JSONResponse) VisitDeletePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlatformPrincipalRequestObject struct {
+	PrincipalId PlatformPrincipalIdPathParam `json:"principalId"`
+}
+
+type GetPlatformPrincipalResponseObject interface {
+	VisitGetPlatformPrincipalResponse(w http.ResponseWriter) error
+}
+
+type GetPlatformPrincipal200JSONResponse PlatformPrincipal
+
+func (response GetPlatformPrincipal200JSONResponse) VisitGetPlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlatformPrincipal403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response GetPlatformPrincipal403JSONResponse) VisitGetPlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlatformPrincipal404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response GetPlatformPrincipal404JSONResponse) VisitGetPlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegeneratePlatformPrincipalRequestObject struct {
+	PrincipalId PlatformPrincipalIdPathParam `json:"principalId"`
+	Body        *RegeneratePlatformPrincipalJSONRequestBody
+}
+
+type RegeneratePlatformPrincipalResponseObject interface {
+	VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error
+}
+
+type RegeneratePlatformPrincipal200JSONResponse PlatformPrincipalWithToken
+
+func (response RegeneratePlatformPrincipal200JSONResponse) VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegeneratePlatformPrincipal400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response RegeneratePlatformPrincipal400JSONResponse) VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegeneratePlatformPrincipal403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response RegeneratePlatformPrincipal403JSONResponse) VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegeneratePlatformPrincipal404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response RegeneratePlatformPrincipal404JSONResponse) VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegeneratePlatformPrincipal409JSONResponse struct{ N409ConflictJSONResponse }
+
+func (response RegeneratePlatformPrincipal409JSONResponse) VisitRegeneratePlatformPrincipalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginWorkloadBindingsRequestObject struct {
+}
+
+type ListPluginWorkloadBindingsResponseObject interface {
+	VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error
+}
+
+type ListPluginWorkloadBindings200JSONResponse PluginWorkloadBindingList
+
+func (response ListPluginWorkloadBindings200JSONResponse) VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPluginWorkloadBindings403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response ListPluginWorkloadBindings403JSONResponse) VisitListPluginWorkloadBindingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBindingRequestObject struct {
+	Body *CreatePluginWorkloadBindingJSONRequestBody
+}
+
+type CreatePluginWorkloadBindingResponseObject interface {
+	VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type CreatePluginWorkloadBinding201JSONResponse PluginWorkloadBinding
+
+func (response CreatePluginWorkloadBinding201JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding400JSONResponse struct{ N400BadRequestJSONResponse }
+
+func (response CreatePluginWorkloadBinding400JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response CreatePluginWorkloadBinding403JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePluginWorkloadBinding409JSONResponse struct{ N409ConflictJSONResponse }
+
+func (response CreatePluginWorkloadBinding409JSONResponse) VisitCreatePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePluginWorkloadBindingRequestObject struct {
+	BindingId PluginWorkloadBindingIdPathParam `json:"bindingId"`
+}
+
+type DeletePluginWorkloadBindingResponseObject interface {
+	VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type DeletePluginWorkloadBinding204Response struct {
+}
+
+func (response DeletePluginWorkloadBinding204Response) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response DeletePluginWorkloadBinding403JSONResponse) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePluginWorkloadBinding404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response DeletePluginWorkloadBinding404JSONResponse) VisitDeletePluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBindingRequestObject struct {
+	BindingId PluginWorkloadBindingIdPathParam `json:"bindingId"`
+}
+
+type GetPluginWorkloadBindingResponseObject interface {
+	VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error
+}
+
+type GetPluginWorkloadBinding200JSONResponse PluginWorkloadBinding
+
+func (response GetPluginWorkloadBinding200JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBinding403JSONResponse struct{ N403ForbiddenJSONResponse }
+
+func (response GetPluginWorkloadBinding403JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPluginWorkloadBinding404JSONResponse struct{ N404NotFoundJSONResponse }
+
+func (response GetPluginWorkloadBinding404JSONResponse) VisitGetPluginWorkloadBindingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4894,6 +6089,9 @@ type StrictServerInterface interface {
 	// LogoutSession Log out the current session token
 	// (POST /auth/logout)
 	LogoutSession(ctx context.Context, request LogoutSessionRequestObject) (LogoutSessionResponseObject, error)
+	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	// (POST /auth/plugin-workload-token)
+	ExchangePluginWorkloadToken(ctx context.Context, request ExchangePluginWorkloadTokenRequestObject) (ExchangePluginWorkloadTokenResponseObject, error)
 	// RegisterUser Register a new user using a login provider and grant an initial session token in the cookie.
 	// (POST /auth/register)
 	RegisterUser(ctx context.Context, request RegisterUserRequestObject) (RegisterUserResponseObject, error)
@@ -4939,6 +6137,9 @@ type StrictServerInterface interface {
 	// InternalUpdateSsoConfiguration Update SSO configuration for the organization
 	// (PUT /internal/orgs/{orgId}/sso-configuration)
 	InternalUpdateSsoConfiguration(ctx context.Context, request InternalUpdateSsoConfigurationRequestObject) (InternalUpdateSsoConfigurationResponseObject, error)
+	// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+	// (GET /internal/plugin-workload-bindings)
+	InternalListPluginWorkloadBindings(ctx context.Context, request InternalListPluginWorkloadBindingsRequestObject) (InternalListPluginWorkloadBindingsResponseObject, error)
 	// ListInvitations List the invitations that are pending in the organization.
 	// (GET /orgs/{orgId}/invitations)
 	ListInvitations(ctx context.Context, request ListInvitationsRequestObject) (ListInvitationsResponseObject, error)
@@ -4966,6 +6167,9 @@ type StrictServerInterface interface {
 	// ListPermissions List permissions available for configurable roles.
 	// (GET /orgs/{orgId}/permissions)
 	ListPermissions(ctx context.Context, request ListPermissionsRequestObject) (ListPermissionsResponseObject, error)
+	// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+	// (PUT /orgs/{orgId}/plugins/{pluginId}/capabilities)
+	ReplacePluginCapabilities(ctx context.Context, request ReplacePluginCapabilitiesRequestObject) (ReplacePluginCapabilitiesResponseObject, error)
 	// ListEnvironmentUsers List the users and service users that have access to this environment.
 	// (GET /orgs/{orgId}/projects/{projectId}/envs/{envId}/users)
 	ListEnvironmentUsers(ctx context.Context, request ListEnvironmentUsersRequestObject) (ListEnvironmentUsersResponseObject, error)
@@ -5014,6 +6218,33 @@ type StrictServerInterface interface {
 	// ReplaceOrgUserMemberships Replace all memberships for a user in an organization
 	// (PUT /orgs/{orgId}/users/{userId}/memberships)
 	ReplaceOrgUserMemberships(ctx context.Context, request ReplaceOrgUserMembershipsRequestObject) (ReplaceOrgUserMembershipsResponseObject, error)
+	// ListPlatformPrincipals List platform principals (v1alpha).
+	// (GET /platform-principals)
+	ListPlatformPrincipals(ctx context.Context, request ListPlatformPrincipalsRequestObject) (ListPlatformPrincipalsResponseObject, error)
+	// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	// (POST /platform-principals)
+	CreatePlatformPrincipal(ctx context.Context, request CreatePlatformPrincipalRequestObject) (CreatePlatformPrincipalResponseObject, error)
+	// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+	// (DELETE /platform-principals/{principalId})
+	DeletePlatformPrincipal(ctx context.Context, request DeletePlatformPrincipalRequestObject) (DeletePlatformPrincipalResponseObject, error)
+	// GetPlatformPrincipal Get a platform principal (v1alpha).
+	// (GET /platform-principals/{principalId})
+	GetPlatformPrincipal(ctx context.Context, request GetPlatformPrincipalRequestObject) (GetPlatformPrincipalResponseObject, error)
+	// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+	// (POST /platform-principals/{principalId}/actions/regenerate)
+	RegeneratePlatformPrincipal(ctx context.Context, request RegeneratePlatformPrincipalRequestObject) (RegeneratePlatformPrincipalResponseObject, error)
+	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+	// (GET /plugin-workload-bindings)
+	ListPluginWorkloadBindings(ctx context.Context, request ListPluginWorkloadBindingsRequestObject) (ListPluginWorkloadBindingsResponseObject, error)
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	// (POST /plugin-workload-bindings)
+	CreatePluginWorkloadBinding(ctx context.Context, request CreatePluginWorkloadBindingRequestObject) (CreatePluginWorkloadBindingResponseObject, error)
+	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+	// (DELETE /plugin-workload-bindings/{bindingId})
+	DeletePluginWorkloadBinding(ctx context.Context, request DeletePluginWorkloadBindingRequestObject) (DeletePluginWorkloadBindingResponseObject, error)
+	// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+	// (GET /plugin-workload-bindings/{bindingId})
+	GetPluginWorkloadBinding(ctx context.Context, request GetPluginWorkloadBindingRequestObject) (GetPluginWorkloadBindingResponseObject, error)
 	// DismissPrompt Dismiss a prompt for the user
 	// (POST /users/{userId}/actions/dismiss-prompt)
 	DismissPrompt(ctx context.Context, request DismissPromptRequestObject) (DismissPromptResponseObject, error)
@@ -5186,6 +6417,45 @@ func (sh *strictHandler) LogoutSession(ctx echo.Context, params LogoutSessionPar
 		return err
 	} else if validResponse, ok := response.(LogoutSessionResponseObject); ok {
 		return validResponse.VisitLogoutSessionResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// ExchangePluginWorkloadToken operation middleware
+func (sh *strictHandler) ExchangePluginWorkloadToken(ctx echo.Context) error {
+	var request ExchangePluginWorkloadTokenRequestObject
+
+	var body ExchangePluginWorkloadTokenJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ExchangePluginWorkloadToken(ctx.Request().Context(), request.(ExchangePluginWorkloadTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExchangePluginWorkloadToken")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ExchangePluginWorkloadTokenResponseObject); ok {
+		return validResponse.VisitExchangePluginWorkloadTokenResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
@@ -5657,6 +6927,31 @@ func (sh *strictHandler) InternalUpdateSsoConfiguration(ctx echo.Context, orgId 
 	return nil
 }
 
+// InternalListPluginWorkloadBindings operation middleware
+func (sh *strictHandler) InternalListPluginWorkloadBindings(ctx echo.Context, params InternalListPluginWorkloadBindingsParams) error {
+	var request InternalListPluginWorkloadBindingsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.InternalListPluginWorkloadBindings(ctx.Request().Context(), request.(InternalListPluginWorkloadBindingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InternalListPluginWorkloadBindings")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(InternalListPluginWorkloadBindingsResponseObject); ok {
+		return validResponse.VisitInternalListPluginWorkloadBindingsResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
 // ListInvitations operation middleware
 func (sh *strictHandler) ListInvitations(ctx echo.Context, orgId OrgIdPathParam, params ListInvitationsParams) error {
 	var request ListInvitationsRequestObject
@@ -5904,6 +7199,48 @@ func (sh *strictHandler) ListPermissions(ctx echo.Context, orgId OrgIdPathParam)
 		return err
 	} else if validResponse, ok := response.(ListPermissionsResponseObject); ok {
 		return validResponse.VisitListPermissionsResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// ReplacePluginCapabilities operation middleware
+func (sh *strictHandler) ReplacePluginCapabilities(ctx echo.Context, orgId OrgIdPathParam, pluginId string) error {
+	var request ReplacePluginCapabilitiesRequestObject
+
+	request.OrgId = orgId
+	request.PluginId = pluginId
+
+	var body ReplacePluginCapabilitiesJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ReplacePluginCapabilities(ctx.Request().Context(), request.(ReplacePluginCapabilitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReplacePluginCapabilities")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ReplacePluginCapabilitiesResponseObject); ok {
+		return validResponse.VisitReplacePluginCapabilitiesResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}
@@ -6450,6 +7787,271 @@ func (sh *strictHandler) ReplaceOrgUserMemberships(ctx echo.Context, orgId OrgId
 	return nil
 }
 
+// ListPlatformPrincipals operation middleware
+func (sh *strictHandler) ListPlatformPrincipals(ctx echo.Context) error {
+	var request ListPlatformPrincipalsRequestObject
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlatformPrincipals(ctx.Request().Context(), request.(ListPlatformPrincipalsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlatformPrincipals")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ListPlatformPrincipalsResponseObject); ok {
+		return validResponse.VisitListPlatformPrincipalsResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// CreatePlatformPrincipal operation middleware
+func (sh *strictHandler) CreatePlatformPrincipal(ctx echo.Context) error {
+	var request CreatePlatformPrincipalRequestObject
+
+	var body CreatePlatformPrincipalJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePlatformPrincipal(ctx.Request().Context(), request.(CreatePlatformPrincipalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePlatformPrincipal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(CreatePlatformPrincipalResponseObject); ok {
+		return validResponse.VisitCreatePlatformPrincipalResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// DeletePlatformPrincipal operation middleware
+func (sh *strictHandler) DeletePlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error {
+	var request DeletePlatformPrincipalRequestObject
+
+	request.PrincipalId = principalId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePlatformPrincipal(ctx.Request().Context(), request.(DeletePlatformPrincipalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePlatformPrincipal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(DeletePlatformPrincipalResponseObject); ok {
+		return validResponse.VisitDeletePlatformPrincipalResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// GetPlatformPrincipal operation middleware
+func (sh *strictHandler) GetPlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error {
+	var request GetPlatformPrincipalRequestObject
+
+	request.PrincipalId = principalId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPlatformPrincipal(ctx.Request().Context(), request.(GetPlatformPrincipalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPlatformPrincipal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(GetPlatformPrincipalResponseObject); ok {
+		return validResponse.VisitGetPlatformPrincipalResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// RegeneratePlatformPrincipal operation middleware
+func (sh *strictHandler) RegeneratePlatformPrincipal(ctx echo.Context, principalId PlatformPrincipalIdPathParam) error {
+	var request RegeneratePlatformPrincipalRequestObject
+
+	request.PrincipalId = principalId
+
+	var body RegeneratePlatformPrincipalJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RegeneratePlatformPrincipal(ctx.Request().Context(), request.(RegeneratePlatformPrincipalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegeneratePlatformPrincipal")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(RegeneratePlatformPrincipalResponseObject); ok {
+		return validResponse.VisitRegeneratePlatformPrincipalResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// ListPluginWorkloadBindings operation middleware
+func (sh *strictHandler) ListPluginWorkloadBindings(ctx echo.Context) error {
+	var request ListPluginWorkloadBindingsRequestObject
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPluginWorkloadBindings(ctx.Request().Context(), request.(ListPluginWorkloadBindingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPluginWorkloadBindings")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(ListPluginWorkloadBindingsResponseObject); ok {
+		return validResponse.VisitListPluginWorkloadBindingsResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// CreatePluginWorkloadBinding operation middleware
+func (sh *strictHandler) CreatePluginWorkloadBinding(ctx echo.Context) error {
+	var request CreatePluginWorkloadBindingRequestObject
+
+	var body CreatePluginWorkloadBindingJSONRequestBody
+	var err error
+	if binder, ok := ctx.Echo().Binder.(*echo.DefaultBinder); ok {
+		// Bind only the request body, so that path and query parameters
+		// are not also bound into the body struct.
+		err = binder.BindBody(ctx, &body)
+	} else {
+		// A custom binder is installed on the Echo instance; defer to it
+		// entirely, since echo.Binder does not expose body-only binding.
+		err = ctx.Bind(&body)
+	}
+	if err != nil {
+		return err
+	}
+	request.Body = &body
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePluginWorkloadBinding(ctx.Request().Context(), request.(CreatePluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(CreatePluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitCreatePluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// DeletePluginWorkloadBinding operation middleware
+func (sh *strictHandler) DeletePluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error {
+	var request DeletePluginWorkloadBindingRequestObject
+
+	request.BindingId = bindingId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePluginWorkloadBinding(ctx.Request().Context(), request.(DeletePluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(DeletePluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitDeletePluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// GetPluginWorkloadBinding operation middleware
+func (sh *strictHandler) GetPluginWorkloadBinding(ctx echo.Context, bindingId PluginWorkloadBindingIdPathParam) error {
+	var request GetPluginWorkloadBindingRequestObject
+
+	request.BindingId = bindingId
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPluginWorkloadBinding(ctx.Request().Context(), request.(GetPluginWorkloadBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPluginWorkloadBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(GetPluginWorkloadBindingResponseObject); ok {
+		return validResponse.VisitGetPluginWorkloadBindingResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
 // DismissPrompt operation middleware
 func (sh *strictHandler) DismissPrompt(ctx echo.Context, userId UserIdPathParam, params DismissPromptParams) error {
 	var request DismissPromptRequestObject
@@ -6559,148 +8161,207 @@ func (sh *strictHandler) RevokeUserSessionToken(ctx echo.Context, userId UserIdP
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"nwAAAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

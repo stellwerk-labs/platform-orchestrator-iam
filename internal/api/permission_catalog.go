@@ -31,6 +31,22 @@ func (s *Server) ListPermissions(ctx context.Context, request ListPermissionsReq
 			Scopes:      scopes,
 		})
 	}
+	if lister, ok := s.Database.(pluginCapabilityLister); ok {
+		capabilities, err := lister.ListPluginCapabilities(ctx, nil, request.OrgId)
+		if err != nil {
+			return nil, err
+		}
+		for _, capability := range capabilities {
+			scopes := make([]PermissionDefinitionScopes, len(capability.Scopes))
+			for index, scope := range capability.Scopes {
+				scopes[index] = PermissionDefinitionScopes(scope)
+			}
+			items = append(items, PermissionDefinition{
+				Id: capability.ID, DisplayName: capability.DisplayName, Description: capability.Description,
+				Category: capability.Category, Level: PermissionDefinitionLevel(capability.Level), Scopes: scopes,
+			})
+		}
+	}
 
 	return ListPermissions200JSONResponse{Items: items}, nil
 }

@@ -220,7 +220,19 @@ func TestRolePermissionPatternSupportsNamespacedPermissions(t *testing.T) {
 	require.True(t, rolePermissionPattern.MatchString("module.version.read"))
 	require.True(t, rolePermissionPattern.MatchString("module.version.pin-override"))
 	require.True(t, rolePermissionPattern.MatchString("deployment_write"))
+	require.True(t, rolePermissionPattern.MatchString("plugin.dev.stellwerk.progressive-rollouts.approve-environment-with-long-scope"))
 	require.False(t, rolePermissionPattern.MatchString("module/version/read"))
+}
+
+func TestRoleWriteAcceptsOnlyRegisteredPluginCapability(t *testing.T) {
+	const permission = "plugin.dev.stellwerk.progressive-rollouts.rollout-read"
+	body := &RoleWriteBody{DisplayName: "Rollout Viewer", Permissions: []string{permission}}
+	_, _, err := validateRoleWrite(body)
+	require.ErrorContains(t, err, "unknown permission")
+
+	_, permissions, err := validateRoleWriteWithPluginCapabilities(body, []model.PluginCapability{{ID: permission}})
+	require.NoError(t, err)
+	require.Equal(t, []string{permission}, permissions)
 }
 
 func TestUpdateSystemRoleIsRejected(t *testing.T) {

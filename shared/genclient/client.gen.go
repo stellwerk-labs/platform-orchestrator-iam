@@ -60,6 +60,144 @@ func (e PermissionDefinitionScopes) Valid() bool {
 	}
 }
 
+// Defines values for PlatformPrincipalCredential.
+const (
+	PlatformPrincipalCredentialStaticToken PlatformPrincipalCredential = "static_token"
+	PlatformPrincipalCredentialWorkload    PlatformPrincipalCredential = "workload"
+)
+
+// Valid indicates whether the value is a known member of the PlatformPrincipalCredential enum.
+func (e PlatformPrincipalCredential) Valid() bool {
+	switch e {
+	case PlatformPrincipalCredentialStaticToken:
+		return true
+	case PlatformPrincipalCredentialWorkload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginCapabilityRegistrationLevel.
+const (
+	PluginCapabilityRegistrationLevelManage PluginCapabilityRegistrationLevel = "manage"
+	PluginCapabilityRegistrationLevelRead   PluginCapabilityRegistrationLevel = "read"
+	PluginCapabilityRegistrationLevelWrite  PluginCapabilityRegistrationLevel = "write"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationLevel enum.
+func (e PluginCapabilityRegistrationLevel) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationLevelManage:
+		return true
+	case PluginCapabilityRegistrationLevelRead:
+		return true
+	case PluginCapabilityRegistrationLevelWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginCapabilityRegistrationScopes.
+const (
+	PluginCapabilityRegistrationScopesEnvironment  PluginCapabilityRegistrationScopes = "environment"
+	PluginCapabilityRegistrationScopesOrganization PluginCapabilityRegistrationScopes = "organization"
+	PluginCapabilityRegistrationScopesProject      PluginCapabilityRegistrationScopes = "project"
+)
+
+// Valid indicates whether the value is a known member of the PluginCapabilityRegistrationScopes enum.
+func (e PluginCapabilityRegistrationScopes) Valid() bool {
+	switch e {
+	case PluginCapabilityRegistrationScopesEnvironment:
+		return true
+	case PluginCapabilityRegistrationScopesOrganization:
+		return true
+	case PluginCapabilityRegistrationScopesProject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadBindingServiceUserScope.
+const (
+	ServiceUserScopeOrganization PluginWorkloadBindingServiceUserScope = "organization"
+	ServiceUserScopePlatform     PluginWorkloadBindingServiceUserScope = "platform"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadBindingServiceUserScope enum.
+func (e PluginWorkloadBindingServiceUserScope) Valid() bool {
+	switch e {
+	case ServiceUserScopeOrganization:
+		return true
+	case ServiceUserScopePlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeRequestGrantType.
+const (
+	PluginWorkloadTokenExchangeGrantType PluginWorkloadTokenExchangeRequestGrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestGrantType enum.
+func (e PluginWorkloadTokenExchangeRequestGrantType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenExchangeGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeRequestSubjectTokenType.
+const (
+	PluginWorkloadSubjectTokenTypeJWT PluginWorkloadTokenExchangeRequestSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeRequestSubjectTokenType enum.
+func (e PluginWorkloadTokenExchangeRequestSubjectTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadSubjectTokenTypeJWT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseIssuedTokenType.
+const (
+	PluginWorkloadIssuedTokenTypeAccessToken PluginWorkloadTokenExchangeResponseIssuedTokenType = "urn:ietf:params:oauth:token-type:access_token"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseIssuedTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseIssuedTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadIssuedTokenTypeAccessToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PluginWorkloadTokenExchangeResponseTokenType.
+const (
+	PluginWorkloadTokenTypeBearer PluginWorkloadTokenExchangeResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the PluginWorkloadTokenExchangeResponseTokenType enum.
+func (e PluginWorkloadTokenExchangeResponseTokenType) Valid() bool {
+	switch e {
+	case PluginWorkloadTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubjectType.
 const (
 	SubjectTypeRole         SubjectType = "role"
@@ -489,6 +627,175 @@ type PermissionDefinitionPage struct {
 	Items []PermissionDefinition `json:"items"`
 }
 
+// PlatformPrincipal A service user that belongs to no organization and holds no role. A static_token principal, such as the Data Plane admission checker, authenticates with a token from this API. A workload principal has no static token; it authenticates only with tokens exchanged through its plugin workload binding.
+type PlatformPrincipal struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
+// PlatformPrincipalCreateBody Creates a platform principal that authenticates with a static token.
+type PlatformPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: Data Plane admission checker
+	DisplayName string `json:"display_name"`
+
+	// ExpiryInDays The expiry time of the token in days from the time of creation
+	//
+	// Example: 365
+	ExpiryInDays int `json:"expiry_in_days"`
+}
+
+// PlatformPrincipalCredential How a platform principal authenticates.
+type PlatformPrincipalCredential string
+
+// PlatformPrincipalList All platform principals, oldest first.
+type PlatformPrincipalList struct {
+	Items []PlatformPrincipal `json:"items"`
+}
+
+// PlatformPrincipalWithToken defines model for PlatformPrincipalWithToken.
+type PlatformPrincipalWithToken struct {
+	// Credential How a platform principal authenticates.
+	Credential PlatformPrincipalCredential `json:"credential"`
+
+	// CurrentTokenExpiresAt The expiry of the static token; absent for a workload principal.
+	CurrentTokenExpiresAt *time.Time `json:"current_token_expires_at,omitempty"`
+	DisplayName           string     `json:"display_name"`
+
+	// GeneratedAt The time the principal was created or its static token last regenerated
+	GeneratedAt time.Time `json:"generated_at"`
+
+	// GeneratedBy The principal that created it or last regenerated its static token
+	GeneratedBy openapi_types.UUID `json:"generated_by"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Token The static bearer token. It is returned only here.
+	Token string `json:"token"`
+
+	// WorkloadBindingId The plugin workload binding of a bound workload principal.
+	WorkloadBindingId *openapi_types.UUID `json:"workload_binding_id,omitempty"`
+}
+
+// PluginCapabilityRegistration A plugin-owned permission definition. The name is a flat slug local to the plugin namespace; dots are forbidden so the full identifier has one unambiguous plugin/local boundary.
+type PluginCapabilityRegistration struct {
+	Category    string                               `json:"category"`
+	Description string                               `json:"description"`
+	DisplayName string                               `json:"display_name"`
+	Level       PluginCapabilityRegistrationLevel    `json:"level"`
+	Name        string                               `json:"name"`
+	Scopes      []PluginCapabilityRegistrationScopes `json:"scopes"`
+}
+
+// PluginCapabilityRegistrationLevel defines model for PluginCapabilityRegistration.Level.
+type PluginCapabilityRegistrationLevel string
+
+// PluginCapabilityRegistrationScopes defines model for PluginCapabilityRegistration.Scopes.
+type PluginCapabilityRegistrationScopes string
+
+// PluginCapabilityRegistrationBody The complete human-role capability catalog for one installed plugin. An empty array unregisters every capability for the plugin.
+type PluginCapabilityRegistrationBody struct {
+	Capabilities []PluginCapabilityRegistration `json:"capabilities"`
+}
+
+// PluginWorkloadBinding A Kubernetes ServiceAccount bound to the service user of a plugin installation.
+type PluginWorkloadBinding struct {
+	Audience       string             `json:"audience"`
+	CreatedAt      time.Time          `json:"created_at"`
+	CreatedBy      openapi_types.UUID `json:"created_by"`
+	Id             openapi_types.UUID `json:"id"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+	Issuer         string             `json:"issuer"`
+	Namespace      string             `json:"namespace"`
+	PluginId       string             `json:"plugin_id"`
+	ServiceAccount string             `json:"service_account"`
+	ServiceUserId  openapi_types.UUID `json:"service_user_id"`
+
+	// ServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+	ServiceUserScope PluginWorkloadBindingServiceUserScope `json:"service_user_scope"`
+}
+
+// PluginWorkloadBindingServiceUserScope platform for a platform principal, which belongs to no organization and holds no role; organization for a service user of one organization, bound before platform principals existed.
+type PluginWorkloadBindingServiceUserScope string
+
+// PluginWorkloadBindingCreateBody Binds one Kubernetes ServiceAccount of one cluster issuer to the platform principal of a plugin installation. Exactly one of platform_principal and service_user_id is required.
+type PluginWorkloadBindingCreateBody struct {
+	// Audience The exact and only audience the projected ServiceAccount token must carry.
+	Audience       string             `json:"audience"`
+	InstallationId openapi_types.UUID `json:"installation_id"`
+
+	// Issuer The cluster's ServiceAccount token issuer. Must equal the issuer configured in IAM.
+	Issuer    string `json:"issuer"`
+	Namespace string `json:"namespace"`
+
+	// PlatformPrincipal Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+	PlatformPrincipal *PluginWorkloadPrincipalCreateBody `json:"platform_principal,omitempty"`
+	PluginId          string                             `json:"plugin_id"`
+	ServiceAccount    string                             `json:"service_account"`
+
+	// ServiceUserId An existing plugin workload principal without a binding, for example one whose binding was revoked. The plugin installation record names this principal.
+	ServiceUserId *openapi_types.UUID `json:"service_user_id,omitempty"`
+}
+
+// PluginWorkloadBindingList All plugin workload bindings, oldest first.
+type PluginWorkloadBindingList struct {
+	Items []PluginWorkloadBinding `json:"items"`
+}
+
+// PluginWorkloadPrincipalCreateBody Creates the platform principal of the plugin workload together with the binding. It belongs to no organization, can hold no role and has no static token.
+type PluginWorkloadPrincipalCreateBody struct {
+	// DisplayName A display name of the platform principal
+	//
+	// Example: progressive-rollouts
+	DisplayName string `json:"display_name"`
+}
+
+// PluginWorkloadTokenExchangeRequest An RFC 8693 token exchange request. Only a Kubernetes ServiceAccount JWT is accepted as subject token.
+type PluginWorkloadTokenExchangeRequest struct {
+	GrantType PluginWorkloadTokenExchangeRequestGrantType `json:"grant_type"`
+
+	// SubjectToken The projected ServiceAccount token of the plugin workload.
+	SubjectToken     string                                             `json:"subject_token"`
+	SubjectTokenType PluginWorkloadTokenExchangeRequestSubjectTokenType `json:"subject_token_type"`
+}
+
+// PluginWorkloadTokenExchangeRequestGrantType defines model for PluginWorkloadTokenExchangeRequest.GrantType.
+type PluginWorkloadTokenExchangeRequestGrantType string
+
+// PluginWorkloadTokenExchangeRequestSubjectTokenType defines model for PluginWorkloadTokenExchangeRequest.SubjectTokenType.
+type PluginWorkloadTokenExchangeRequestSubjectTokenType string
+
+// PluginWorkloadTokenExchangeResponse An RFC 8693 token exchange response carrying an opaque plugin workload token.
+type PluginWorkloadTokenExchangeResponse struct {
+	// AccessToken The opaque plugin workload token. Present it as a Bearer token.
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Lifetime of the issued token in seconds.
+	ExpiresIn       int                                                `json:"expires_in"`
+	IssuedTokenType PluginWorkloadTokenExchangeResponseIssuedTokenType `json:"issued_token_type"`
+	TokenType       PluginWorkloadTokenExchangeResponseTokenType       `json:"token_type"`
+}
+
+// PluginWorkloadTokenExchangeResponseIssuedTokenType defines model for PluginWorkloadTokenExchangeResponse.IssuedTokenType.
+type PluginWorkloadTokenExchangeResponseIssuedTokenType string
+
+// PluginWorkloadTokenExchangeResponseTokenType defines model for PluginWorkloadTokenExchangeResponse.TokenType.
+type PluginWorkloadTokenExchangeResponseTokenType string
+
 // RegisterUserBody A payload needed to register a user against an identity provider.
 type RegisterUserBody struct {
 	// Provider The login provider type.
@@ -546,10 +853,10 @@ type ReplaceUserMembershipsBody struct {
 
 // ResourcePermissionCheck defines model for ResourcePermissionCheck.
 type ResourcePermissionCheck struct {
-	// Permission The permission string.
+	// Permission The complete permission ID, including the namespace for a registered plugin capability. Accepting an ID does not grant it; current scope and registration are checked by the authorizer.
 	Permission string `json:"permission"`
 
-	// Resource The resource to check permissions on.
+	// Resource The resource to check permissions on; platform for a platform-level permission.
 	Resource string `json:"resource"`
 }
 
@@ -898,6 +1205,12 @@ type PageTokenQueryParam = string
 // PerPageQueryParam defines model for perPageQueryParam.
 type PerPageQueryParam = int
 
+// PlatformPrincipalIdPathParam defines model for platformPrincipalIdPathParam.
+type PlatformPrincipalIdPathParam = openapi_types.UUID
+
+// PluginWorkloadBindingIdPathParam defines model for pluginWorkloadBindingIdPathParam.
+type PluginWorkloadBindingIdPathParam = openapi_types.UUID
+
 // ProjectIdPathParam defines model for projectIdPathParam.
 type ProjectIdPathParam = string
 
@@ -1009,6 +1322,12 @@ type PollDeviceLoginRequestParams struct {
 type InternalAuthenticateParams struct {
 	Authorization *string `json:"Authorization,omitempty"`
 	SessionToken  *string `form:"session-token,omitempty" json:"session-token,omitempty"`
+}
+
+// InternalListPluginWorkloadBindingsParams defines parameters for InternalListPluginWorkloadBindings.
+type InternalListPluginWorkloadBindingsParams struct {
+	PluginId       string             `form:"plugin_id" json:"plugin_id"`
+	InstallationId openapi_types.UUID `form:"installation_id" json:"installation_id"`
 }
 
 // ListInvitationsParams defines parameters for ListInvitations.
@@ -1137,6 +1456,9 @@ type RequestDeviceLoginJSONRequestBody = DeviceLoginCreateBody
 // LoginSessionJSONRequestBody defines body for LoginSession for application/json ContentType.
 type LoginSessionJSONRequestBody = LoginUserBody
 
+// ExchangePluginWorkloadTokenJSONRequestBody defines body for ExchangePluginWorkloadToken for application/json ContentType.
+type ExchangePluginWorkloadTokenJSONRequestBody = PluginWorkloadTokenExchangeRequest
+
 // RegisterUserJSONRequestBody defines body for RegisterUser for application/json ContentType.
 type RegisterUserJSONRequestBody = RegisterUserBody
 
@@ -1154,6 +1476,9 @@ type InternalUpdateSsoConfigurationJSONRequestBody = SsoConfiguration
 
 // CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
 type CreateInvitationJSONRequestBody = InvitationCreateBody
+
+// ReplacePluginCapabilitiesJSONRequestBody defines body for ReplacePluginCapabilities for application/json ContentType.
+type ReplacePluginCapabilitiesJSONRequestBody = PluginCapabilityRegistrationBody
 
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleWriteBody
@@ -1175,6 +1500,15 @@ type RegenerateServiceUserJSONRequestBody = ServiceUserRegenerateBody
 
 // ReplaceOrgUserMembershipsJSONRequestBody defines body for ReplaceOrgUserMemberships for application/json ContentType.
 type ReplaceOrgUserMembershipsJSONRequestBody = ReplaceUserMembershipsBody
+
+// CreatePlatformPrincipalJSONRequestBody defines body for CreatePlatformPrincipal for application/json ContentType.
+type CreatePlatformPrincipalJSONRequestBody = PlatformPrincipalCreateBody
+
+// RegeneratePlatformPrincipalJSONRequestBody defines body for RegeneratePlatformPrincipal for application/json ContentType.
+type RegeneratePlatformPrincipalJSONRequestBody = ServiceUserRegenerateBody
+
+// CreatePluginWorkloadBindingJSONRequestBody defines body for CreatePluginWorkloadBinding for application/json ContentType.
+type CreatePluginWorkloadBindingJSONRequestBody = PluginWorkloadBindingCreateBody
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1297,6 +1631,24 @@ type ClientInterface interface {
 	// Corresponds with POST /auth/logout (the `LogoutSession` operationId).
 	LogoutSession(ctx context.Context, params *LogoutSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ExchangePluginWorkloadTokenWithBody Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	//
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+	ExchangePluginWorkloadTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	//
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+	ExchangePluginWorkloadToken(ctx context.Context, body ExchangePluginWorkloadTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RegisterUserWithBody Register a new user using a login provider and grant an initial session token in the cookie.
 	//
 	// Takes any type of body and a specified content type.
@@ -1362,12 +1714,16 @@ type ClientInterface interface {
 
 	// InternalAuthorizeWithBody Perform a policy enforcement check on the requested user, subjects, and permissions
 	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
 	InternalAuthorizeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// InternalAuthorize Perform a policy enforcement check on the requested user, subjects, and permissions
+	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1418,6 +1774,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 	InternalUpdateSsoConfiguration(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+	//
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
+	//
+	// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+	InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListInvitations List the invitations that are pending in the organization.
 	//
@@ -1474,6 +1837,24 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 	ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplacePluginCapabilitiesWithBody Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithBody(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilities(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListEnvironmentUsers List the users and service users that have access to this environment.
 	//
@@ -1584,12 +1965,16 @@ type ClientInterface interface {
 
 	// ReplaceServiceUserRolesWithBody Replace all roles for a service user in an organization
 	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
 	ReplaceServiceUserRolesWithBody(ctx context.Context, orgId OrgIdPathParam, serviceUserId ServiceUserIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReplaceServiceUserRoles Replace all roles for a service user in an organization
+	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1623,6 +2008,102 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 	ReplaceOrgUserMemberships(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlatformPrincipals List platform principals (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+	//
+	// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+	ListPlatformPrincipals(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePlatformPrincipalWithBody Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipal(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+	//
+	// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+	DeletePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlatformPrincipal Get a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+	GetPlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegeneratePlatformPrincipalWithBody Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithBody(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
+	ListPluginWorkloadBindings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+	CreatePluginWorkloadBindingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+	CreatePluginWorkloadBinding(ctx context.Context, body CreatePluginWorkloadBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
+	//
+	// Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
+	DeletePluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Corresponds with GET /plugin-workload-bindings/{bindingId} (the `GetPluginWorkloadBinding` operationId).
+	GetPluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DismissPrompt Dismiss a prompt for the user
 	//
@@ -1752,6 +2233,44 @@ func (c *Client) LoginSession(ctx context.Context, params *LoginSessionParams, b
 // Corresponds with POST /auth/logout (the `LogoutSession` operationId).
 func (c *Client) LogoutSession(ctx context.Context, params *LogoutSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLogoutSessionRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ExchangePluginWorkloadTokenWithBody Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+//
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+func (c *Client) ExchangePluginWorkloadTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExchangePluginWorkloadTokenRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ExchangePluginWorkloadToken Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+//
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+func (c *Client) ExchangePluginWorkloadToken(ctx context.Context, body ExchangePluginWorkloadTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExchangePluginWorkloadTokenRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1937,6 +2456,8 @@ func (c *Client) InternalAuthenticate(ctx context.Context, params *InternalAuthe
 
 // InternalAuthorizeWithBody Perform a policy enforcement check on the requested user, subjects, and permissions
 //
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
@@ -1953,6 +2474,8 @@ func (c *Client) InternalAuthorizeWithBody(ctx context.Context, contentType stri
 }
 
 // InternalAuthorize Perform a policy enforcement check on the requested user, subjects, and permissions
+//
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2074,6 +2597,23 @@ func (c *Client) InternalUpdateSsoConfigurationWithBody(ctx context.Context, org
 // Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 func (c *Client) InternalUpdateSsoConfiguration(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewInternalUpdateSsoConfigurationRequest(c.Server, orgId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InternalListPluginWorkloadBindings List the workload bindings of one plugin installation (v1alpha).
+//
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
+//
+// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+func (c *Client) InternalListPluginWorkloadBindings(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalListPluginWorkloadBindingsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2230,6 +2770,44 @@ func (c *Client) DeleteOrgMembership(ctx context.Context, orgId OrgIdPathParam, 
 // Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 func (c *Client) ListPermissions(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListPermissionsRequest(c.Server, orgId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplacePluginCapabilitiesWithBody Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *Client) ReplacePluginCapabilitiesWithBody(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplacePluginCapabilitiesRequestWithBody(c.Server, orgId, pluginId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReplacePluginCapabilities Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *Client) ReplacePluginCapabilities(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplacePluginCapabilitiesRequest(c.Server, orgId, pluginId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2519,6 +3097,8 @@ func (c *Client) DeleteServiceUser(ctx context.Context, orgId OrgIdPathParam, se
 
 // ReplaceServiceUserRolesWithBody Replace all roles for a service user in an organization
 //
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
@@ -2535,6 +3115,8 @@ func (c *Client) ReplaceServiceUserRolesWithBody(ctx context.Context, orgId OrgI
 }
 
 // ReplaceServiceUserRoles Replace all roles for a service user in an organization
+//
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2609,6 +3191,222 @@ func (c *Client) ReplaceOrgUserMembershipsWithBody(ctx context.Context, orgId Or
 // Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 func (c *Client) ReplaceOrgUserMemberships(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReplaceOrgUserMembershipsRequest(c.Server, orgId, userId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPlatformPrincipals List platform principals (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+//
+// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+func (c *Client) ListPlatformPrincipals(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPlatformPrincipalsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePlatformPrincipalWithBody Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *Client) CreatePlatformPrincipalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePlatformPrincipalRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePlatformPrincipal Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *Client) CreatePlatformPrincipal(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePlatformPrincipalRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePlatformPrincipal Delete a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+//
+// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+func (c *Client) DeletePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePlatformPrincipalRequest(c.Server, principalId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPlatformPrincipal Get a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+func (c *Client) GetPlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlatformPrincipalRequest(c.Server, principalId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegeneratePlatformPrincipalWithBody Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *Client) RegeneratePlatformPrincipalWithBody(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegeneratePlatformPrincipalRequestWithBody(c.Server, principalId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegeneratePlatformPrincipal Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *Client) RegeneratePlatformPrincipal(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegeneratePlatformPrincipalRequest(c.Server, principalId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPluginWorkloadBindings List plugin workload bindings (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
+func (c *Client) ListPluginWorkloadBindings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPluginWorkloadBindingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePluginWorkloadBindingWithBody Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+func (c *Client) CreatePluginWorkloadBindingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePluginWorkloadBindingRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePluginWorkloadBinding Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+func (c *Client) CreatePluginWorkloadBinding(ctx context.Context, body CreatePluginWorkloadBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePluginWorkloadBindingRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePluginWorkloadBinding Revoke a plugin workload binding (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
+//
+// Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
+func (c *Client) DeletePluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePluginWorkloadBindingRequest(c.Server, bindingId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPluginWorkloadBinding Get a plugin workload binding (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Corresponds with GET /plugin-workload-bindings/{bindingId} (the `GetPluginWorkloadBinding` operationId).
+func (c *Client) GetPluginWorkloadBinding(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPluginWorkloadBindingRequest(c.Server, bindingId)
 	if err != nil {
 		return nil, err
 	}
@@ -2922,6 +3720,46 @@ func NewLogoutSessionRequest(server string, params *LogoutSessionParams) (*http.
 		}
 
 	}
+
+	return req, nil
+}
+
+// NewExchangePluginWorkloadTokenRequest calls the generic ExchangePluginWorkloadToken builder with application/json body
+func NewExchangePluginWorkloadTokenRequest(server string, body ExchangePluginWorkloadTokenJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewExchangePluginWorkloadTokenRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewExchangePluginWorkloadTokenRequestWithBody constructs an http.Request for the ExchangePluginWorkloadToken method, with any body, and a specified content type
+func NewExchangePluginWorkloadTokenRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/auth/plugin-workload-token")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3639,6 +4477,64 @@ func NewInternalUpdateSsoConfigurationRequestWithBody(server string, orgId OrgId
 	return req, nil
 }
 
+// NewInternalListPluginWorkloadBindingsRequest constructs an http.Request for the InternalListPluginWorkloadBindings method
+func NewInternalListPluginWorkloadBindingsRequest(server string, params *InternalListPluginWorkloadBindingsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/plugin-workload-bindings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "plugin_id", params.PluginId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "installation_id", params.InstallationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListInvitationsRequest constructs an http.Request for the ListInvitations method
 func NewListInvitationsRequest(server string, orgId OrgIdPathParam, params *ListInvitationsParams) (*http.Request, error) {
 	var err error
@@ -4173,6 +5069,60 @@ func NewListPermissionsRequest(server string, orgId OrgIdPathParam) (*http.Reque
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewReplacePluginCapabilitiesRequest calls the generic ReplacePluginCapabilities builder with application/json body
+func NewReplacePluginCapabilitiesRequest(server string, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplacePluginCapabilitiesRequestWithBody(server, orgId, pluginId, "application/json", bodyReader)
+}
+
+// NewReplacePluginCapabilitiesRequestWithBody constructs an http.Request for the ReplacePluginCapabilities method, with any body, and a specified content type
+func NewReplacePluginCapabilitiesRequestWithBody(server string, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "orgId", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "pluginId", pluginId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orgs/%s/plugins/%s/capabilities", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5076,6 +6026,323 @@ func NewReplaceOrgUserMembershipsRequestWithBody(server string, orgId OrgIdPathP
 	return req, nil
 }
 
+// NewListPlatformPrincipalsRequest constructs an http.Request for the ListPlatformPrincipals method
+func NewListPlatformPrincipalsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePlatformPrincipalRequest calls the generic CreatePlatformPrincipal builder with application/json body
+func NewCreatePlatformPrincipalRequest(server string, body CreatePlatformPrincipalJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePlatformPrincipalRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePlatformPrincipalRequestWithBody constructs an http.Request for the CreatePlatformPrincipal method, with any body, and a specified content type
+func NewCreatePlatformPrincipalRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePlatformPrincipalRequest constructs an http.Request for the DeletePlatformPrincipal method
+func NewDeletePlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPlatformPrincipalRequest constructs an http.Request for the GetPlatformPrincipal method
+func NewGetPlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegeneratePlatformPrincipalRequest calls the generic RegeneratePlatformPrincipal builder with application/json body
+func NewRegeneratePlatformPrincipalRequest(server string, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegeneratePlatformPrincipalRequestWithBody(server, principalId, "application/json", bodyReader)
+}
+
+// NewRegeneratePlatformPrincipalRequestWithBody constructs an http.Request for the RegeneratePlatformPrincipal method, with any body, and a specified content type
+func NewRegeneratePlatformPrincipalRequestWithBody(server string, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "principalId", principalId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/platform-principals/%s/actions/regenerate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListPluginWorkloadBindingsRequest constructs an http.Request for the ListPluginWorkloadBindings method
+func NewListPluginWorkloadBindingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plugin-workload-bindings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePluginWorkloadBindingRequest calls the generic CreatePluginWorkloadBinding builder with application/json body
+func NewCreatePluginWorkloadBindingRequest(server string, body CreatePluginWorkloadBindingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePluginWorkloadBindingRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePluginWorkloadBindingRequestWithBody constructs an http.Request for the CreatePluginWorkloadBinding method, with any body, and a specified content type
+func NewCreatePluginWorkloadBindingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plugin-workload-bindings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePluginWorkloadBindingRequest constructs an http.Request for the DeletePluginWorkloadBinding method
+func NewDeletePluginWorkloadBindingRequest(server string, bindingId PluginWorkloadBindingIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "bindingId", bindingId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plugin-workload-bindings/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPluginWorkloadBindingRequest constructs an http.Request for the GetPluginWorkloadBinding method
+func NewGetPluginWorkloadBindingRequest(server string, bindingId PluginWorkloadBindingIdPathParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "bindingId", bindingId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plugin-workload-bindings/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewDismissPromptRequest constructs an http.Request for the DismissPrompt method
 func NewDismissPromptRequest(server string, userId UserIdPathParam, params *DismissPromptParams) (*http.Request, error) {
 	var err error
@@ -5425,6 +6692,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /auth/logout (the `LogoutSession` operationId).
 	LogoutSessionWithResponse(ctx context.Context, params *LogoutSessionParams, reqEditors ...RequestEditorFn) (*LogoutSessionResponse, error)
 
+	// ExchangePluginWorkloadTokenWithBodyWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	//
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+	ExchangePluginWorkloadTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExchangePluginWorkloadTokenResponse, error)
+
+	// ExchangePluginWorkloadTokenWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+	//
+	// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+	ExchangePluginWorkloadTokenWithResponse(ctx context.Context, body ExchangePluginWorkloadTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*ExchangePluginWorkloadTokenResponse, error)
+
 	// RegisterUserWithBodyWithResponse Register a new user using a login provider and grant an initial session token in the cookie.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -5504,12 +6789,16 @@ type ClientWithResponsesInterface interface {
 
 	// InternalAuthorizeWithBodyWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
 	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
 	InternalAuthorizeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalAuthorizeResponse, error)
 
 	// InternalAuthorizeWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
+	//
+	// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5566,6 +6855,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /internal/orgs/{orgId}/sso-configuration (the `InternalUpdateSsoConfiguration` operationId).
 	InternalUpdateSsoConfigurationWithResponse(ctx context.Context, orgId OrgIdPathParam, body InternalUpdateSsoConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalUpdateSsoConfigurationResponse, error)
+
+	// InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
+	//
+	// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+	InternalListPluginWorkloadBindingsWithResponse(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*InternalListPluginWorkloadBindingsResponse, error)
 
 	// ListInvitationsWithResponse List the invitations that are pending in the organization.
 	//
@@ -5638,6 +6936,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /orgs/{orgId}/permissions (the `ListPermissions` operationId).
 	ListPermissionsWithResponse(ctx context.Context, orgId OrgIdPathParam, reqEditors ...RequestEditorFn) (*ListPermissionsResponse, error)
+
+	// ReplacePluginCapabilitiesWithBodyWithResponse Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error)
+
+	// ReplacePluginCapabilitiesWithResponse Replace an installed plugin's human-role capabilities.
+	//
+	// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+	ReplacePluginCapabilitiesWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error)
 
 	// ListEnvironmentUsersWithResponse List the users and service users that have access to this environment.
 	//
@@ -5766,12 +7082,16 @@ type ClientWithResponsesInterface interface {
 
 	// ReplaceServiceUserRolesWithBodyWithResponse Replace all roles for a service user in an organization
 	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
 	ReplaceServiceUserRolesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, serviceUserId ServiceUserIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceServiceUserRolesResponse, error)
 
 	// ReplaceServiceUserRolesWithResponse Replace all roles for a service user in an organization
+	//
+	// A service user bound to a plugin workload holds no role; assigning any returns 409.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5805,6 +7125,114 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /orgs/{orgId}/users/{userId}/memberships (the `ReplaceOrgUserMemberships` operationId).
 	ReplaceOrgUserMembershipsWithResponse(ctx context.Context, orgId OrgIdPathParam, userId UserIdPathParam, body ReplaceOrgUserMembershipsJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceOrgUserMembershipsResponse, error)
+
+	// ListPlatformPrincipalsWithResponse List platform principals (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+	ListPlatformPrincipalsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlatformPrincipalsResponse, error)
+
+	// CreatePlatformPrincipalWithBodyWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error)
+
+	// CreatePlatformPrincipalWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+	CreatePlatformPrincipalWithResponse(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error)
+
+	// DeletePlatformPrincipalWithResponse Delete a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+	DeletePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*DeletePlatformPrincipalResponse, error)
+
+	// GetPlatformPrincipalWithResponse Get a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+	GetPlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*GetPlatformPrincipalResponse, error)
+
+	// RegeneratePlatformPrincipalWithBodyWithResponse Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithBodyWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error)
+
+	// RegeneratePlatformPrincipalWithResponse Replace the static token of a platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+	RegeneratePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error)
+
+	// ListPluginWorkloadBindingsWithResponse List plugin workload bindings (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
+	ListPluginWorkloadBindingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginWorkloadBindingsResponse, error)
+
+	// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+	CreatePluginWorkloadBindingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePluginWorkloadBindingResponse, error)
+
+	// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+	CreatePluginWorkloadBindingWithResponse(ctx context.Context, body CreatePluginWorkloadBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePluginWorkloadBindingResponse, error)
+
+	// DeletePluginWorkloadBindingWithResponse Revoke a plugin workload binding (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
+	DeletePluginWorkloadBindingWithResponse(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*DeletePluginWorkloadBindingResponse, error)
+
+	// GetPluginWorkloadBindingWithResponse Get a plugin workload binding (v1alpha).
+	//
+	// Requires the platform-level permission plugin_workload_binding_write.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /plugin-workload-bindings/{bindingId} (the `GetPluginWorkloadBinding` operationId).
+	GetPluginWorkloadBindingWithResponse(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*GetPluginWorkloadBindingResponse, error)
 
 	// DismissPromptWithResponse Dismiss a prompt for the user
 	//
@@ -6049,6 +7477,75 @@ func (r LogoutSessionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r LogoutSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ExchangePluginWorkloadTokenResponse200Headers the declared response headers of an HTTP 200 response for ExchangePluginWorkloadToken
+type ExchangePluginWorkloadTokenResponse200Headers struct {
+	CacheControl string
+}
+
+type ExchangePluginWorkloadTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginWorkloadTokenExchangeResponse
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ExchangePluginWorkloadTokenResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ExchangePluginWorkloadTokenResponse) GetJSON200() *PluginWorkloadTokenExchangeResponse {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ExchangePluginWorkloadTokenResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ExchangePluginWorkloadTokenResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ExchangePluginWorkloadTokenResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ExchangePluginWorkloadTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ExchangePluginWorkloadTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ExchangePluginWorkloadTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ExchangePluginWorkloadTokenResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6818,6 +8315,54 @@ func (r InternalUpdateSsoConfigurationResponse) ContentType() string {
 	return ""
 }
 
+type InternalListPluginWorkloadBindingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginWorkloadBindingList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r InternalListPluginWorkloadBindingsResponse) GetJSON200() *PluginWorkloadBindingList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r InternalListPluginWorkloadBindingsResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetBody returns the raw response body bytes
+func (r InternalListPluginWorkloadBindingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r InternalListPluginWorkloadBindingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InternalListPluginWorkloadBindingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r InternalListPluginWorkloadBindingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListInvitationsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7230,6 +8775,54 @@ func (r ListPermissionsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListPermissionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReplacePluginCapabilitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ReplacePluginCapabilitiesResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ReplacePluginCapabilitiesResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r ReplacePluginCapabilitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplacePluginCapabilitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplacePluginCapabilitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReplacePluginCapabilitiesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7957,6 +9550,8 @@ type RegenerateServiceUserResponse struct {
 	JSON200 *ServiceUserWithToken
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *N404NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *N409Conflict
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7967,6 +9562,11 @@ func (r RegenerateServiceUserResponse) GetJSON200() *ServiceUserWithToken {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r RegenerateServiceUserResponse) GetJSON404() *N404NotFound {
 	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RegenerateServiceUserResponse) GetJSON409() *N409Conflict {
+	return r.JSON409
 }
 
 // GetBody returns the raw response body bytes
@@ -8054,6 +9654,494 @@ func (r ReplaceOrgUserMembershipsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ReplaceOrgUserMembershipsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListPlatformPrincipalsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipalList
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPlatformPrincipalsResponse) GetJSON200() *PlatformPrincipalList {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPlatformPrincipalsResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPlatformPrincipalsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPlatformPrincipalsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPlatformPrincipalsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPlatformPrincipalsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreatePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *PlatformPrincipalWithToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON201() *PlatformPrincipalWithToken {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreatePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r CreatePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipal
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON200() *PlatformPrincipal {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RegeneratePlatformPrincipalResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlatformPrincipalWithToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *N409Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON200() *PlatformPrincipalWithToken {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RegeneratePlatformPrincipalResponse) GetJSON409() *N409Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r RegeneratePlatformPrincipalResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RegeneratePlatformPrincipalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegeneratePlatformPrincipalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RegeneratePlatformPrincipalResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListPluginWorkloadBindingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginWorkloadBindingList
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPluginWorkloadBindingsResponse) GetJSON200() *PluginWorkloadBindingList {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPluginWorkloadBindingsResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPluginWorkloadBindingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPluginWorkloadBindingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPluginWorkloadBindingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPluginWorkloadBindingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreatePluginWorkloadBindingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *PluginWorkloadBinding
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *N400BadRequest
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *N409Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreatePluginWorkloadBindingResponse) GetJSON201() *PluginWorkloadBinding {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreatePluginWorkloadBindingResponse) GetJSON400() *N400BadRequest {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreatePluginWorkloadBindingResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreatePluginWorkloadBindingResponse) GetJSON409() *N409Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r CreatePluginWorkloadBindingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePluginWorkloadBindingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePluginWorkloadBindingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePluginWorkloadBindingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePluginWorkloadBindingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePluginWorkloadBindingResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePluginWorkloadBindingResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePluginWorkloadBindingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePluginWorkloadBindingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePluginWorkloadBindingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePluginWorkloadBindingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPluginWorkloadBindingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PluginWorkloadBinding
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *N403Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *N404NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPluginWorkloadBindingResponse) GetJSON200() *PluginWorkloadBinding {
+	return r.JSON200
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetPluginWorkloadBindingResponse) GetJSON403() *N403Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetPluginWorkloadBindingResponse) GetJSON404() *N404NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPluginWorkloadBindingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPluginWorkloadBindingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPluginWorkloadBindingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPluginWorkloadBindingResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8329,6 +10417,36 @@ func (c *ClientWithResponses) LogoutSessionWithResponse(ctx context.Context, par
 	return ParseLogoutSessionResponse(rsp)
 }
 
+// ExchangePluginWorkloadTokenWithBodyWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+//
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+func (c *ClientWithResponses) ExchangePluginWorkloadTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExchangePluginWorkloadTokenResponse, error) {
+	rsp, err := c.ExchangePluginWorkloadTokenWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExchangePluginWorkloadTokenResponse(rsp)
+}
+
+// ExchangePluginWorkloadTokenWithResponse Exchange a Kubernetes ServiceAccount token for a plugin workload token (v1alpha).
+//
+// RFC 8693 token exchange for plugin workloads, contract level v1alpha. The subject token must be a projected Kubernetes ServiceAccount token from the configured cluster issuer whose only audience is the exchange audience of the workload binding for that ServiceAccount, and the bound service user must be active and hold no role. The issued opaque token authenticates as the bound service user for at most 15 minutes and never longer than the subject token. Revoking the binding, disabling the service user or a role on it rejects the next authentication. This operation needs no prior authentication; every rejected subject token yields the same invalid_grant error.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /auth/plugin-workload-token (the `ExchangePluginWorkloadToken` operationId).
+func (c *ClientWithResponses) ExchangePluginWorkloadTokenWithResponse(ctx context.Context, body ExchangePluginWorkloadTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*ExchangePluginWorkloadTokenResponse, error) {
+	rsp, err := c.ExchangePluginWorkloadToken(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExchangePluginWorkloadTokenResponse(rsp)
+}
+
 // RegisterUserWithBodyWithResponse Register a new user using a login provider and grant an initial session token in the cookie.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -8474,6 +10592,8 @@ func (c *ClientWithResponses) InternalAuthenticateWithResponse(ctx context.Conte
 
 // InternalAuthorizeWithBodyWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
 //
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /internal/authorize (the `InternalAuthorize` operationId).
@@ -8486,6 +10606,8 @@ func (c *ClientWithResponses) InternalAuthorizeWithBodyWithResponse(ctx context.
 }
 
 // InternalAuthorizeWithResponse Perform a policy enforcement check on the requested user, subjects, and permissions
+//
+// A check on the resource platform asks whether the user holds a platform-level permission such as plugin_manager_read or plugin_manager_write. Only principals configured for that permission hold it; they must be active and are never plugin workloads, organization roles never grant it, and the internal system identity never holds it through this check.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8589,6 +10711,21 @@ func (c *ClientWithResponses) InternalUpdateSsoConfigurationWithResponse(ctx con
 		return nil, err
 	}
 	return ParseInternalUpdateSsoConfigurationResponse(rsp)
+}
+
+// InternalListPluginWorkloadBindingsWithResponse List the workload bindings of one plugin installation (v1alpha).
+//
+// Lets Core verify that a workload binding exists for exactly the plugin ID, installation UUID and service user it records for an installation, and that this service user is a platform principal (service_user_scope).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /internal/plugin-workload-bindings (the `InternalListPluginWorkloadBindings` operationId).
+func (c *ClientWithResponses) InternalListPluginWorkloadBindingsWithResponse(ctx context.Context, params *InternalListPluginWorkloadBindingsParams, reqEditors ...RequestEditorFn) (*InternalListPluginWorkloadBindingsResponse, error) {
+	rsp, err := c.InternalListPluginWorkloadBindings(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInternalListPluginWorkloadBindingsResponse(rsp)
 }
 
 // ListInvitationsWithResponse List the invitations that are pending in the organization.
@@ -8721,6 +10858,36 @@ func (c *ClientWithResponses) ListPermissionsWithResponse(ctx context.Context, o
 		return nil, err
 	}
 	return ParseListPermissionsResponse(rsp)
+}
+
+// ReplacePluginCapabilitiesWithBodyWithResponse Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *ClientWithResponses) ReplacePluginCapabilitiesWithBodyWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error) {
+	rsp, err := c.ReplacePluginCapabilitiesWithBody(ctx, orgId, pluginId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplacePluginCapabilitiesResponse(rsp)
+}
+
+// ReplacePluginCapabilitiesWithResponse Replace an installed plugin's human-role capabilities.
+//
+// Replaces the complete organization-scoped capability catalog for an operator-installed plugin. Capability identifiers are always derived as plugin.{pluginId}.{localSlug}, where localSlug is a flat lowercase letter, digit and hyphen slug; callers cannot register Core permissions or service-operation grants.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /orgs/{orgId}/plugins/{pluginId}/capabilities (the `ReplacePluginCapabilities` operationId).
+func (c *ClientWithResponses) ReplacePluginCapabilitiesWithResponse(ctx context.Context, orgId OrgIdPathParam, pluginId string, body ReplacePluginCapabilitiesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplacePluginCapabilitiesResponse, error) {
+	rsp, err := c.ReplacePluginCapabilities(ctx, orgId, pluginId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplacePluginCapabilitiesResponse(rsp)
 }
 
 // ListEnvironmentUsersWithResponse List the users and service users that have access to this environment.
@@ -8952,6 +11119,8 @@ func (c *ClientWithResponses) DeleteServiceUserWithResponse(ctx context.Context,
 
 // ReplaceServiceUserRolesWithBodyWithResponse Replace all roles for a service user in an organization
 //
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /orgs/{orgId}/service-users/{serviceUserId} (the `ReplaceServiceUserRoles` operationId).
@@ -8964,6 +11133,8 @@ func (c *ClientWithResponses) ReplaceServiceUserRolesWithBodyWithResponse(ctx co
 }
 
 // ReplaceServiceUserRolesWithResponse Replace all roles for a service user in an organization
+//
+// A service user bound to a plugin workload holds no role; assigning any returns 409.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9026,6 +11197,186 @@ func (c *ClientWithResponses) ReplaceOrgUserMembershipsWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseReplaceOrgUserMembershipsResponse(rsp)
+}
+
+// ListPlatformPrincipalsWithResponse List platform principals (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Platform principals belong to no organization, hold no role and never appear in an organization's service users.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /platform-principals (the `ListPlatformPrincipals` operationId).
+func (c *ClientWithResponses) ListPlatformPrincipalsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlatformPrincipalsResponse, error) {
+	rsp, err := c.ListPlatformPrincipals(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPlatformPrincipalsResponse(rsp)
+}
+
+// CreatePlatformPrincipalWithBodyWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *ClientWithResponses) CreatePlatformPrincipalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error) {
+	rsp, err := c.CreatePlatformPrincipalWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePlatformPrincipalResponse(rsp)
+}
+
+// CreatePlatformPrincipalWithResponse Create a static-token platform principal, such as the Data Plane admission checker (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity; a service user cannot issue static platform tokens. The principal belongs to no organization, can hold no role and cannot be bound to a plugin workload. The token is returned only once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals (the `CreatePlatformPrincipal` operationId).
+func (c *ClientWithResponses) CreatePlatformPrincipalWithResponse(ctx context.Context, body CreatePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePlatformPrincipalResponse, error) {
+	rsp, err := c.CreatePlatformPrincipal(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePlatformPrincipalResponse(rsp)
+}
+
+// DeletePlatformPrincipalWithResponse Delete a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the principal together with its workload binding and every token issued for it. Due to internal caching, a static token may keep authenticating for up to a minute.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /platform-principals/{principalId} (the `DeletePlatformPrincipal` operationId).
+func (c *ClientWithResponses) DeletePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*DeletePlatformPrincipalResponse, error) {
+	rsp, err := c.DeletePlatformPrincipal(ctx, principalId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePlatformPrincipalResponse(rsp)
+}
+
+// GetPlatformPrincipalWithResponse Get a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /platform-principals/{principalId} (the `GetPlatformPrincipal` operationId).
+func (c *ClientWithResponses) GetPlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, reqEditors ...RequestEditorFn) (*GetPlatformPrincipalResponse, error) {
+	rsp, err := c.GetPlatformPrincipal(ctx, principalId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlatformPrincipalResponse(rsp)
+}
+
+// RegeneratePlatformPrincipalWithBodyWithResponse Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *ClientWithResponses) RegeneratePlatformPrincipalWithBodyWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error) {
+	rsp, err := c.RegeneratePlatformPrincipalWithBody(ctx, principalId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegeneratePlatformPrincipalResponse(rsp)
+}
+
+// RegeneratePlatformPrincipalWithResponse Replace the static token of a platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, held by a user or IAM's internal system identity. The previous token stops authenticating; due to internal caching this may take up to a minute. A plugin workload principal has no static token and returns 409.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /platform-principals/{principalId}/actions/regenerate (the `RegeneratePlatformPrincipal` operationId).
+func (c *ClientWithResponses) RegeneratePlatformPrincipalWithResponse(ctx context.Context, principalId PlatformPrincipalIdPathParam, body RegeneratePlatformPrincipalJSONRequestBody, reqEditors ...RequestEditorFn) (*RegeneratePlatformPrincipalResponse, error) {
+	rsp, err := c.RegeneratePlatformPrincipal(ctx, principalId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegeneratePlatformPrincipalResponse(rsp)
+}
+
+// ListPluginWorkloadBindingsWithResponse List plugin workload bindings (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /plugin-workload-bindings (the `ListPluginWorkloadBindings` operationId).
+func (c *ClientWithResponses) ListPluginWorkloadBindingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPluginWorkloadBindingsResponse, error) {
+	rsp, err := c.ListPluginWorkloadBindings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPluginWorkloadBindingsResponse(rsp)
+}
+
+// CreatePluginWorkloadBindingWithBodyWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+func (c *ClientWithResponses) CreatePluginWorkloadBindingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePluginWorkloadBindingResponse, error) {
+	rsp, err := c.CreatePluginWorkloadBindingWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePluginWorkloadBindingResponse(rsp)
+}
+
+// CreatePluginWorkloadBindingWithResponse Bind a Kubernetes ServiceAccount to a plugin platform principal (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write, which organization roles cannot grant. The binding names a platform principal: a service user that belongs to no organization, can hold no role and has no static token. Either platform_principal creates a new one in the same transaction, or service_user_id names an existing plugin workload principal without a binding, for example after a revocation, so the principal and the identity Core records for the installation stay the same. An organization service user or a static-token platform principal cannot be bound. A ServiceAccount and a principal each have at most one binding. The issuer must be the configured workload token issuer.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plugin-workload-bindings (the `CreatePluginWorkloadBinding` operationId).
+func (c *ClientWithResponses) CreatePluginWorkloadBindingWithResponse(ctx context.Context, body CreatePluginWorkloadBindingJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePluginWorkloadBindingResponse, error) {
+	rsp, err := c.CreatePluginWorkloadBinding(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePluginWorkloadBindingResponse(rsp)
+}
+
+// DeletePluginWorkloadBindingWithResponse Revoke a plugin workload binding (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write. Deletes the binding and every token issued for it; the next authentication with such a token fails. The bound principal stays: a platform principal then has no credential at all, and a new binding can name it again.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /plugin-workload-bindings/{bindingId} (the `DeletePluginWorkloadBinding` operationId).
+func (c *ClientWithResponses) DeletePluginWorkloadBindingWithResponse(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*DeletePluginWorkloadBindingResponse, error) {
+	rsp, err := c.DeletePluginWorkloadBinding(ctx, bindingId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePluginWorkloadBindingResponse(rsp)
+}
+
+// GetPluginWorkloadBindingWithResponse Get a plugin workload binding (v1alpha).
+//
+// Requires the platform-level permission plugin_workload_binding_write.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /plugin-workload-bindings/{bindingId} (the `GetPluginWorkloadBinding` operationId).
+func (c *ClientWithResponses) GetPluginWorkloadBindingWithResponse(ctx context.Context, bindingId PluginWorkloadBindingIdPathParam, reqEditors ...RequestEditorFn) (*GetPluginWorkloadBindingResponse, error) {
+	rsp, err := c.GetPluginWorkloadBinding(ctx, bindingId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPluginWorkloadBindingResponse(rsp)
 }
 
 // DismissPromptWithResponse Dismiss a prompt for the user
@@ -9247,6 +11598,66 @@ func ParseLogoutSessionResponse(rsp *http.Response) (*LogoutSessionResponse, err
 			headers.SetCookie = value
 		}
 		response.Headers204 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseExchangePluginWorkloadTokenResponse parses an HTTP response from a ExchangePluginWorkloadTokenWithResponse call
+func ParseExchangePluginWorkloadTokenResponse(rsp *http.Response) (*ExchangePluginWorkloadTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ExchangePluginWorkloadTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginWorkloadTokenExchangeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ExchangePluginWorkloadTokenResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = value
+		}
+		response.Headers200 = &headers
 	}
 
 	return response, nil
@@ -9832,6 +12243,39 @@ func ParseInternalUpdateSsoConfigurationResponse(rsp *http.Response) (*InternalU
 	return response, nil
 }
 
+// ParseInternalListPluginWorkloadBindingsResponse parses an HTTP response from a InternalListPluginWorkloadBindingsWithResponse call
+func ParseInternalListPluginWorkloadBindingsResponse(rsp *http.Response) (*InternalListPluginWorkloadBindingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InternalListPluginWorkloadBindingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginWorkloadBindingList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListInvitationsResponse parses an HTTP response from a ListInvitationsWithResponse call
 func ParseListInvitationsResponse(rsp *http.Response) (*ListInvitationsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10115,6 +12559,42 @@ func ParseListPermissionsResponse(rsp *http.Response) (*ListPermissionsResponse,
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplacePluginCapabilitiesResponse parses an HTTP response from a ReplacePluginCapabilitiesWithResponse call
+func ParseReplacePluginCapabilitiesResponse(rsp *http.Response) (*ReplacePluginCapabilitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplacePluginCapabilitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -10662,6 +13142,13 @@ func ParseRegenerateServiceUserResponse(rsp *http.Response) (*RegenerateServiceU
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest N409Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
 	}
 
 	return response, nil
@@ -10708,6 +13195,365 @@ func ParseReplaceOrgUserMembershipsResponse(rsp *http.Response) (*ReplaceOrgUser
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPlatformPrincipalsResponse parses an HTTP response from a ListPlatformPrincipalsWithResponse call
+func ParseListPlatformPrincipalsResponse(rsp *http.Response) (*ListPlatformPrincipalsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPlatformPrincipalsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipalList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePlatformPrincipalResponse parses an HTTP response from a CreatePlatformPrincipalWithResponse call
+func ParseCreatePlatformPrincipalResponse(rsp *http.Response) (*CreatePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PlatformPrincipalWithToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePlatformPrincipalResponse parses an HTTP response from a DeletePlatformPrincipalWithResponse call
+func ParseDeletePlatformPrincipalResponse(rsp *http.Response) (*DeletePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPlatformPrincipalResponse parses an HTTP response from a GetPlatformPrincipalWithResponse call
+func ParseGetPlatformPrincipalResponse(rsp *http.Response) (*GetPlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipal
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegeneratePlatformPrincipalResponse parses an HTTP response from a RegeneratePlatformPrincipalWithResponse call
+func ParseRegeneratePlatformPrincipalResponse(rsp *http.Response) (*RegeneratePlatformPrincipalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegeneratePlatformPrincipalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlatformPrincipalWithToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest N409Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPluginWorkloadBindingsResponse parses an HTTP response from a ListPluginWorkloadBindingsWithResponse call
+func ParseListPluginWorkloadBindingsResponse(rsp *http.Response) (*ListPluginWorkloadBindingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPluginWorkloadBindingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginWorkloadBindingList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePluginWorkloadBindingResponse parses an HTTP response from a CreatePluginWorkloadBindingWithResponse call
+func ParseCreatePluginWorkloadBindingResponse(rsp *http.Response) (*CreatePluginWorkloadBindingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePluginWorkloadBindingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PluginWorkloadBinding
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest N400BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest N409Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePluginWorkloadBindingResponse parses an HTTP response from a DeletePluginWorkloadBindingWithResponse call
+func ParseDeletePluginWorkloadBindingResponse(rsp *http.Response) (*DeletePluginWorkloadBindingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePluginWorkloadBindingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPluginWorkloadBindingResponse parses an HTTP response from a GetPluginWorkloadBindingWithResponse call
+func ParseGetPluginWorkloadBindingResponse(rsp *http.Response) (*GetPluginWorkloadBindingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPluginWorkloadBindingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PluginWorkloadBinding
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest N403Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest N404NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 

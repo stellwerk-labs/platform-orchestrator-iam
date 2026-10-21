@@ -14,6 +14,7 @@ import (
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
 	mockauthorization "github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization/mocks"
 	mockplatformorchestratorcp "github.com/stellwerk-labs/platform-orchestrator-iam/internal/clients/platformorchestratorcp/mocks"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/model"
 	mockmodel "github.com/stellwerk-labs/platform-orchestrator-iam/internal/model/mocks"
 	mocksso "github.com/stellwerk-labs/platform-orchestrator-iam/internal/ssoprovider/mocks"
 )
@@ -27,6 +28,11 @@ func MockServer(t *testing.T) (*echo.Echo, *Server, func()) {
 		OpenAPISkipperFn: OpenApiValidatorSkipper,
 	})
 	db := mockmodel.NewMockDatabaser(ctrl)
+	db.EXPECT().IsAuthorizationSubjectActive(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	// Handler unit tests run without plugin workloads; workload bindings are
+	// covered against real PostgreSQL in the plugin workload integration tests.
+	db.EXPECT().GetPluginWorkloadBindingForServiceUser(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, model.NewErrNotFound("plugin workload binding not found")).AnyTimes()
 	tx := mockmodel.NewMockTxWithCommit(ctrl)
 	db.EXPECT().BeginTx(gomock.Any(), gomock.Any()).Return(tx, nil).AnyTimes()
 	db.EXPECT().UpsertAuthorizationResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()

@@ -45,6 +45,27 @@ type EffectiveRoleBinding struct {
 	Scope       string
 }
 
+// IsAuthorizationSubjectActive checks the authoritative identity tables rather
+// than the in-memory policy snapshot. Humans must still exist; service users
+// must still exist and be active (serviceUserActive). Exactly one matching
+// identity is required so an accidental cross-table UUID collision fails
+// closed.
+func (d *databaser) IsAuthorizationSubjectActive(ctx context.Context, optionalTx Tx, subjectID uuid.UUID) (bool, error) {
+	var active bool
+	if err := d.txOrDb(optionalTx).QueryRowContext(ctx, `
+		SELECT count(*) = 1 AND bool_and(subject.active)
+		FROM (
+			SELECT true AS active FROM users WHERE id = $1
+			UNION ALL
+			SELECT `+serviceUserActive+` AS active
+			FROM service_user_tokens sut WHERE sut.id = $1
+		) subject
+	`, subjectID).Scan(&active); err != nil {
+		return false, errors.Wrap(err, "failed to check authorization subject liveness")
+	}
+	return active, nil
+}
+
 func (d *databaser) ListAuthorizationPolicies(ctx context.Context, optionalTx Tx) ([]AuthorizationPolicy, error) {
 	rows, err := d.txOrDb(optionalTx).QueryContext(ctx, `
 		SELECT m.user_id,
@@ -138,8 +159,20 @@ func (d *databaser) ListKnownAuthorizationPermissions(ctx context.Context, optio
 		SELECT DISTINCT requested.resource, requested.permission
 		FROM requested
 		JOIN authorization_resources resources ON resources.resource = requested.resource
-		JOIN roles ON roles.org_id = resources.org_id
-		WHERE requested.permission = ANY(roles.permissions)
+		WHERE (
+			requested.permission LIKE 'plugin.%'
+			AND EXISTS (
+				SELECT 1 FROM plugin_capabilities capability
+				WHERE capability.org_id = resources.org_id AND capability.id = requested.permission
+				  AND CASE resources.resource_type WHEN 'env' THEN 'environment' ELSE resources.resource_type END = ANY(capability.scopes)
+			)
+		) OR (
+			requested.permission NOT LIKE 'plugin.%'
+			AND EXISTS (
+				SELECT 1 FROM roles
+				WHERE roles.org_id = resources.org_id AND requested.permission = ANY(roles.permissions)
+			)
+		)
 	`, pq.Array(resources), pq.Array(permissions))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list known authorization permissions")

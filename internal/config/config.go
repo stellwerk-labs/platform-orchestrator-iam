@@ -1,6 +1,15 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/google/uuid"
+
+	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
+	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
+)
 
 // Configuration ...
 type Configuration struct {
@@ -69,4 +78,70 @@ type Configuration struct {
 
 	// SuperUserToken enables the global super user identity when set. The token is compared via sha256 hash.
 	SuperUserToken string `env:"SUPER_USER_TOKEN"`
+
+	// PluginWorkloadTokenIssuer enables the v1alpha plugin workload token
+	// exchange for projected ServiceAccount tokens of this cluster issuer.
+	// Without it the exchange answers 404 and no workload binding can be created.
+	PluginWorkloadTokenIssuer string `env:"PLUGIN_WORKLOAD_TOKEN_ISSUER" validate:"omitempty,url"`
+	// PluginWorkloadJWKSFile is an operator-supplied JWKS used instead of the
+	// URL, for clusters where IAM cannot reach the API server.
+	PluginWorkloadJWKSFile      string `env:"PLUGIN_WORKLOAD_JWKS_FILE"`
+	PluginWorkloadJWKSURL       string `env:"PLUGIN_WORKLOAD_JWKS_URL, default=https://kubernetes.default.svc/openid/v1/jwks" validate:"omitempty,url"`
+	PluginWorkloadJWKSCAFile    string `env:"PLUGIN_WORKLOAD_JWKS_CA_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"`
+	PluginWorkloadJWKSTokenFile string `env:"PLUGIN_WORKLOAD_JWKS_TOKEN_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/token"`
+	// PluginWorkloadTokenTTL is the lifetime of issued workload tokens, never
+	// longer than the subject token's remaining lifetime.
+	PluginWorkloadTokenTTL time.Duration `env:"PLUGIN_WORKLOAD_TOKEN_TTL, default=15m" validate:"min=1m,max=15m"`
+	// PluginWorkloadBindingWriters are the principals holding the platform-level
+	// plugin_workload_binding_write permission, typically the installation controller.
+	PluginWorkloadBindingWriters []string `env:"PLUGIN_WORKLOAD_BINDING_WRITERS" validate:"dive,uuid"`
+	// PluginManagerReaders and PluginManagerWriters are the users holding the
+	// platform-level plugin_manager_read and plugin_manager_write permissions
+	// of the Core Plugin Manager. Writers also read.
+	PluginManagerReaders []string `env:"PLUGIN_MANAGER_READERS" validate:"dive,uuid"`
+	PluginManagerWriters []string `env:"PLUGIN_MANAGER_WRITERS" validate:"dive,uuid"`
+	// PluginWorkloadStaticTokenAdapter names the transitional adapter version
+	// that keeps static tokens of workload-bound service users usable. Off when empty.
+	PluginWorkloadStaticTokenAdapter string `env:"PLUGIN_WORKLOAD_STATIC_TOKEN_ADAPTER" validate:"omitempty,oneof=v1alpha"`
+}
+
+// PlatformPermissionHolders returns the principals holding each platform-level
+// permission. Plugin Manager holders must be users: plugin workloads
+// authenticate as service users, so a service user, the internal system
+// identity or the nil UUID is refused and IAM does not start.
+func (c *Configuration) PlatformPermissionHolders() (map[string][]uuid.UUID, error) {
+	bindingWriters, err := parsePrincipals(c.PluginWorkloadBindingWriters)
+	if err != nil {
+		return nil, err
+	}
+	readers, err := parsePrincipals(c.PluginManagerReaders)
+	if err != nil {
+		return nil, err
+	}
+	writers, err := parsePrincipals(c.PluginManagerWriters)
+	if err != nil {
+		return nil, err
+	}
+	for _, holder := range slices.Concat(readers, writers) {
+		if holder == uuid.Nil || holder == userid.InternalSystemUuid || userid.IsServiceUser(holder) {
+			return nil, fmt.Errorf("plugin manager permission holder %s must be a user, never a service user or the internal system identity", holder)
+		}
+	}
+	return map[string][]uuid.UUID{
+		sharedauthz.PermissionPluginWorkloadBindingWrite: bindingWriters,
+		sharedauthz.PermissionPluginManagerRead:          slices.Concat(readers, writers),
+		sharedauthz.PermissionPluginManagerWrite:         writers,
+	}, nil
+}
+
+func parsePrincipals(values []string) ([]uuid.UUID, error) {
+	principals := make([]uuid.UUID, len(values))
+	for index, value := range values {
+		principal, err := uuid.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid platform permission principal %q: %w", value, err)
+		}
+		principals[index] = principal
+	}
+	return principals, nil
 }

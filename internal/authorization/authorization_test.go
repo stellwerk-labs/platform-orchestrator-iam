@@ -132,6 +132,38 @@ func TestLegacyPermissionHierarchy(t *testing.T) {
 	}
 }
 
+func TestPluginCapabilityCannotGrantCorePluginRegistration(t *testing.T) {
+	matched, err := permissionMatch(sharedauthz.PermissionPluginRegistrationWrite, "plugin.dev.stellwerk.rollouts.install-manage")
+	require.NoError(t, err)
+	assert.Equal(t, false, matched)
+}
+
+func TestPluginPermissionMatchingPreservesExplicitGrantsAndCoreBoundary(t *testing.T) {
+	const permission = "plugin.dev.stellwerk.progressive-rollouts.rollout-control"
+	assertPermissionMatch(t, permission, PermissionManageAll, true)
+	assertPermissionMatch(t, permission, permission, true)
+	for _, grant := range []string{PermissionReadAll, PermissionWriteAll, PermissionRead, PermissionWrite, PermissionManage} {
+		assertPermissionMatch(t, permission, grant, false)
+	}
+	assertPermissionMatch(t, sharedauthz.PermissionModuleVersionUnpin, permission, false)
+	assertPermissionMatch(t, sharedauthz.PermissionModuleVersionUnpin, "plugin.dev.stellwerk.progressive-rollouts.rollout-override-pin", false)
+	assertPermissionMatch(t, "plugin.dev.stellwerk.progressive-rollouts.rollout-override-pin", permission, false)
+}
+
+func TestDeploymentOutcomeAcknowledgementFollowsManageLevelGrants(t *testing.T) {
+	const permission = sharedauthz.PermissionDeploymentOutcomeAck
+	for _, grant := range []string{PermissionManageAll, PermissionManage, permission} {
+		assertPermissionMatch(t, permission, grant, true)
+	}
+	for _, grant := range []string{
+		PermissionWriteAll, PermissionReadAll, PermissionWrite, PermissionRead,
+		sharedauthz.PermissionDeploymentWrite, sharedauthz.PermissionDeploymentDebugRead,
+		"plugin.dev.stellwerk.progressive-rollouts.rollout-control",
+	} {
+		assertPermissionMatch(t, permission, grant, false)
+	}
+}
+
 func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
 	for _, permission := range sharedauthz.PermissionCatalog() {
 		t.Run(permission.ID, func(t *testing.T) {

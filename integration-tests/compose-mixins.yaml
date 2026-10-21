@@ -25,7 +25,7 @@ services:
         condition: service_healthy
 
   nats:
-    image: nats:2.12.0-alpine
+    image: nats:2.12.0-alpine@sha256:5ef5cab0ec8057c0b2017e0579f1de7ff01c9ef6d506b07cfef1e63037854776
     command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
     ports:
       - "4222:4222"
@@ -38,7 +38,7 @@ services:
       timeout: 2s
       retries: 30
   vault:
-    image: hashicorp/vault:1.14
+    image: hashicorp/vault:1.14@sha256:14be0a8eb323181a56d10facab3b424809d9921e85d2f2678126ce232766a8e1
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: mytoken
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
@@ -47,7 +47,7 @@ services:
     ports:
       - "8200:8200"
   vault-init:
-    image: hashicorp/vault:1.14
+    image: hashicorp/vault:1.14@sha256:14be0a8eb323181a56d10facab3b424809d9921e85d2f2678126ce232766a8e1
     environment:
       VAULT_TOKEN: mytoken
       VAULT_ADDR: http://vault:8200
@@ -59,7 +59,7 @@ services:
       - "-c"
       - "until vault secrets disable transit; do sleep 3; done; vault secrets enable transit"
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858
     command: start-dev --import-realm
     environment:
       KC_HEALTH_ENABLED: "true"

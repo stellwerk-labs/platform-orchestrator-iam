@@ -18,8 +18,19 @@ var serviceUsersPageTokenCodec = pagination.PageTokenCodec{Parts: 1}
 
 const defaultServiceUsersPerPage = 100
 
+// serviceUserActive is the liveness rule of a service_user_tokens row aliased
+// sut: its static token generation has not expired, or it has none at all. Only
+// a plugin workload principal has none; it lives as long as its row and can
+// act only through its workload binding.
+const serviceUserActive = `(sut.current_token_expires_at IS NULL OR sut.current_token_expires_at > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))`
+
+// ServiceUserToken is a service user and its static token generation. The
+// organization reads (create, get, list, delete, bulk expiry) only ever see
+// service users of an organization; platform principals are PlatformPrincipal.
 type ServiceUserToken struct {
-	Id                     uuid.UUID
+	Id uuid.UUID
+	// OrgId is empty only when GetServiceUserTokenByHash authenticates the
+	// static token of a platform principal.
 	OrgId                  string
 	DisplayName            string
 	GeneratedAt            time.Time
@@ -44,6 +55,8 @@ func (d *databaser) CreateServiceUserToken(ctx context.Context, optionalTx Tx, o
 	return &out, nil
 }
 
+// GetServiceUserToken returns a service user of an organization. A platform
+// principal is not found here, so no organization route can reach it.
 func (d *databaser) GetServiceUserToken(ctx context.Context, optionalTx Tx, id uuid.UUID) (*ServiceUserToken, error) {
 	optionalTx = d.txOrDb(optionalTx)
 	var roles json.RawMessage
@@ -57,14 +70,14 @@ func (d *databaser) GetServiceUserToken(ctx context.Context, optionalTx Tx, id u
 			sut.generated_by, 
 			sut.current_token_expires_at,
 			sut.current_token_sha256_hash,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id
 				)
-			) FILTER (WHERE sur.role_id IS NOT NULL) as roles
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id
-		WHERE sut.id = $1
+		WHERE sut.id = $1 AND sut.scope = 'organization'
 		GROUP BY sut.org_id, sut.display_name, sut.generated_at, sut.generated_by, sut.current_token_expires_at, sut.current_token_sha256_hash`,
 		id,
 	).Scan(&out.OrgId, &out.DisplayName, &out.GeneratedAt, &out.GeneratedBy, &out.CurrentTokenExpiresAt, &out.CurrentTokenSha256Hash, &roles); err != nil {
@@ -79,6 +92,9 @@ func (d *databaser) GetServiceUserToken(ctx context.Context, optionalTx Tx, id u
 	return &out, nil
 }
 
+// GetServiceUserTokenByHash authenticates a static token of any service user,
+// including a static-token platform principal. A plugin workload principal
+// holds no static token, so no hash finds it.
 func (d *databaser) GetServiceUserTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*ServiceUserToken, error) {
 	optionalTx = d.txOrDb(optionalTx)
 
@@ -86,18 +102,18 @@ func (d *databaser) GetServiceUserTokenByHash(ctx context.Context, optionalTx Tx
 	var roles json.RawMessage
 	if err := optionalTx.QueryRowContext(
 		ctx,
-		`SELECT 
+		`SELECT
 			sut.id,
-			sut.org_id,
+			COALESCE(sut.org_id, ''),
 			sut.display_name,
 			sut.generated_at,
 			sut.generated_by,
 			sut.current_token_expires_at,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id
 				)
-			) as roles 
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id 
 		WHERE sut.current_token_sha256_hash = $1
@@ -151,12 +167,12 @@ func (d *databaser) ListServiceUserTokens(ctx context.Context, optionalTx Tx, pa
 			sut.generated_by,
 			sut.current_token_expires_at,
 			sut.current_token_sha256_hash,
-			JSON_AGG(
+			COALESCE(JSON_AGG(
 				JSON_BUILD_OBJECT(
 					'role_id', sur.role_id,
 					'scope', sur.scope
 				)
-			) as roles 
+			) FILTER (WHERE sur.role_id IS NOT NULL), '[]'::json) as roles
 		FROM service_user_tokens sut 
 		LEFT JOIN service_user_roles sur ON sut.id = sur.service_user_id 
 		WHERE sut.org_id = $1

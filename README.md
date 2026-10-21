@@ -12,6 +12,10 @@ Stellwerk Platform Orchestrator. It provides APIs for:
 Organizations are owned by `platform-orchestrator-cp`; users can be members of
 one, many, or no organizations.
 
+Native plugin workloads and the Data Plane admission checker authenticate as
+platform principals: service users that belong to no organization and hold no
+role. See [Plugin workload identity and platform principals](docs/plugin-workload-identity.md).
+
 ## Requirements
 
 - Go version declared in `go.mod`
@@ -33,10 +37,12 @@ make test-unit
 go vet ./...
 ```
 
-Run the integration suite and clean up its containers with:
+Run the integration suite and the PostgreSQL-backed package tests, then clean up
+their containers with:
 
 ```bash
 make test-integration
+make test-integration-postgres
 make clean
 ```
 
