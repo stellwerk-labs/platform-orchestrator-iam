@@ -20,6 +20,12 @@ files and verifies that application source remains in the context.
 
 ## Compatibility and release checks
 
+The disposable self-hosted SSO integration fixture uses the reviewed Keycloak
+26.8.1 release, pinned to its multi-platform image digest. Normal integration
+tests exercise SSO, SCIM deprovisioning and authorization against this fixture.
+An empty test realm does not qualify a live Keycloak database migration: back up
+the existing database and follow the vendor upgrade guide before a live change.
+
 Existing published versions and artifacts remain immutable. Use a new patch
 version after the normal integration and artifact checks pass. Source builds
 following the supported release tooling require Go 1.26.10. Clients using the

@@ -18,6 +18,14 @@ def component(directory):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_keycloak_fixture_uses_reviewed_security_release(self):
+        fixture = (ROOT / "integration-tests/compose-mixins.yaml").read_text()
+        self.assertIn(
+            "  keycloak:\n    image: quay.io/keycloak/keycloak:26.8.1@sha256:"
+            "79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244\n",
+            fixture,
+        )
+
     def assert_publisher_buildx_policy(self, workflow):
         publishers = [job for job in re.split(r"(?m)^  [a-z][a-z0-9-]*:\n", workflow)[1:]
                       if "oras cp --no-tty --from-oci-layout" in job]
