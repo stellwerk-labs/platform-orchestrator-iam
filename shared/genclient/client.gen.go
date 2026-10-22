@@ -435,7 +435,9 @@ type InternalMembershipCreateBody struct {
 	Scope *string `json:"scope,omitempty"`
 
 	// Subject The membership subject identity.
-	Subject     string      `json:"subject"`
+	Subject string `json:"subject"`
+
+	// SubjectType The membership subject type.
 	SubjectType SubjectType `json:"subject_type"`
 
 	// UserId The org id of the membership
@@ -457,7 +459,9 @@ type InvitationCreateBody struct {
 	// MembershipSubject The membership subject that the invitation is valid for
 	//
 	// Example: owners
-	MembershipSubject     string      `json:"membership_subject"`
+	MembershipSubject string `json:"membership_subject"`
+
+	// MembershipSubjectType The membership subject type that the invitation is valid for.
 	MembershipSubjectType SubjectType `json:"membership_subject_type"`
 }
 
@@ -494,7 +498,9 @@ type InvitationSummary struct {
 	Id openapi_types.UUID `json:"id"`
 
 	// MembershipSubject The membership subject that the invitation is valid for
-	MembershipSubject     string      `json:"membership_subject"`
+	MembershipSubject string `json:"membership_subject"`
+
+	// MembershipSubjectType The membership subject type that the invitation is valid for.
 	MembershipSubjectType SubjectType `json:"membership_subject_type"`
 }
 
@@ -525,7 +531,9 @@ type Member struct {
 	IdentityProviders []string `json:"identity_providers"`
 
 	// Subject The membership subject identity.
-	Subject     string      `json:"subject"`
+	Subject string `json:"subject"`
+
+	// SubjectType The membership subject type.
 	SubjectType SubjectType `json:"subject_type"`
 
 	// UserDisplayName The display name of the user membership
@@ -566,7 +574,9 @@ type OrgMembership struct {
 	Scope *string `json:"scope,omitempty"`
 
 	// Subject The membership subject identity.
-	Subject     string      `json:"subject"`
+	Subject string `json:"subject"`
+
+	// SubjectType The membership subject type.
 	SubjectType SubjectType `json:"subject_type"`
 
 	// UserDisplayName The display name of the user membership
@@ -1116,7 +1126,9 @@ type UserMembership struct {
 	Scope *string `json:"scope,omitempty"`
 
 	// Subject The membership subject identity.
-	Subject     string      `json:"subject"`
+	Subject string `json:"subject"`
+
+	// SubjectType The membership subject type.
 	SubjectType SubjectType `json:"subject_type"`
 }
 
@@ -1136,7 +1148,9 @@ type UserMembershipRequest struct {
 	Scope *string `json:"scope,omitempty"`
 
 	// Subject The membership subject identity.
-	Subject     string      `json:"subject"`
+	Subject string `json:"subject"`
+
+	// SubjectType The membership subject type.
 	SubjectType SubjectType `json:"subject_type"`
 }
 
@@ -1175,8 +1189,10 @@ type UserWithRole struct {
 	Id openapi_types.UUID `json:"id"`
 
 	// SubjectId The membership subject id.
-	SubjectId   openapi_types.UUID `json:"subject_id"`
-	SubjectType SubjectType        `json:"subject_type"`
+	SubjectId openapi_types.UUID `json:"subject_id"`
+
+	// SubjectType The membership subject type.
+	SubjectType SubjectType `json:"subject_type"`
 
 	// Type The type of user - human user or service user
 	Type UserWithRoleType `json:"type"`
