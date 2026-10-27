@@ -2732,7 +2732,11 @@
           },
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject": {
             "description": "The membership subject identity.",
@@ -2802,7 +2806,11 @@
           },
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject": {
             "description": "The membership subject identity.",
@@ -2873,7 +2881,11 @@
           },
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject": {
             "description": "The membership subject identity.",
@@ -2925,7 +2937,11 @@
           },
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject": {
             "description": "The membership subject identity.",
@@ -2963,7 +2979,11 @@
         "properties": {
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject": {
             "description": "The membership subject identity.",
@@ -3305,7 +3325,11 @@
           },
           "membership_subject_type": {
             "description": "The membership subject type that the invitation is valid for.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "membership_subject": {
             "description": "The membership subject that the invitation is valid for",
@@ -3345,7 +3369,11 @@
           },
           "membership_subject_type": {
             "description": "The membership subject type that the invitation is valid for.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "membership_subject": {
             "description": "The membership subject that the invitation is valid for",
@@ -4231,7 +4259,11 @@
           },
           "subject_type": {
             "description": "The membership subject type.",
-            "$ref": "#/components/schemas/SubjectType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubjectType"
+              }
+            ]
           },
           "subject_id": {
             "description": "The membership subject id.",
