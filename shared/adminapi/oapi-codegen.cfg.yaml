@@ -1,0 +1,7 @@
+package: adminapi
+generate:
+  models: true
+  client: true
+output: shared/adminapi/client.gen.go
+output-options:
+  skip-prune: true
