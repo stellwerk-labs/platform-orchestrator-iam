@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"runtime/debug"
@@ -18,6 +19,7 @@ import (
 	"github.com/stellwerk-labs/golib/hecho"
 	"github.com/stellwerk-labs/golib/hmessaging"
 
+	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/adminapi"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/identity"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/api/middleware"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/internal/authorization"
@@ -77,6 +79,7 @@ func (s *Server) MapRoutes(e *echo.Echo) {
 		adaptStrictMiddleware(middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`))),
 	})
 	RegisterHandlers(e, apiHandler)
+	adminapi.RegisterHandlers(e, adminapi.NewStrictHandler(s, nil))
 
 	buildInfo, _ := debug.ReadBuildInfo()
 	e.GET("/alive", func(c echo.Context) error {
@@ -156,9 +159,57 @@ func (s *Server) scheduleAuthorizationPolicyReload() error {
 
 // MustDecodeOpenApiSpec returns the value from decodeSpec via the cached value in rawSpec and panics if there was an error.
 func MustDecodeOpenApiSpec() []byte {
-	if b, err := rawSpec(); err != nil {
+	raw, err := rawSpec()
+	if err != nil {
 		panic(err)
-	} else {
-		return b
 	}
+	var main map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &main); err != nil {
+		panic(err)
+	}
+	optional, err := adminapi.GetSpec()
+	if err != nil {
+		panic(err)
+	}
+	optionalRaw, err := json.Marshal(optional)
+	if err != nil {
+		panic(err)
+	}
+	var extension map[string]json.RawMessage
+	if err := json.Unmarshal(optionalRaw, &extension); err != nil {
+		panic(err)
+	}
+	for _, section := range []string{"paths", "components"} {
+		if len(extension[section]) == 0 {
+			continue
+		}
+		var current, additions map[string]json.RawMessage
+		if err := json.Unmarshal(main[section], &current); err != nil {
+			panic(err)
+		}
+		if err := json.Unmarshal(extension[section], &additions); err != nil {
+			panic(err)
+		}
+		for key, value := range additions {
+			if section == "components" && current[key] != nil {
+				var entries, extra map[string]json.RawMessage
+				_ = json.Unmarshal(current[key], &entries)
+				_ = json.Unmarshal(value, &extra)
+				for name, item := range extra {
+					entries[name] = item
+				}
+				value, _ = json.Marshal(entries)
+			}
+			current[key] = value
+		}
+		main[section], err = json.Marshal(current)
+		if err != nil {
+			panic(err)
+		}
+	}
+	merged, err := json.Marshal(main)
+	if err != nil {
+		panic(err)
+	}
+	return merged
 }

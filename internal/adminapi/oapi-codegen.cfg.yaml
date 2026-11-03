@@ -1,0 +1,11 @@
+package: adminapi
+generate:
+  models: true
+  echo-server: true
+  strict-server: true
+  embedded-spec: true
+output: internal/adminapi/server.gen.go
+compatibility:
+  enable-auth-scopes-on-context: true
+output-options:
+  skip-prune: true

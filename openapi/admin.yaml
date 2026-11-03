@@ -1,0 +1,28 @@
+openapi: 3.0.3
+info:
+  title: Canonical organization administrator predicate
+  version: 1.0.0
+paths:
+  /internal/orgs/{orgId}/administrators/{userId}:
+    get:
+      operationId: InternalIsOrganizationAdmin
+      parameters:
+        - in: path
+          name: orgId
+          required: true
+          schema: {type: string, minLength: 1}
+        - in: path
+          name: userId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Fresh canonical membership decision. Internal trusted service boundary only.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed]
+                additionalProperties: false
+                properties:
+                  allowed: {type: boolean}

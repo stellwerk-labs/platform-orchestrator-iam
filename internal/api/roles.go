@@ -270,9 +270,9 @@ func (s *Server) DeleteRole(ctx context.Context, request DeleteRoleRequestObject
 // SeedBuiltinOrgRoles creates the default roles for an organization.
 func SeedBuiltinOrgRoles(ctx context.Context, logger *zap.Logger, database model.Databaser, tx model.TxWithCommit, orgId string) ([]model.Role, error) {
 	var roles = []model.Role{
-		{DisplayName: RoleAdmin, Permissions: []string{PermissionsManageAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
-		{DisplayName: RoleDeployer, Permissions: []string{PermissionsWriteAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
-		{DisplayName: RoleViewer, Permissions: []string{PermissionsReadAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
+		{BuiltinKey: "admin", DisplayName: RoleAdmin, Permissions: []string{PermissionsManageAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
+		{BuiltinKey: "deployer", DisplayName: RoleDeployer, Permissions: []string{PermissionsWriteAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
+		{BuiltinKey: "viewer", DisplayName: RoleViewer, Permissions: []string{PermissionsReadAll}, CreatedAt: time.Now(), CreatedBy: userid.InternalSystemUuid, Id: uuid.Must(uuid.NewV7()), IsSystem: true},
 	}
 	if err := database.SeedRoles(ctx, tx, orgId, roles); err != nil {
 		return nil, errors.Wrap(err, "failed to seed roles")

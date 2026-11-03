@@ -13,6 +13,7 @@ import (
 )
 
 type Role struct {
+	BuiltinKey  string
 	Id          uuid.UUID
 	OrgId       string
 	DisplayName string
@@ -137,6 +138,7 @@ func (d *databaser) SeedRoles(ctx context.Context, tx Tx, orgId string, roles []
 	createdAt := make([]time.Time, len(roles))
 	permissionArrays := make([]string, len(roles))
 	isSystem := make([]bool, len(roles))
+	builtinKeys := make([]string, len(roles))
 	for i, r := range roles {
 		ids[i] = r.Id
 		displayNames[i] = r.DisplayName
@@ -144,10 +146,11 @@ func (d *databaser) SeedRoles(ctx context.Context, tx Tx, orgId string, roles []
 		createdAt[i] = r.CreatedAt
 		permissionArrays[i] = strings.Join(r.Permissions, ",")
 		isSystem[i] = r.IsSystem
+		builtinKeys[i] = r.BuiltinKey
 	}
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO roles (id, display_name, created_at, created_by, permissions, org_id, is_system)
+		`INSERT INTO roles (id, display_name, created_at, created_by, permissions, org_id, is_system,builtin_key)
 		SELECT
 			unnest($1::uuid[]),
 			unnest($2::text[]),
@@ -155,8 +158,9 @@ func (d *databaser) SeedRoles(ctx context.Context, tx Tx, orgId string, roles []
 			unnest($4::uuid[]),
 			string_to_array(unnest($5::text[]), ','),
 			$6,
-			unnest($7::boolean[])`,
-		pq.Array(ids), pq.Array(displayNames), pq.Array(createdAt), pq.Array(createdBy), pq.Array(permissionArrays), orgId, pq.Array(isSystem),
+			unnest($7::boolean[]),
+            NULLIF(unnest($8::text[]),'')`,
+		pq.Array(ids), pq.Array(displayNames), pq.Array(createdAt), pq.Array(createdBy), pq.Array(permissionArrays), orgId, pq.Array(isSystem), pq.Array(builtinKeys),
 	); err != nil {
 		return errors.Wrap(err, "failed to seed roles")
 	}
