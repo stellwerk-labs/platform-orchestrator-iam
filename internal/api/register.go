@@ -98,7 +98,7 @@ func (s *Server) RegisterUser(ctx context.Context, request RegisterUserRequestOb
 	}
 
 	logger.Info("creating session token", zap.String("user_id", resultingUser.Id.String()))
-	rawToken, st := NewSessionToken(resultingUser.Id, providerType)
+	rawToken, st := s.newSessionToken(resultingUser.Id, providerType)
 	st.ClientIp = opt.OfRef(request.Params.XClientIP)
 	st.ClientRegion = opt.OfRef(request.Params.XClientRegion)
 	st.ClientCity = opt.OfRef(request.Params.XClientCity)

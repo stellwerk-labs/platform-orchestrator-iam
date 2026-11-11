@@ -379,7 +379,7 @@ func (s *Server) GetSsoCallback(ctx context.Context, request GetSsoCallbackReque
 	}
 
 	logger.Info("creating session token", zap.String("user_id", user.Id.String()))
-	rawToken, st := NewSessionToken(user.Id, model.UserIdentityProviderSso)
+	rawToken, st := s.newSessionToken(user.Id, model.UserIdentityProviderSso)
 	st.ClientIp = opt.OfRef(request.Params.XClientIP)
 	st.ClientRegion = opt.OfRef(request.Params.XClientRegion)
 	st.ClientCity = opt.OfRef(request.Params.XClientCity)

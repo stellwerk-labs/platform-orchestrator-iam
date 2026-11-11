@@ -109,3 +109,78 @@ The nested public Go module in `shared/` is versioned with `shared/v*` tags.
 ## License
 
 Licensed under the [European Union Public Licence 1.2](LICENSE).
+
+
+## Browser and CLI session lifetime
+
+`BROWSER_SESSION_IDLE_TIMEOUT` defaults to `15m`; only genuine Console input
+renews a browser session. `CLI_SESSION_TOKEN_TTL` defaults to `2h` and caps the
+fixed lifetime of device-login user tokens. Both settings accept Go durations
+of at least `1s` and seed a fresh installation. Saved runtime policy takes
+precedence after bootstrap. Service-user, Runner and plugin workload credentials keep their
+existing policies. Browser sessions retain their independent 24-hour absolute
+limit. Background API calls never renew browser activity.
+
+Migration 40 backfills browser activity from session creation. Existing sessions
+older than the idle window need another sign-in. Upgrade IAM and the Console
+together, and allow `X-Session-Activity` from the exact Console origin in API CORS.
+The matching Helm chart supplies both lifecycle routes and that header. Plugin
+UIs report physical input through the existing nonce-bound MessagePort; old UIs
+need the additive `stellwerk.plugin.activity` message to count frame input.
+
+The browser-only lifecycle API is documented in `openapi/browser-sessions.yaml`.
+Its operations do not change the published automation client interfaces.
+
+The PostgreSQL integration tests run with the existing `DATABASE_URL` convention.
+For optional native-browser qualification, build the Console controller and the
+private plugin input reporters with
+`apps/main/scripts/browser-session-live_test.mjs --build <assets-directory>`
+(pass an optional input TypeScript file and output basename to build a reporter).
+Set `SESSION_BROWSER_DRIVER` to that script and `SESSION_BROWSER_ASSETS` to the
+directory containing `controller.js`, `mask.js`, `rollouts.js` and `drift.js`, then run:
+
+```sh
+go test -tags integration ./internal/api -run '^TestBrowserSessionConsoleInput$' -count=1
+```
+
+This uses isolated PostgreSQL schemas and local TLS fixture servers. Only the
+disposable Chromium context trusts their self-signed certificates. It verifies
+portal masking, idle expiry despite polling, native input, shared sessions across tabs, both
+cross-origin plugin input reporters and resumption after suspended timers.
+
+
+## Installation settings API
+
+`GET` and `PUT /platform-settings/sessions` expose typed session policy. The
+Console Installation settings page uses this API; schema:
+`openapi/installation-settings.yaml`. Writes require a quoted revision in
+`If-Match`, use an exclusive policy transaction and record the operator in the
+audit table. The new limits apply immediately to existing user sessions. Sessions
+expired under either policy are deleted before extending live tokens. All human
+authentication, issuance and renewal reads share the same policy lock, so a
+transition cannot expose a stale credential snapshot or revive an expired token.
+Policy edits can briefly pause authentication and scan/lock the session table;
+these rare administrative operations have a 30-second request deadline.
+
+Grant `PLATFORM_SETTINGS_READERS` and `PLATFORM_SETTINGS_WRITERS` to explicit
+human user UUIDs (comma-separated). Writers also read. Organization roles,
+service users, plugin workloads and the internal system identity cannot manage
+these settings. Cookie writes require the exact Console origin. The API does
+not edit these grants, credentials or arbitrary environment variables.
+
+IAM bootstraps persisted policy once from `BROWSER_SESSION_IDLE_TIMEOUT` and
+`CLI_SESSION_TOKEN_TTL`. Restarts do not overwrite runtime changes. Explicit
+`SESSION_POLICY_RESET_TO_DEFAULTS=true` restores the environment values with the
+same pruning and audit rules; return it to false after recovery. Upgrade all IAM
+replicas and the matching Console before using runtime policy changes.
+
+The optional browser qualification entry is
+`TestInstallationSettingsConsoleWithRealDataPlaneAndIAM`. It launches a real
+Data Plane peer with the actual IAM authorizer and isolated PostgreSQL schemas,
+then drives the actual Console settings components in Chromium. Build its assets
+with Console's `apps/main/scripts/platform-settings-live_test.mjs --build <dir>`.
+Supply `PLATFORM_SETTINGS_BROWSER_DRIVER`, `PLATFORM_SETTINGS_BROWSER_ASSETS`,
+`PLATFORM_SETTINGS_DP_SOURCE`, `DATABASE_URL` and
+`MODEL_TEST_DB_CONNECTION_STRING`, then run that integration-tag test. Only the
+disposable browser context trusts the local fixture certificate; the peer uses
+a test-specific CA pool. No authentication or settings APIs are mocked.

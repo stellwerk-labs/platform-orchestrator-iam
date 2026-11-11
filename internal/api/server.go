@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
 	strictecho "github.com/oapi-codegen/runtime/strictmiddleware/echo"
 	"go.uber.org/zap"
 
@@ -36,9 +37,11 @@ type Server struct {
 	Logger   *zap.Logger
 	CpClient cpclient.ClientWithResponsesInterface
 
-	SessionTokenCookieDomain string
-	UserIdentityProviders    map[model.UserIdentityProvider]identity.Provider
-	TokenByHashCache         *GetTokenByHashCache
+	BrowserSessionIdleTimeout time.Duration
+	CLISessionTokenTTL        time.Duration
+	SessionTokenCookieDomain  string
+	UserIdentityProviders     map[model.UserIdentityProvider]identity.Provider
+	TokenByHashCache          *GetTokenByHashCache
 
 	UiHostUrl string
 	// ApiHostUrl is the externally reachable base URL of this API. When set,
@@ -79,6 +82,10 @@ func (s *Server) MapRoutes(e *echo.Echo) {
 		adaptStrictMiddleware(middleware.NewAuthAsserter(regexp.MustCompile(`^(Internal.*|RegisterUser|LoginSession|LogoutSession|TemporaryLogin|Logout)$`))),
 	})
 	RegisterHandlers(e, apiHandler)
+	e.GET("/platform-settings/sessions", s.getInstallationSessionPolicy, echomiddleware.ContextTimeout(30*time.Second))
+	e.PUT("/platform-settings/sessions", s.putInstallationSessionPolicy, echomiddleware.ContextTimeout(30*time.Second))
+	e.GET("/auth/session", s.browserSessionStatus)
+	e.POST("/auth/session/activity", s.browserSessionActivity)
 	adminapi.RegisterHandlers(e, adminapi.NewStrictHandler(s, nil))
 
 	buildInfo, _ := debug.ReadBuildInfo()
@@ -115,6 +122,8 @@ func adaptStrictMiddleware(middleware strictecho.StrictEchoMiddlewareFunc) Stric
 func OpenApiValidatorSkipper(c echo.Context) bool {
 	return hecho.DefaultOAIValidationSkipper(c) ||
 		c.Path() == "/internal/authenticate/*" ||
+		c.Path() == "/platform-settings/sessions" ||
+		c.Path() == "/auth/session" || c.Path() == "/auth/session/activity" ||
 		strings.HasPrefix(c.Path(), "/scim/v2")
 }
 

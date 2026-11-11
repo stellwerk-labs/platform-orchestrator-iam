@@ -1052,9 +1052,9 @@ func (s *Server) scimGroupToResource(c echo.Context, orgId string, g model.ScimG
 // config fall back to the request Host — after validation, so a header
 // carrying a path, userinfo, or injection junk is refused — because breaking
 // every existing deployment over an optional nicety would be disproportionate.
-// c.Scheme() honors X-Forwarded-Proto, so TLS termination at Envoy still
-// yields https:// locations. If the Host is unusable the path is returned as a
-// relative URI reference, which is still a valid location.
+// The request scheme ignores untrusted forwarding headers. TLS-terminating
+// deployments should configure ApiHostUrl to publish their HTTPS origin. If the
+// Host is unusable the path is returned as a valid relative URI reference.
 func (s *Server) scimResourceLocation(c echo.Context, path string) string {
 	if s.ApiHostUrl != "" {
 		return strings.TrimRight(s.ApiHostUrl, "/") + path

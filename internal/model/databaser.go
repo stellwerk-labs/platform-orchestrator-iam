@@ -104,6 +104,7 @@ type Databaser interface {
 	FindUserByPrimaryEmail(ctx context.Context, optionalTx Tx, email string) (*User, error)
 
 	CreateSessionToken(ctx context.Context, optionalTx Tx, request *SessionToken) (*SessionToken, error)
+	RecordBrowserSessionActivity(ctx context.Context, hash []byte, idleTimeout time.Duration) (*SessionToken, error)
 	ListSessionTokenByUserId(ctx context.Context, optionalTx Tx, userId uuid.UUID, params ListSessionTokensParams) ([]SessionToken, error)
 	GetSessionTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) (*SessionToken, error)
 	DeleteSessionTokenByHash(ctx context.Context, optionalTx Tx, hash []byte) error

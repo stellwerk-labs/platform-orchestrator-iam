@@ -239,3 +239,47 @@ func TestConfigurationRefusesPluginManagerHoldersThatAreNotUsers(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionTimeoutConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	unsetEnvironment(t, "BROWSER_SESSION_IDLE_TIMEOUT", "CLI_SESSION_TOKEN_TTL")
+	var cfg Configuration
+	requireNoError(t, hconfig.LoadConfigWithoutRetag(&cfg))
+	if cfg.BrowserSessionIdleTimeout != 15*time.Minute || cfg.CLISessionTokenTTL != 2*time.Hour {
+		t.Fatalf("unexpected session defaults: %v / %v", cfg.BrowserSessionIdleTimeout, cfg.CLISessionTokenTTL)
+	}
+	t.Setenv("BROWSER_SESSION_IDLE_TIMEOUT", "30m")
+	t.Setenv("CLI_SESSION_TOKEN_TTL", "8h")
+	requireNoError(t, hconfig.LoadConfigWithoutRetag(&cfg))
+	if cfg.BrowserSessionIdleTimeout != 30*time.Minute || cfg.CLISessionTokenTTL != 8*time.Hour {
+		t.Fatal("session configuration ignored")
+	}
+	for _, key := range []string{"BROWSER_SESSION_IDLE_TIMEOUT", "CLI_SESSION_TOKEN_TTL"} {
+		for _, value := range []string{"0s", "-1m", "invalid"} {
+			t.Setenv(key, value)
+			if err := hconfig.LoadConfigWithoutRetag(&cfg); err == nil {
+				t.Fatalf("accepted %s=%s", key, value)
+			}
+		}
+		t.Setenv(key, "1h")
+	}
+}
+
+func TestInstallationSettingsGrantsRequireExplicitHumanOperators(t *testing.T) {
+	reader, writer := userid.NewHumanUserId(), userid.NewHumanUserId()
+	holders, err := loadPlatformPermissionHolders(t, map[string]string{"PLATFORM_SETTINGS_READERS": reader.String(), "PLATFORM_SETTINGS_WRITERS": writer.String()})
+	requireNoError(t, err)
+	if !slices.Equal(holders["platform_settings_read"], []uuid.UUID{reader, writer}) || !slices.Equal(holders["platform_settings_write"], []uuid.UUID{writer}) {
+		t.Fatal("settings writers must read, without widening another permission")
+	}
+	if len(holders[sharedauthz.PermissionPluginManagerWrite]) != 0 {
+		t.Fatal("settings rights granted Plugin Manager authority")
+	}
+	for _, key := range []string{"PLATFORM_SETTINGS_READERS", "PLATFORM_SETTINGS_WRITERS"} {
+		for _, principal := range []uuid.UUID{uuid.Nil, userid.InternalSystemUuid, userid.NewServiceUserTokenId()} {
+			if _, err := loadPlatformPermissionHolders(t, map[string]string{key: principal.String()}); err == nil {
+				t.Fatalf("accepted non-user %s for %s", principal, key)
+			}
+		}
+	}
+}

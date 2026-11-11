@@ -1,0 +1,189 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Installation settings",
+    "version": "1",
+    "description": "Installation-wide operator settings. Organization roles cannot grant these platform permissions. Requests use normal Orchestrator authentication; the gateway supplies the authenticated identity."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "sessionCookie": []
+    }
+  ],
+  "paths": {
+    "/platform-settings/sessions": {
+      "get": {
+        "operationId": "GetSessionPolicy",
+        "description": "Requires platform_settings_read. Changes apply immediately to live user sessions. Expired sessions are permanently removed before limits are extended. Positive Go durations of at least 1s are required. Service and Runner credentials are unaffected.",
+        "responses": {
+          "200": {
+            "description": "Current settings. No-store; revision is also returned as an ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Required platform permission or exact Console origin missing"
+          },
+          "503": {
+            "description": "Authorization or storage temporarily unavailable"
+          }
+        }
+      },
+      "put": {
+        "operationId": "UpdateSessionPolicy",
+        "description": "Requires platform_settings_write. Cookie-authenticated browser writes require the exact configured Console Origin. Changes apply immediately to live user sessions. Expired sessions are permanently removed before limits are extended. Positive Go durations of at least 1s are required. Service and Runner credentials are unaffected.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "description": "Quoted revision from the preceding GET, for example \"1\".",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "browser_idle_timeout",
+                  "cli_token_ttl"
+                ],
+                "properties": {
+                  "browser_idle_timeout": {
+                    "type": "string",
+                    "example": "15m"
+                  },
+                  "cli_token_ttl": {
+                    "type": "string",
+                    "example": "2h"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current settings. No-store; revision is also returned as an ETag.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Required platform permission or exact Console origin missing"
+          },
+          "412": {
+            "description": "Settings revision changed; reload and retry"
+          },
+          "415": {
+            "description": "application/json required"
+          },
+          "428": {
+            "description": "If-Match required"
+          },
+          "503": {
+            "description": "Authorization or storage temporarily unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session-token"
+      }
+    },
+    "schemas": {
+      "SessionPolicy": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "browser_idle_timeout": {
+            "type": "string",
+            "example": "15m"
+          },
+          "cli_token_ttl": {
+            "type": "string",
+            "example": "2h"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "bootstrap",
+              "api"
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "updated_at",
+          "updated_by",
+          "browser_idle_timeout",
+          "cli_token_ttl",
+          "source"
+        ]
+      }
+    }
+  }
+}
