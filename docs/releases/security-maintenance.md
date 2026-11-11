@@ -5,10 +5,20 @@ artifact or a completed deployment.
 
 ## Security changes
 
-Official builds use Go 1.26.10, including the certificate verification fix for
-[CVE-2026-111943](https://pkg.go.dev/vuln/GO-2026-6809).
+Official builds use Go 1.26.11, including the net/http MaxBytesReader race fix
+for [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859).
 
-Existing HTTP, cryptography, OpenAPI and telemetry dependencies are updated to patched versions. Membership reference descriptions now use valid OpenAPI 3.0 composition. Identity and permission semantics are unchanged.
+Echo 4.16.3 fixes forwarded-header trust and proxy handling. Untrusted forwarding
+headers no longer select the SCIM fallback URL scheme; TLS-terminating deployments
+should configure `API_HOST_URL` for their public HTTPS origin. The security checker
+reuses CP and DP's exact module/checksum and stale advisory-record verification;
+other application findings remain blocking.
+
+The existing compression dependency is updated to 1.20.2 for
+[GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865). Other HTTP, cryptography,
+OpenAPI and telemetry dependencies retain their maintenance updates. Membership
+reference descriptions use valid OpenAPI 3.0 composition. Identity and permission
+semantics are unchanged.
 
 Normal CI now checks source dependencies with pinned govulncheck 1.9.0 and fails
 on reachable known vulnerabilities. A passing source scan is not a guarantee
@@ -34,6 +44,6 @@ the existing database and follow the vendor upgrade guide before a live change.
 
 Existing published versions and artifacts remain immutable. Use a new patch
 version after the normal integration and artifact checks pass. Source builds
-following the supported release tooling require Go 1.26.10. Clients using the
+following the supported release tooling require Go 1.26.11. Clients using the
 corrected vendored API documents must verify their exact published server source
 pins before release.

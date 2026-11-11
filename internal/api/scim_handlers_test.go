@@ -1304,9 +1304,8 @@ func TestScimListUsers_CountZeroReturnsHonestTotal(t *testing.T) {
 
 // ------------------------------------------------------------------ meta.location scheme
 
-// Behind TLS-terminating Envoy the request itself is plaintext; the scheme
-// must come from X-Forwarded-Proto, not the TLS connection state.
-func TestScimResourceLocation_HonorsXForwardedProto(t *testing.T) {
+// An untrusted forwarding header cannot change the request scheme.
+func TestScimResourceLocation_RejectsUntrustedForwardedProto(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "iam.example.com"
@@ -1315,7 +1314,7 @@ func TestScimResourceLocation_HonorsXForwardedProto(t *testing.T) {
 
 	s := &Server{}
 	loc := s.scimResourceLocation(c, "/scim/v2/orgs/o/Users/u")
-	assert.Equal(t, "https://iam.example.com/scim/v2/orgs/o/Users/u", loc)
+	assert.Equal(t, "http://iam.example.com/scim/v2/orgs/o/Users/u", loc)
 }
 
 // A configured ApiHostUrl pins meta.location outright: the attacker-controlled

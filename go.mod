@@ -1,6 +1,6 @@
 module github.com/stellwerk-labs/platform-orchestrator-iam
 
-go 1.26.10
+go 1.26.11
 
 require (
 	filippo.io/age v1.3.1
@@ -12,7 +12,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/karlseguin/ccache/v2 v2.0.8
-	github.com/labstack/echo/v4 v4.15.3
+	github.com/labstack/echo/v4 v4.16.3
 	github.com/lib/pq v1.12.3
 	github.com/nats-io/nats.go v1.52.0
 	github.com/oapi-codegen/runtime v1.6.0
@@ -96,13 +96,13 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/minio/simdjson-go v0.4.5 // indirect
