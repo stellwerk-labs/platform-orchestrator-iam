@@ -89,3 +89,7 @@
 - Built the exact pre-final source snapshot cfa67d75c27230a498a0f95bb69ff275727ebb9b with pinned BuildKit, bases and source epoch. Two equivalent tagged exports, the second without instruction cache (223 seconds), passed actual payload inspection and scanning.
 - Platform manifests/configurations/layers/binaries/notices were identical. Attestation and full-index bytes differed and were preserved. This is not a full-envelope reproducibility claim.
 - Pinned network-disabled Syft passed SPDX 2.3 coverage of all 147 production modules and Go 1.26.2 (293 catalogued packages); generated evidence was rescanned. Finalized source heads, amd64 and hosted component/full-stack suites still require separate qualification.
+
+## Installation settings and Provider retirement
+
+- Prepared session idle expiry, fixed CLI token lifetime and persisted Installation session policy, with browser lifecycle contracts and revision-controlled settings. Security/compiler maintenance remains a preceding separate commit. Added v2.7.0 notes with coordinated upgrade, immediate expiry and restore/forward recovery boundaries; see DECISIONS.md and LEARNINGS.md.

@@ -141,7 +141,7 @@ func (s *Server) PollDeviceLoginRequest(ctx context.Context, request PollDeviceL
 			return nil, errors.Wrap(err, "failed to get user who accepted device login request")
 		}
 
-		encodedSessionToken, session = NewSessionToken(user.Id, model.UserIdentityProviderDevice)
+		encodedSessionToken, session = s.newSessionToken(user.Id, model.UserIdentityProviderDevice)
 		session.ClientIp = req.ClientIp
 		session.ClientRegion = req.ClientRegion
 		session.ClientCity = req.ClientCity

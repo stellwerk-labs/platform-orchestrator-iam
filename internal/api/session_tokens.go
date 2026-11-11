@@ -40,11 +40,13 @@ func NewSessionToken(userId uuid.UUID, providerType model.UserIdentityProvider) 
 	hashSum := sha256.Sum256(raw)
 	now := time.Now().UTC()
 	return EncodeSessionToken(raw), &model.SessionToken{
-		Sha256Hash: hashSum[:],
-		Provider:   providerType,
-		UserId:     userId,
-		CreatedAt:  now,
-		ExpiresAt:  now.Add(SessionTokenExpiry),
+		Sha256Hash:   hashSum[:],
+		Provider:     providerType,
+		UserId:       userId,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(SessionTokenExpiry),
+		LastActiveAt: now,
+		CheckedAt:    now,
 	}
 }
 
@@ -158,4 +160,44 @@ func (s *Server) RevokeUserSessionToken(ctx context.Context, request RevokeUserS
 	}
 
 	return RevokeUserSessionToken204Response{}, nil
+}
+
+func (s *Server) newSessionToken(userID uuid.UUID, provider model.UserIdentityProvider) (string, *model.SessionToken) {
+	raw, token := NewSessionToken(userID, provider)
+	if provider == model.UserIdentityProviderDevice {
+		token.ExpiresAt = token.CreatedAt.Add(s.cliSessionTokenTTL())
+	}
+	return raw, token
+}
+
+func (s *Server) browserSessionIdleTimeout() time.Duration {
+	if s.BrowserSessionIdleTimeout > 0 {
+		return s.BrowserSessionIdleTimeout
+	}
+	return 15 * time.Minute
+}
+
+func (s *Server) cliSessionTokenTTL() time.Duration {
+	if s.CLISessionTokenTTL > 0 {
+		return s.CLISessionTokenTTL
+	}
+	return 2 * time.Hour
+}
+
+func (s *Server) sessionExpiresAt(token *model.SessionToken) time.Time {
+	idle, cli := token.BrowserIdleTimeout, token.CLITokenTTL
+	if idle <= 0 {
+		idle = s.browserSessionIdleTimeout()
+	}
+	if cli <= 0 {
+		cli = s.cliSessionTokenTTL()
+	}
+	expiry := token.LastActiveAt.Add(idle)
+	if token.Provider == model.UserIdentityProviderDevice {
+		expiry = token.CreatedAt.Add(cli)
+	}
+	if token.ExpiresAt.Before(expiry) {
+		return token.ExpiresAt
+	}
+	return expiry
 }

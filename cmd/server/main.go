@@ -171,6 +171,9 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 	if err != nil {
 		zap.L().Fatal("failed to initialize authorization database", zap.Error(err))
 	}
+	if err := model.InitializeInstallationSessionPolicy(ctx, db, cfg.BrowserSessionIdleTimeout, cfg.CLISessionTokenTTL, cfg.SessionPolicyResetToDefaults); err != nil {
+		zap.L().Fatal("failed to initialize installation session policy", zap.Error(err))
+	}
 	if migrationReport.Reconciled != nil {
 		zap.L().Info("automatically migrated authorization from SpiceDB to Casbin",
 			zap.Int("organizations", migrationReport.Reconciled.Organizations),
@@ -296,20 +299,22 @@ func runEchoServer(cfg *config.Configuration, deps *sharedDependencies) Runnable
 
 	// Create API server
 	server := api.Server{
-		Publisher:                deps.Publisher,
-		Database:                 deps.DB,
-		Logger:                   zap.L(),
-		SessionTokenCookieDomain: cfg.SessionTokenCookieDomain,
-		UserIdentityProviders:    identityProviders,
-		TokenByHashCache:         api.NewGetTokenByHashCache(deps.DB),
-		UiHostUrl:                cfg.UiHostUrl,
-		ApiHostUrl:               cfg.ApiHostUrl,
-		EmailProvider:            emailProvider,
-		SsoProvider:              ssoProvider,
-		SsoCallbackUrlPath:       cfg.SsoCallbackUrlPath,
-		SsoStateSecret:           cfg.SsoStateSecret,
-		CpClient:                 deps.CpClient,
-		Authorizer:               deps.Authorizer,
+		Publisher:                 deps.Publisher,
+		Database:                  deps.DB,
+		Logger:                    zap.L(),
+		SessionTokenCookieDomain:  cfg.SessionTokenCookieDomain,
+		BrowserSessionIdleTimeout: cfg.BrowserSessionIdleTimeout,
+		CLISessionTokenTTL:        cfg.CLISessionTokenTTL,
+		UserIdentityProviders:     identityProviders,
+		TokenByHashCache:          api.NewGetTokenByHashCache(deps.DB),
+		UiHostUrl:                 cfg.UiHostUrl,
+		ApiHostUrl:                cfg.ApiHostUrl,
+		EmailProvider:             emailProvider,
+		SsoProvider:               ssoProvider,
+		SsoCallbackUrlPath:        cfg.SsoCallbackUrlPath,
+		SsoStateSecret:            cfg.SsoStateSecret,
+		CpClient:                  deps.CpClient,
+		Authorizer:                deps.Authorizer,
 	}
 	policyReloader, ok := deps.Authorizer.(authorization.PolicyReloader)
 	if !ok {

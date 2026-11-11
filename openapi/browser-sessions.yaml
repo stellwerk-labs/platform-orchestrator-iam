@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: Console session lifecycle
+  version: '1'
+  description: Browser-only operations, separate from the public automation client interface.
+security:
+  - browserSessionCookie: []
+paths:
+  /auth/session:
+    get:
+      operationId: GetBrowserSession
+      description: Read the current browser session deadline without renewing it. Device and service tokens are not accepted.
+      responses:
+        '200':
+          description: Current server-authoritative deadline. Cache-Control is no-store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserSession'
+        '401':
+          description: Missing, expired or non-browser credential.
+  /auth/session/activity:
+    post:
+      operationId: RecordBrowserSessionActivity
+      description: Renew a still-live browser session after genuine user input. Requires the exact configured UI_HOST_URL origin and X-Session-Activity header. Cannot revive expired sessions.
+      parameters:
+        - in: header
+          name: X-Session-Activity
+          required: true
+          schema:
+            type: string
+            enum: ['1']
+      responses:
+        '200':
+          description: Updated deadline. Cache-Control is no-store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserSession'
+        '401':
+          description: Missing, expired or non-browser credential.
+        '403':
+          description: Missing or untrusted Console origin or activity header.
+components:
+  securitySchemes:
+    browserSessionCookie:
+      type: apiKey
+      in: cookie
+      name: session-token
+  schemas:
+    BrowserSession:
+      type: object
+      required: [user_id, server_time, expires_at, idle_timeout_ms]
+      properties:
+        idle_timeout_ms:
+          type: integer
+          minimum: 1000
+        user_id:
+          type: string
+          format: uuid
+        server_time:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time

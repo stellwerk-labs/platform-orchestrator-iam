@@ -70,7 +70,7 @@ func TestInternalAuth_expired_session_token(t *testing.T) {
 	s.TokenByHashCache = NewGetTokenByHashCache(s.Database)
 
 	s.Database.(*mockmodel.MockDatabaser).EXPECT().GetSessionTokenByHash(gomock.Any(), gomock.Any(), egTokenHash).
-		Return(&model.SessionToken{ExpiresAt: time.Now().Add(-time.Minute)}, nil).
+		Return(&model.SessionToken{ExpiresAt: time.Now().Add(-time.Minute), CheckedAt: time.Now()}, nil).
 		Times(1)
 
 	for i := 0; i < 2; i++ {

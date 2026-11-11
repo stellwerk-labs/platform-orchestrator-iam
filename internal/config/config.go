@@ -23,9 +23,11 @@ type Configuration struct {
 
 	ControlPlaneUrl string `env:"CONTROL_PLANE_URL" validate:"required"`
 
-	SessionTokenCookieDomain    string `env:"SESSION_TOKEN_COOKIE_DOMAIN" validate:"required"`
-	TestUserProviderAgeIdentity string `env:"TEST_USER_PROVIDER_AGE_IDENTITY"`
-	UiHostUrl                   string `env:"UI_HOST_URL" validate:"required"`
+	BrowserSessionIdleTimeout   time.Duration `env:"BROWSER_SESSION_IDLE_TIMEOUT, default=15m" validate:"min=1s"`
+	CLISessionTokenTTL          time.Duration `env:"CLI_SESSION_TOKEN_TTL, default=2h" validate:"min=1s"`
+	SessionTokenCookieDomain    string        `env:"SESSION_TOKEN_COOKIE_DOMAIN" validate:"required"`
+	TestUserProviderAgeIdentity string        `env:"TEST_USER_PROVIDER_AGE_IDENTITY"`
+	UiHostUrl                   string        `env:"UI_HOST_URL" validate:"required"`
 
 	// ApiHostUrl is the externally reachable base URL of this API (scheme and
 	// host, e.g. https://api.example.com). It pins the absolute URLs the server
@@ -98,8 +100,11 @@ type Configuration struct {
 	// PluginManagerReaders and PluginManagerWriters are the users holding the
 	// platform-level plugin_manager_read and plugin_manager_write permissions
 	// of the Core Plugin Manager. Writers also read.
-	PluginManagerReaders []string `env:"PLUGIN_MANAGER_READERS" validate:"dive,uuid"`
-	PluginManagerWriters []string `env:"PLUGIN_MANAGER_WRITERS" validate:"dive,uuid"`
+	PlatformSettingsReaders      []string `env:"PLATFORM_SETTINGS_READERS" validate:"dive,uuid"`
+	PlatformSettingsWriters      []string `env:"PLATFORM_SETTINGS_WRITERS" validate:"dive,uuid"`
+	SessionPolicyResetToDefaults bool     `env:"SESSION_POLICY_RESET_TO_DEFAULTS, default=false"`
+	PluginManagerReaders         []string `env:"PLUGIN_MANAGER_READERS" validate:"dive,uuid"`
+	PluginManagerWriters         []string `env:"PLUGIN_MANAGER_WRITERS" validate:"dive,uuid"`
 	// PluginWorkloadStaticTokenAdapter names the transitional adapter version
 	// that keeps static tokens of workload-bound service users usable. Off when empty.
 	PluginWorkloadStaticTokenAdapter string `env:"PLUGIN_WORKLOAD_STATIC_TOKEN_ADAPTER" validate:"omitempty,oneof=v1alpha"`
@@ -122,13 +127,23 @@ func (c *Configuration) PlatformPermissionHolders() (map[string][]uuid.UUID, err
 	if err != nil {
 		return nil, err
 	}
-	for _, holder := range slices.Concat(readers, writers) {
+	settingsReaders, err := parsePrincipals(c.PlatformSettingsReaders)
+	if err != nil {
+		return nil, err
+	}
+	settingsWriters, err := parsePrincipals(c.PlatformSettingsWriters)
+	if err != nil {
+		return nil, err
+	}
+	for _, holder := range slices.Concat(readers, writers, settingsReaders, settingsWriters) {
 		if holder == uuid.Nil || holder == userid.InternalSystemUuid || userid.IsServiceUser(holder) {
-			return nil, fmt.Errorf("plugin manager permission holder %s must be a user, never a service user or the internal system identity", holder)
+			return nil, fmt.Errorf("platform permission holder %s must be a user, never a service user or the internal system identity", holder)
 		}
 	}
 	return map[string][]uuid.UUID{
 		sharedauthz.PermissionPluginWorkloadBindingWrite: bindingWriters,
+		"platform_settings_read":                         slices.Concat(settingsReaders, settingsWriters),
+		"platform_settings_write":                        settingsWriters,
 		sharedauthz.PermissionPluginManagerRead:          slices.Concat(readers, writers),
 		sharedauthz.PermissionPluginManagerWrite:         writers,
 	}, nil

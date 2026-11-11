@@ -188,7 +188,7 @@ func (s *Server) InternalAuthenticate(ctx context.Context, request InternalAuthe
 	} else if st == nil {
 		logger.Debug("token not found")
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
-	} else if time.Now().After(st.ExpiresAt) {
+	} else if (kind != tokenKindSession && !time.Now().Before(st.ExpiresAt)) || (kind == tokenKindSession && !st.Session.CheckedAt.Before(s.sessionExpiresAt(st.Session))) {
 		logger.Debug("token expired")
 		return InternalAuthenticate401JSONResponse{N401UnauthorizedJSONResponse: build401(`Cookie, Bearer error="invalid_token"`)}, nil
 	} else if kind == tokenKindServiceUser && st.WorkloadBound && (st.HoldsRoles || !s.PluginWorkloadStaticTokens) {
@@ -222,6 +222,7 @@ type GetTokenByHashCache struct {
 }
 
 type WrappedToken struct {
+	Session   *model.SessionToken
 	UserId    uuid.UUID
 	ExpiresAt time.Time
 	// WorkloadBound marks a service user that has a plugin workload binding.
@@ -293,7 +294,7 @@ func (a *GetTokenByHashCache) GetTokenByHash(ctx context.Context, kind tokenKind
 		if err != nil {
 			return nil, err
 		}
-		if wrapped == nil || time.Now().After(wrapped.ExpiresAt) {
+		if wrapped == nil || (kind != tokenKindSession && time.Now().After(wrapped.ExpiresAt)) || (wrapped.Session != nil && !wrapped.Session.CheckedAt.Before(wrapped.ExpiresAt)) {
 			a.cache.Set(cacheKey, &WrappedToken{}, a.ttl)
 		}
 		return wrapped, nil
@@ -352,7 +353,7 @@ func (a *GetTokenByHashCache) lookupUncached(ctx context.Context, kind tokenKind
 	} else if err != nil {
 		return nil, errors.Wrap(err, "failed to get session token")
 	}
-	return &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt}, nil
+	return &WrappedToken{UserId: st.UserId, ExpiresAt: st.ExpiresAt, Session: st}, nil
 }
 
 // Stats will only return the stats if enough time has passed since the last request for them. This acts as a throttle
