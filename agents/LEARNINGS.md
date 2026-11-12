@@ -17,3 +17,9 @@
 ## Installation settings and Provider retirement
 
 - Background polling is not physical input. Browser activity, absolute lifetime and device-login expiry require separate rules; a policy transition must prune expired credentials before any extension.
+
+
+## 2026-11-12: qualification boundaries
+
+- A paginated first page cannot prove version absence. Complete catalogue summaries require version-read permission, not just catalogue read access.
+- `require` prevents plaintext fallback but does not generally authenticate server identity. CA verification uses existing driver settings; a private-key mount needs its own restrictive permissions.

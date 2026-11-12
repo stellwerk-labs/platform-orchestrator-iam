@@ -93,3 +93,9 @@
 ## Installation settings and Provider retirement
 
 - Prepared session idle expiry, fixed CLI token lifetime and persisted Installation session policy, with browser lifecycle contracts and revision-controlled settings. Security/compiler maintenance remains a preceding separate commit. Added v2.7.0 notes with coordinated upgrade, immediate expiry and restore/forward recovery boundaries; see DECISIONS.md and LEARNINGS.md.
+
+
+## 2026-11-12: IAM database TLS
+
+- Implemented the requested local change with targeted tests and documentation. Independent planning, green and final clean-code reviews passed after correcting partial-summary availability and removing an unsupported mTLS mount example.
+- TLS configuration was exercised against real PostgreSQL; UI and complete-history/permission boundaries were tested. Hosted release qualification and immutable public schema/image pins remain pending. No public publication or live deployment is established by this local checkpoint.

@@ -20,6 +20,7 @@ type Configuration struct {
 	DatabasePassword string `env:"DATABASE_PASSWORD" validate:"required"`
 	DatabaseHost     string `env:"DATABASE_HOST"`
 	DatabasePort     string `env:"DATABASE_PORT"`
+	DatabaseSSLMode  string `env:"DATABASE_SSLMODE, default=disable"`
 
 	ControlPlaneUrl string `env:"CONTROL_PLANE_URL" validate:"required"`
 

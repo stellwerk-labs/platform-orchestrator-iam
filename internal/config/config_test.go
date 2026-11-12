@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stellwerk-labs/golib/hconfig"
+	"github.com/stretchr/testify/require"
 
 	sharedauthz "github.com/stellwerk-labs/platform-orchestrator-iam/shared/authz"
 	"github.com/stellwerk-labs/platform-orchestrator-iam/shared/userid"
@@ -282,4 +283,16 @@ func TestInstallationSettingsGrantsRequireExplicitHumanOperators(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestConfigurationDatabaseSSLMode(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("DATABASE_SSLMODE", "")
+	require.NoError(t, os.Unsetenv("DATABASE_SSLMODE"))
+	var cfg Configuration
+	require.NoError(t, hconfig.LoadConfigWithoutRetag(&cfg))
+	require.Equal(t, "disable", cfg.DatabaseSSLMode)
+	t.Setenv("DATABASE_SSLMODE", "require")
+	require.NoError(t, hconfig.LoadConfigWithoutRetag(&cfg))
+	require.Equal(t, "require", cfg.DatabaseSSLMode)
 }

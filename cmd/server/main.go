@@ -152,9 +152,7 @@ func initSharedDependencies(ctx context.Context, cfg *config.Configuration) *sha
 		zap.L().Fatal("failed to setup control plane client", zap.Error(err))
 	}
 
-	dbConnStr := fmt.Sprintf(
-		"dbname=%s user=%s password=%s host=%s port=%s connect_timeout=5 sslmode=disable",
-		cfg.DatabaseName, cfg.DatabaseUser, cfg.DatabasePassword, cfg.DatabaseHost, cfg.DatabasePort)
+	dbConnStr := cfg.DatabaseConnectionString()
 	rawDB, err := sql.Open("postgres", dbConnStr)
 	if err != nil {
 		zap.L().Fatal("failed to create database client", zap.Error(err))
