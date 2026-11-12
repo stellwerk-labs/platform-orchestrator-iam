@@ -184,3 +184,14 @@ Supply `PLATFORM_SETTINGS_BROWSER_DRIVER`, `PLATFORM_SETTINGS_BROWSER_ASSETS`,
 `MODEL_TEST_DB_CONNECTION_STRING`, then run that integration-tag test. Only the
 disposable browser context trusts the local fixture certificate; the peer uses
 a test-specific CA pool. No authentication or settings APIs are mocked.
+
+## PostgreSQL transport security
+
+Set `DATABASE_SSLMODE=require` to require an encrypted PostgreSQL connection.
+The default remains `disable` for compatibility.
+The driver also accepts `allow`, `prefer`, `verify-ca` and `verify-full`; `allow` and `prefer` permit plaintext fallback.
+`require` does not generally authenticate the server identity.
+Use `verify-full` and `PGSSLROOTCERT` for certificate and hostname verification.
+Invalid modes fail during database initialization, before the API starts.
+These are startup settings, so restart the component after changing them.
+See the [database TLS guide](https://docs.stellwerk.dev/platform-orchestrator/docs/configure/database-tls/) for Helm examples and certificate handling.
