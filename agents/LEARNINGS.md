@@ -26,4 +26,4 @@
 
 ## 2026-11-13
 
-New sensitive read permissions must be excluded from level wildcards, otherwise Viewer and Deployer inherit them. IAM root tests resolve the published shared module by default; use a temporary external Go workspace with root and `shared` while testing coordinated changes.
+New sensitive read permissions must be excluded from level wildcards, otherwise Viewer and Deployer inherit them. IAM root tests resolve the published shared module by default. Temporary workspaces can qualify coordinated changes before SDK publication, but release closure requires the real public SDK pin with `GOWORK=off`, no local replacements, and public checksum resolution.
