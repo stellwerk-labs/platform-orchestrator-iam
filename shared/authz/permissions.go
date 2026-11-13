@@ -65,6 +65,7 @@ const (
 	PermissionRunnerRuleWrite          = "runner_rule_write"
 	PermissionActiveResourceRead       = "active_resource_read"
 	PermissionDeploymentRead           = "deployment_read"
+	PermissionDeploymentLogsRead       = "deployment_logs_read"
 	PermissionDeploymentWrite          = "deployment_write"
 	PermissionDeploymentDebugRead      = "deployment_debug_read"
 	PermissionDeploymentOutcomeAck     = "deployment.outcome.acknowledge"
@@ -152,7 +153,8 @@ var permissionCatalog = []PermissionDefinition{
 	{ID: PermissionRunnerRuleRead, DisplayName: "View runner rules", Description: "View runner selection rules.", Category: "Runners", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionRunnerRuleWrite, DisplayName: "Manage runner rules", Description: "Create and delete runner selection rules.", Category: "Runners", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionActiveResourceRead, DisplayName: "View active resources", Description: "View active resources in the organization.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
-	{ID: PermissionDeploymentRead, DisplayName: "View deployments", Description: "View deployments, logs, outputs, and calculated differences.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
+	{ID: PermissionDeploymentRead, DisplayName: "View deployments", Description: "View deployments, outputs, and calculated differences.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
+	{ID: PermissionDeploymentLogsRead, DisplayName: "Read plaintext deployment logs", Description: "Decrypt and read retained deployment logs. Requires an explicit grant or organization administrator access.", Category: "Deployments", Level: PermissionLevelRead, Scopes: allScopes},
 	{ID: PermissionDeploymentWrite, DisplayName: "Create deployments", Description: "Create deployments and wait for their completion.", Category: "Deployments", Level: PermissionLevelWrite, Scopes: allScopes},
 	{ID: PermissionDeploymentDebugRead, DisplayName: "View deployment debug data", Description: "View generated deployment infrastructure code.", Category: "Deployments", Level: PermissionLevelManage, Scopes: organizationScope},
 	{ID: PermissionDeploymentOutcomeAck, DisplayName: "Acknowledge deployment outcomes", Description: "Record, with a reason, that a failed plugin-dispatched deployment left no running work so the environment can deploy again.", Category: "Deployments", Level: PermissionLevelManage, Scopes: allScopes},

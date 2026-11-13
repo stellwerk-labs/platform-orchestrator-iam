@@ -171,12 +171,12 @@ func TestGranularPermissionsPreserveLegacyRoleBehavior(t *testing.T) {
 			expectedWrite := expectedRead || permission.Level == sharedauthz.PermissionLevelWrite
 			expectedManage := permission.Level == sharedauthz.PermissionLevelManage
 
-			// The provisioning permissions are the deliberate exception to the
-			// level hierarchy: they expose the whole SCIM directory, so no
+			// Sensitive-data permissions are the deliberate exception to the
+			// level hierarchy: they expose plaintext logs or the SCIM directory, so no
 			// level wildcard may satisfy them — only an exact grant or
 			// manage_all. Every OTHER permission must keep its wildcard
 			// behavior; this loop over the full catalog is the guard.
-			if permission.ID == sharedauthz.PermissionProvisioningRead || permission.ID == sharedauthz.PermissionProvisioningWrite {
+			if permission.ID == sharedauthz.PermissionDeploymentLogsRead || permission.ID == sharedauthz.PermissionProvisioningRead || permission.ID == sharedauthz.PermissionProvisioningWrite {
 				expectedRead = false
 				expectedWrite = false
 				expectedManage = false
@@ -334,4 +334,13 @@ func TestParseResource(t *testing.T) {
 
 	_, _, err = ParseResource("invalid")
 	require.Error(t, err)
+}
+
+func TestDeploymentLogsRequireDedicatedGrant(t *testing.T) {
+	const permission = sharedauthz.PermissionDeploymentLogsRead
+	for _, grant := range []string{PermissionReadAll, PermissionWriteAll, PermissionRead, PermissionWrite, PermissionManage, sharedauthz.PermissionDeploymentRead, sharedauthz.PermissionDeploymentDebugRead, "plugin.dev.example.workflow.view"} {
+		assertPermissionMatch(t, permission, grant, false)
+	}
+	assertPermissionMatch(t, permission, permission, true)
+	assertPermissionMatch(t, permission, PermissionManageAll, true)
 }

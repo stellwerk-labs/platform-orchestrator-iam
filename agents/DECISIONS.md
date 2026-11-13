@@ -19,3 +19,7 @@
 
 - Preserve existing permissions, confirmation and default behavior. PostgreSQL TLS is opt-in through `DATABASE_SSLMODE`; use existing driver and certificate mechanisms.
 - Catalogue filters use complete optional summaries, omit version data for core-only readers, and keep unavailable distinct from false. Verification remains unimplemented; its filter is intentionally present with an explicit limitation.
+
+## 2026-11-13: Plaintext deployment log privilege
+
+`deployment_logs_read` requires an exact configurable-role grant or `manage_all`; ordinary `deployment_read`, Viewer (`read_all`), Deployer (`write_all`), and generic level grants do not grant plaintext logs. Canonical Admin receives access through existing `manage_all`. Organization, project, and environment assignments follow existing resource-tree inheritance, so administrators can delegate narrowly through existing role and membership management. No stored-role or schema migration is needed because core permission definitions ship in code. Deploy IAM with the new catalog before CP begins checking the permission.
