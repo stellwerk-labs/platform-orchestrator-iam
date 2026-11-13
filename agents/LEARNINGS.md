@@ -27,3 +27,8 @@
 ## 2026-11-13
 
 New sensitive read permissions must be excluded from level wildcards, otherwise Viewer and Deployer inherit them. IAM root tests resolve the published shared module by default. Temporary workspaces can qualify coordinated changes before SDK publication, but release closure requires the real public SDK pin with `GOWORK=off`, no local replacements, and public checksum resolution.
+
+
+## 2026-11-13: Landing signatures
+
+GitHub rebase landing can discard locally signed branch commit signatures. Existing original-image consumer verifies exact HEAD with git verify-commit; signed ancestry or equal tree is insufficient. Existing official GitHub web-flow key and dedicated keyring verify normal squash signatures.

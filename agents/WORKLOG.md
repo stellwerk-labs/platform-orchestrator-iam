@@ -111,3 +111,8 @@ Added explicit plaintext log authorization and real PostgreSQL-backed API covera
 - Clarified breaking decrypted-log access loss, explicit role/service-user grants and IAM 2.8.0 before CP 4.1.0 / DP 4.4.0 rollout in release notes. See DECISIONS.md and LEARNINGS.md.
 - Go 1.26.11 with GOWORK=off: root tidy, make generate (including shared tidy), focused uncached dedicated-grant/catalog/database-configuration tests, root all-package compile, and CI-pinned golangci-lint 2.11.4 passed. Generation changed no tracked generated files. All 42 existing candidate/stable/server-publication/workflow contract tests passed.
 - Existing PR 17 covers only TLS source b5b13e1; this branch also includes reviewed dc0f37d dedicated-log permission. Full required remote CI, fresh review and publication remain separate gates; no Docker fixture was duplicated for this dependency-only closure.
+
+
+## 2026-11-13: IAM 2.8.1 source recovery preparation
+
+Added successor notes carrying reviewed 2.8 behavior and a clear use-2.8.1 upgrade direction. Version2.8.0 remains an immutable lightweight tag on unsigned3e033 and empty draft444742241; run43507431186 was cancelled before image publication, anonymous named-tag readback returned not found. It was never qualified or released. Documented exact signed landing requirement. Preserved 2.8.0 notes, SDK pins and existing gates. See DECISIONS.md and LEARNINGS.md; qualification belongs to actual future verified main source and original artifacts.

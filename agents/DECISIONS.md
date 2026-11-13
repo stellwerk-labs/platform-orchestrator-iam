@@ -28,3 +28,8 @@
 ## 2026-11-13: Public IAM 2.8.0 dependency closure
 
 Pin IAM shared v1.4.0 as a real published dependency before public PR qualification. Preserve the reviewed TLS and managed-log source commits, use Go 1.26.11 and the existing CI/release mechanisms, and document the access change and IAM-first rollout. Hosted required CI remains mandatory before merge and stable publication.
+
+
+## 2026-11-13: Signed source successor
+
+Preserve unsigned 2.8.0 tag and empty draft after cancelled run43507431186. Recover forward as 2.8.1 from actual main3e033, with protected GitHub SQUASH landing and exact-source signature verification. No workflow, behavior, dependency or signature gate change.
