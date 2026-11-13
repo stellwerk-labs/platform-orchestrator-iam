@@ -23,3 +23,8 @@
 ## 2026-11-13: Plaintext deployment log privilege
 
 `deployment_logs_read` requires an exact configurable-role grant or `manage_all`; ordinary `deployment_read`, Viewer (`read_all`), Deployer (`write_all`), and generic level grants do not grant plaintext logs. Canonical Admin receives access through existing `manage_all`. Organization, project, and environment assignments follow existing resource-tree inheritance, so administrators can delegate narrowly through existing role and membership management. No stored-role or schema migration is needed because core permission definitions ship in code. Deploy IAM with the new catalog before CP begins checking the permission.
+
+
+## 2026-11-13: Public IAM 2.8.0 dependency closure
+
+Pin IAM shared v1.4.0 as a real published dependency before public PR qualification. Preserve the reviewed TLS and managed-log source commits, use Go 1.26.11 and the existing CI/release mechanisms, and document the access change and IAM-first rollout. Hosted required CI remains mandatory before merge and stable publication.

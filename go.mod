@@ -29,7 +29,7 @@ require (
 	github.com/stellwerk-labs/golib/hstandardoutbox v1.1.1
 	github.com/stellwerk-labs/golib/htelemetry v1.0.0
 	github.com/stellwerk-labs/platform-orchestrator-cp/shared v1.0.0
-	github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.3.0
+	github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.4.0
 	github.com/stretchr/testify v1.12.1
 	github.com/workos/workos-go/v6 v6.5.0
 	go.opentelemetry.io/otel/sdk v1.45.0

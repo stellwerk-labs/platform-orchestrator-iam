@@ -103,3 +103,11 @@
 ## 2026-11-13: Managed deployment logs, pending commit
 
 Added explicit plaintext log authorization and real PostgreSQL-backed API coverage for wildcard denial, exact grant inheritance, and cross-environment/organization denial. See DECISIONS.md for privileged defaults and rollout ordering.
+
+
+## 2026-11-13: Public IAM 2.8.0 SDK closure
+
+- Replaced IAM shared v1.3.0 with the published v1.4.0 requirement and checksum pair; no local replacement or workspace. Public consumer qualification independently verified tag origin dc0f37d, every SDK ZIP byte and inherited EUPL license before resolution.
+- Clarified breaking decrypted-log access loss, explicit role/service-user grants and IAM 2.8.0 before CP 4.1.0 / DP 4.4.0 rollout in release notes. See DECISIONS.md and LEARNINGS.md.
+- Go 1.26.11 with GOWORK=off: root tidy, make generate (including shared tidy), focused uncached dedicated-grant/catalog/database-configuration tests, root all-package compile, and CI-pinned golangci-lint 2.11.4 passed. Generation changed no tracked generated files. All 42 existing candidate/stable/server-publication/workflow contract tests passed.
+- Existing PR 17 covers only TLS source b5b13e1; this branch also includes reviewed dc0f37d dedicated-log permission. Full required remote CI, fresh review and publication remain separate gates; no Docker fixture was duplicated for this dependency-only closure.

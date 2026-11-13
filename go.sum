@@ -350,8 +350,8 @@ github.com/stellwerk-labs/golib/htelemetry v1.0.0 h1:pW42v7qG9bUuZ468pOsy6SYtWUg
 github.com/stellwerk-labs/golib/htelemetry v1.0.0/go.mod h1:sCcuxp/nvQ+ZPaOV6fGfexJacYmSPMhm3xEBk/r9L3w=
 github.com/stellwerk-labs/platform-orchestrator-cp/shared v1.0.0 h1:TUjqcKMepSG8putt4Us+BUyW8lUhWhZEvutkTmiw+jk=
 github.com/stellwerk-labs/platform-orchestrator-cp/shared v1.0.0/go.mod h1:yM0yuhjeCY8kgYqm/SK3XLMd5JgeJYrMVh8ZKTiiRzo=
-github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.3.0 h1:iayuhsPEZTiiM/dZ1PysYcrZyNGvGVBJwC235n5mqY4=
-github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.3.0/go.mod h1:6o9lbMaVycwewUvP5qiZQQrwaV02Xzyogk0dhVeFwCY=
+github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.4.0 h1:L2NMb2LYBJfq0AMXF1V2RaWUe4TSw1JNm6wRyJAZQaA=
+github.com/stellwerk-labs/platform-orchestrator-iam/shared v1.4.0/go.mod h1:AfTiV1AytyfLY3v97MS4eQ6mS6TX2CAU1Rm5W5ywpHo=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=
