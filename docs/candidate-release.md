@@ -76,3 +76,20 @@ The original BuildKit attestations remain unchanged. Their structural presence
 is not described as individual cryptographic verification, and no SLSA assurance
 level is claimed. Dependency seeds remain unqualified even when their origin
 is authenticated.
+
+## Stable source signatures
+
+Land stable changes through the normal protected pull request using GitHub
+Squash and merge with the intended conventional release subject. A locally
+signed branch does not make a rebased landing commit signed. Verify the actual
+main commit's GitHub signature status and verify that exact commit locally with
+the official GitHub web-flow public key before treating its artifacts as qualified.
+The original-image consumer requires `git verify-commit` on its exact source;
+an identical tree or a signed predecessor does not satisfy that check.
+
+For the retained official key, require fingerprint
+`968479A1AFF927E37D1A566BB5690EEEBB952194` (key ID `B5690EEEBB952194`)
+and obtain it from `https://github.com/web-flow.gpg`. Keep the source signature
+and producing-workflow signature/attestation identities distinct. A cancelled
+release's reserved tag and draft stay immutable; recover forward under a new
+patch version rather than moving a tag or replaying the publisher.
