@@ -107,13 +107,15 @@ type PermissionDefinition struct {
 	Scopes      []PermissionScope
 }
 
+const pipelineCategory = "Pipelines"
+
 var organizationScope = []PermissionScope{PermissionScopeOrganization}
 var allScopes = []PermissionScope{PermissionScopeOrganization, PermissionScopeProject, PermissionScopeEnvironment}
 
 var permissionCatalog = []PermissionDefinition{
-	{ID: PermissionPipelineRead, DisplayName: "View project pipelines", Description: "Read project pipeline drafts, published versions and policy.", Category: "Pipelines", Level: PermissionLevelRead, Scopes: allScopes[:2]},
-	{ID: PermissionPipelineWrite, DisplayName: "Manage project pipelines", Description: "Edit trusted project pipeline recipes.", Category: "Pipelines", Level: PermissionLevelManage, Scopes: allScopes[:2]},
-	{ID: PermissionPipelinePublish, DisplayName: "Publish project pipelines", Description: "Publish and retire immutable pipeline versions and change project pipeline policy.", Category: "Pipelines", Level: PermissionLevelManage, Scopes: allScopes[:2]},
+	{ID: PermissionPipelineRead, DisplayName: "View project pipelines", Description: "Read project pipeline drafts, published versions and policy.", Category: pipelineCategory, Level: PermissionLevelRead, Scopes: allScopes[:2]},
+	{ID: PermissionPipelineWrite, DisplayName: "Manage project pipelines", Description: "Edit trusted project pipeline recipes.", Category: pipelineCategory, Level: PermissionLevelManage, Scopes: allScopes[:2]},
+	{ID: PermissionPipelinePublish, DisplayName: "Publish project pipelines", Description: "Publish and retire immutable pipeline versions and change project pipeline policy.", Category: pipelineCategory, Level: PermissionLevelManage, Scopes: allScopes[:2]},
 	{ID: PermissionOrganizationRead, DisplayName: "View organization", Description: "View organization details.", Category: "Organization", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionInvitationRead, DisplayName: "View invitations", Description: "List pending organization invitations.", Category: "Access", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionInvitationWrite, DisplayName: "Manage invitations", Description: "Create, inspect, and revoke organization invitations.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
