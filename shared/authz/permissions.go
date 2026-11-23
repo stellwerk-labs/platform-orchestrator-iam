@@ -64,6 +64,9 @@ const (
 	PermissionRunnerRuleRead           = "runner_rule_read"
 	PermissionRunnerRuleWrite          = "runner_rule_write"
 	PermissionActiveResourceRead       = "active_resource_read"
+	PermissionPipelineRead             = "pipeline_read"
+	PermissionPipelineWrite            = "pipeline_write"
+	PermissionPipelinePublish          = "pipeline.publish"
 	PermissionDeploymentRead           = "deployment_read"
 	PermissionDeploymentLogsRead       = "deployment_logs_read"
 	PermissionDeploymentWrite          = "deployment_write"
@@ -108,6 +111,9 @@ var organizationScope = []PermissionScope{PermissionScopeOrganization}
 var allScopes = []PermissionScope{PermissionScopeOrganization, PermissionScopeProject, PermissionScopeEnvironment}
 
 var permissionCatalog = []PermissionDefinition{
+	{ID: PermissionPipelineRead, DisplayName: "View project pipelines", Description: "Read project pipeline drafts, published versions and policy.", Category: "Pipelines", Level: PermissionLevelRead, Scopes: allScopes[:2]},
+	{ID: PermissionPipelineWrite, DisplayName: "Manage project pipelines", Description: "Edit trusted project pipeline recipes.", Category: "Pipelines", Level: PermissionLevelManage, Scopes: allScopes[:2]},
+	{ID: PermissionPipelinePublish, DisplayName: "Publish project pipelines", Description: "Publish and retire immutable pipeline versions and change project pipeline policy.", Category: "Pipelines", Level: PermissionLevelManage, Scopes: allScopes[:2]},
 	{ID: PermissionOrganizationRead, DisplayName: "View organization", Description: "View organization details.", Category: "Organization", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionInvitationRead, DisplayName: "View invitations", Description: "List pending organization invitations.", Category: "Access", Level: PermissionLevelRead, Scopes: organizationScope},
 	{ID: PermissionInvitationWrite, DisplayName: "Manage invitations", Description: "Create, inspect, and revoke organization invitations.", Category: "Access", Level: PermissionLevelManage, Scopes: organizationScope},
