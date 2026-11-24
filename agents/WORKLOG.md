@@ -116,3 +116,7 @@ Added explicit plaintext log authorization and real PostgreSQL-backed API covera
 ## 2026-11-13: IAM 2.8.1 source recovery preparation
 
 Added successor notes carrying reviewed 2.8 behavior and a clear use-2.8.1 upgrade direction. Version2.8.0 remains an immutable lightweight tag on unsigned3e033 and empty draft444742241; run43507431186 was cancelled before image publication, anonymous named-tag readback returned not found. It was never qualified or released. Documented exact signed landing requirement. Preserved 2.8.0 notes, SDK pins and existing gates. See DECISIONS.md and LEARNINGS.md; qualification belongs to actual future verified main source and original artifacts.
+
+## Native pipeline source export
+
+Prepared the Native pipeline application source export. Public artifact publication and hosted qualification are separate release steps.

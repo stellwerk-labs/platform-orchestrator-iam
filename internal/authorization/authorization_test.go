@@ -344,3 +344,13 @@ func TestDeploymentLogsRequireDedicatedGrant(t *testing.T) {
 	assertPermissionMatch(t, permission, permission, true)
 	assertPermissionMatch(t, permission, PermissionManageAll, true)
 }
+
+func TestProjectPipelinePublicationCannotBeGrantedByDeployerWildcard(t *testing.T) {
+	for _, permission := range []string{sharedauthz.PermissionPipelineWrite, sharedauthz.PermissionPipelinePublish} {
+		assertPermissionMatch(t, permission, PermissionWriteAll, false)
+		assertPermissionMatch(t, permission, PermissionWrite, false)
+		assertPermissionMatch(t, permission, sharedauthz.PermissionDeploymentWrite, false)
+		assertPermissionMatch(t, permission, PermissionManageAll, true)
+		assertPermissionMatch(t, permission, permission, true)
+	}
+}

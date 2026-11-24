@@ -33,3 +33,7 @@ Pin IAM shared v1.4.0 as a real published dependency before public PR qualificat
 ## 2026-11-13: Signed source successor
 
 Preserve unsigned 2.8.0 tag and empty draft after cancelled run43507431186. Recover forward as 2.8.1 from actual main3e033, with protected GitHub SQUASH landing and exact-source signature verification. No workflow, behavior, dependency or signature gate change.
+
+## Native pipeline source export
+
+Prepare Native pipeline application changes as a source export with all product code, tests, documentation and release controls retained.

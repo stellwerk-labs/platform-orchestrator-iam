@@ -77,6 +77,7 @@ TEST_PACKAGES = $$(go list ./internal/... ./cmd/... | grep -v -E "(mocks|generat
 test-unit:
 	go tool gotestsum --format testname -- -coverprofile=cover.out $(TEST_PACKAGES)
 	cd shared && GOWORK=off go test -count=1 ./...
+	GOWORK=off go test -mod=readonly -count=1 github.com/stellwerk-labs/golib/htelemetry -run '^TestStartOTel_DefaultConfig$$'
 
 ## Generate coverage badge
 .PHONY: coverage-badge

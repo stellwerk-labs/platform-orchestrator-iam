@@ -32,3 +32,7 @@ New sensitive read permissions must be excluded from level wildcards, otherwise 
 ## 2026-11-13: Landing signatures
 
 GitHub rebase landing can discard locally signed branch commit signatures. Existing original-image consumer verifies exact HEAD with git verify-commit; signed ancestry or equal tree is insufficient. Existing official GitHub web-flow key and dedicated keyring verify normal squash signatures.
+
+## Native pipeline source export
+
+Keep the released application source and its public SDK contracts aligned; preserve existing compatibility exports.
