@@ -37,3 +37,10 @@ Preserve unsigned 2.8.0 tag and empty draft after cancelled run43507431186. Reco
 ## Native pipeline source export
 
 Prepare Native pipeline application changes as a source export with all product code, tests, documentation and release controls retained.
+
+## 2026-11-25: Pipeline RC documentation
+
+Mark Deployment Pipelines as an RC feature, separate from the current stable release.
+Preserve direct Apply as the built-in default; publishing a recipe alone changes no default.
+This documentation correction changes no runtime, schema, dependency or RC version
+and does not invalidate the existing functional qualification.
