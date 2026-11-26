@@ -116,3 +116,7 @@ Added explicit plaintext log authorization and real PostgreSQL-backed API covera
 ## 2026-11-13: IAM 2.8.1 source recovery preparation
 
 Added successor notes carrying reviewed 2.8 behavior and a clear use-2.8.1 upgrade direction. Version2.8.0 remains an immutable lightweight tag on unsigned3e033 and empty draft444742241; run43507431186 was cancelled before image publication, anonymous named-tag readback returned not found. It was never qualified or released. Documented exact signed landing requirement. Preserved 2.8.0 notes, SDK pins and existing gates. See DECISIONS.md and LEARNINGS.md; qualification belongs to actual future verified main source and original artifacts.
+
+## 2026-11-26: Ride out GHCR read-after-write lag in the publisher
+
+`oras cp --no-tty` reads every manifest it has just pushed back from the destination to print its status, and GHCR answered that read with 404 for about a second, which cost Data Plane v4.5.0-rc.3 its candidate. `scripts/publish-oci-layout.sh` repeats the content-addressed copy only for that exact error (at most 6 attempts, 10 s apart, each under a 300 s timeout) and then requires the tag to resolve to the inspected digest. Other failures stop at once. A loopback registry test with the pinned ORAS reproduces the lag, a wrong digest and a denied push; the pinned ORAS now joins the unit job's release tools.
