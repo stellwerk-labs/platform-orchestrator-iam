@@ -33,3 +33,7 @@ Pin IAM shared v1.4.0 as a real published dependency before public PR qualificat
 ## 2026-11-13: Signed source successor
 
 Preserve unsigned 2.8.0 tag and empty draft after cancelled run43507431186. Recover forward as 2.8.1 from actual main3e033, with protected GitHub SQUASH landing and exact-source signature verification. No workflow, behavior, dependency or signature gate change.
+
+## 2026-11-26: Retry only the demonstrated registry lag
+
+Retry the image copy only when ORAS reports `Error response from registry: sha256:<digest>: not found`, the read-after-write lag that failed Data Plane v4.5.0-rc.3. ORAS already retries 408, 429 and 5xx; authentication, layout and digest failures are deterministic and must stop the publisher. The copy is content-addressed and only points the tag at the inspected root, so a repeat cannot publish other bytes, and a failed attempt may already have written that correct tag; absence is checked once before publishing, never between attempts.
